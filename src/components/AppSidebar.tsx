@@ -1,5 +1,16 @@
-import { Link } from "@tanstack/react-router";
-import { Plus, Clock, BarChart3, Tag, Lamp, Sparkles, Folder } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import {
+  Plus,
+  LayoutDashboard,
+  FolderGit2,
+  Settings,
+  CreditCard,
+  Plug,
+  BarChart3,
+  Tag,
+  Lamp,
+  Sparkles,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -14,19 +25,22 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
-const recent = [
-  { name: "Neon Portfolio", url: "#" },
-  { name: "Crypto Tracker", url: "#" },
-  { name: "AI Notes App", url: "#" },
-  { name: "Lo-fi Player", url: "#" },
+const workspaceNav = [
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "My Projects", url: "/projects", icon: FolderGit2 },
+  { title: "MCP", url: "/mcp", icon: Plug },
 ];
 
-const nav = [
+const accountNav = [
+  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Usage", url: "/usage", icon: BarChart3 },
   { title: "Pricing", url: "/pricing", icon: Tag },
 ];
 
 export function AppSidebar() {
+  const currentPath = useRouterState({ select: (s) => s.location.pathname });
+  const isActive = (path: string) => currentPath === path;
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -52,18 +66,16 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="flex items-center gap-2">
-            <Clock className="h-3.5 w-3.5" /> Recent Projects
-          </SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {recent.map((p) => (
-                <SidebarMenuItem key={p.name}>
-                  <SidebarMenuButton asChild>
-                    <a href={p.url} className="group/item">
-                      <Folder className="h-4 w-4 text-muted-foreground group-hover/item:text-primary" />
-                      <span className="truncate">{p.name}</span>
-                    </a>
+              {workspaceNav.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <Link to={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -72,11 +84,12 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup className="mt-auto">
+          <SidebarGroupLabel>Account</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {nav.map((item) => (
+              {accountNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <Link to={item.url}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>

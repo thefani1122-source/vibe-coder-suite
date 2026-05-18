@@ -10,6 +10,9 @@ import {
   Tag,
   Lamp,
   Sparkles,
+  FileText,
+  Lock,
+  ScrollText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,6 +39,12 @@ const accountNav = [
   { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Usage", url: "/usage", icon: BarChart3 },
   { title: "Pricing", url: "/pricing", icon: Tag },
+];
+
+const legalNav = [
+  { title: "Docs", url: "/docs", icon: FileText },
+  { title: "Privacy", url: "/privacy", icon: Lock },
+  { title: "Terms", url: "/terms", icon: ScrollText },
 ];
 
 export function AppSidebar() {
@@ -90,6 +99,23 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {accountNav.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <Link to={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {legalNav.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <Link to={item.url}>

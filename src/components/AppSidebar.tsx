@@ -1,4 +1,4 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Plus,
   LayoutDashboard,
@@ -24,7 +24,6 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth";
 
 const workspaceNav = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -41,8 +40,6 @@ const accountNav = [
 
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
-  const navigate = useNavigate();
-  const { user } = useAuth();
   const isActive = (path: string) => currentPath === path;
   return (
     <Sidebar collapsible="icon">
@@ -61,12 +58,11 @@ export function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent className="px-2 pt-2">
-            <Button
-              onClick={() => navigate({ to: user ? "/dashboard" : "/login" })}
-              className="w-full justify-start gap-2 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground font-semibold hover:opacity-90 shadow-[var(--shadow-glow)]"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="group-data-[collapsible=icon]:hidden">New App</span>
+            <Button asChild className="w-full justify-start gap-2 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground font-semibold hover:opacity-90 shadow-[var(--shadow-glow)]">
+              <Link to="/dashboard">
+                <Plus className="h-4 w-4" />
+                <span className="group-data-[collapsible=icon]:hidden">New App</span>
+              </Link>
             </Button>
           </SidebarGroupContent>
         </SidebarGroup>

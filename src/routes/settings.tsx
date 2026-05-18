@@ -7,18 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import {
   Table,
   TableBody,
   TableCell,
@@ -225,22 +213,7 @@ const sevColor: Record<Severity, string> = {
 
 function SecurityPanel() {
   const [filter, setFilter] = useState<"All" | Category>("All");
-  const [keys, setKeys] = useState([
-    { id: "1", name: "Production", prefix: "lc_live_a1b2", created: "Mar 12, 2026", lastUsed: "2 hours ago" },
-    { id: "2", name: "CI Pipeline", prefix: "lc_ci_x9y8", created: "Feb 28, 2026", lastUsed: "Yesterday" },
-    { id: "3", name: "Local Dev", prefix: "lc_dev_q4w5", created: "Jan 14, 2026", lastUsed: "5 days ago" },
-  ]);
-
   const filtered = auditLog.filter((r) => filter === "All" || r.category === filter);
-
-  const regenerate = (id: string) => {
-    setKeys((ks) => ks.map((k) => (k.id === id ? { ...k, prefix: "lc_new_" + Math.random().toString(36).slice(2, 6), lastUsed: "just now" } : k)));
-    toast.success("API key regenerated");
-  };
-  const revoke = (id: string) => {
-    setKeys((ks) => ks.filter((k) => k.id !== id));
-    toast.success("API key revoked");
-  };
 
   return (
     <div className="space-y-6">
@@ -283,52 +256,6 @@ function SecurityPanel() {
                 ))}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/60 bg-card/60 backdrop-blur">
-        <CardHeader>
-          <CardTitle>API Keys</CardTitle>
-          <p className="text-xs text-muted-foreground">Authenticate against the Lampcode API.</p>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border border-border/60 divide-y divide-border/60">
-            {keys.map((k) => (
-              <div key={k.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-medium">{k.name}</div>
-                    <Badge variant="secondary" className="font-mono text-[10px]">{k.prefix}****</Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">Created {k.created} · Last used {k.lastUsed}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" className="gap-1" onClick={() => { navigator.clipboard?.writeText(k.prefix); toast("Prefix copied"); }}>
-                    <Copy className="h-3.5 w-3.5" /> Copy
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => regenerate(k.id)}>Regenerate</Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-500 hover:bg-red-500/10">Revoke</Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will immediately disable <span className="font-mono">{k.prefix}****</span>. Any service using it will stop working.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => revoke(k.id)} className="bg-red-600 hover:bg-red-600/90 text-white">Revoke</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-            ))}
-            {keys.length === 0 ? <div className="p-6 text-center text-sm text-muted-foreground">No API keys yet.</div> : null}
           </div>
         </CardContent>
       </Card>

@@ -108,8 +108,8 @@ export function AppSidebar() {
         <div className="flex items-center gap-2 rounded-lg bg-sidebar-accent/40 p-2 group-data-[collapsible=icon]:hidden">
           <Sparkles className="h-4 w-4 text-primary" />
           <div className="flex-1 text-xs">
-            <div className="font-medium">Free plan</div>
-            <div className="text-muted-foreground">12 / 50 credits</div>
+            <div className="font-medium">Starter</div>
+            <div className="text-muted-foreground">340 / 500 credits</div>
           </div>
         </div>
       </SidebarFooter>

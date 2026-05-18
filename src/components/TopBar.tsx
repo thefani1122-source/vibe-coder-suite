@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,12 +10,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard } from "lucide-react";
+import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export function TopBar() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const showBack = pathname !== "/" && pathname !== "/dashboard";
 
   const handleLogout = () => {
     signOut();
@@ -24,7 +26,17 @@ export function TopBar() {
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-border bg-background/60 px-3 backdrop-blur-xl">
-      <SidebarTrigger />
+      <div className="flex items-center gap-1">
+        <SidebarTrigger />
+        {showBack && (
+          <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Link to="/dashboard">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Link>
+          </Button>
+        )}
+      </div>
 
       <div className="flex items-center gap-2">
         <Button

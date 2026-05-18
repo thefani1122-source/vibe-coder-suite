@@ -72,67 +72,11 @@ export function PromptComposer() {
       </div>
 
       <div className="group relative w-full rounded-2xl border border-border bg-card/60 shadow-2xl shadow-black/40 backdrop-blur-xl transition focus-within:border-primary/60 focus-within:shadow-[var(--shadow-glow)]">
-        <div className="flex items-center gap-1 px-3 pt-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Attach file</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => screenshotRef.current?.click()}
-                className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-              >
-                <ImageIcon className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Screenshot</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setUrlOpen((v) => !v)}
-                className={cn(
-                  "grid h-8 w-8 place-content-center rounded-md transition hover:bg-card",
-                  urlOpen ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Link2 className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>URL</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => toast("Figma import coming soon")}
-                className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-              >
-                <Figma className="h-4 w-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Figma</TooltipContent>
-          </Tooltip>
-          <input ref={fileRef} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
-          <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
-        </div>
-
         <Textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Build me a..."
-          className="min-h-[110px] resize-none border-0 bg-transparent px-5 pt-3 pb-2 text-base shadow-none focus-visible:ring-0"
+          className="min-h-[120px] resize-none border-0 bg-transparent px-5 pt-5 pb-2 text-base shadow-none focus-visible:ring-0"
         />
 
         {urlOpen && (
@@ -151,7 +95,63 @@ export function PromptComposer() {
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 px-3 pb-3">
+        <div className="flex items-center justify-between gap-2 px-3 pb-3">
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Attach file</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => screenshotRef.current?.click()}
+                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Screenshot</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setUrlOpen((v) => !v)}
+                  className={cn(
+                    "grid h-8 w-8 place-content-center rounded-md transition hover:bg-card",
+                    urlOpen ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Link2 className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>URL</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => toast("Figma import coming soon")}
+                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
+                >
+                  <Figma className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Figma</TooltipContent>
+            </Tooltip>
+            <input ref={fileRef} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+            <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+          </div>
+          <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card transition">
@@ -198,6 +198,7 @@ export function PromptComposer() {
           >
             <ArrowUp className="h-4 w-4" />
           </Button>
+          </div>
         </div>
       </div>
 

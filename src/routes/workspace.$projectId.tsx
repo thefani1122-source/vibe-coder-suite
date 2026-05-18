@@ -1,6 +1,7 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
+import { connectSocket, disconnectSocket } from "@/lib/websocket";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
@@ -148,6 +149,17 @@ function WorkspacePageInner() {
   });
   const [prompt, setPrompt] = useState("");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const socket = connectSocket();
+    const onConnect = () => socket.emit("workspace:join", { projectId });
+    socket.on("connect", onConnect);
+    if (socket.connected) onConnect();
+    return () => {
+      socket.off("connect", onConnect);
+      disconnectSocket();
+    };
+  }, [projectId]);
 
   useEffect(() => {
     if (!building) return;

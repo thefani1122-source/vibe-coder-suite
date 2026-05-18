@@ -1,9 +1,23 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
+import { useAuth } from "@/lib/auth";
 
 export function Shell({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!user) {
+      const stored = localStorage.getItem("lampcode_user");
+      if (!stored) navigate({ to: "/login", replace: true });
+    }
+  }, [user, pathname, navigate]);
+
   return (
     <SidebarProvider>
       <div className="relative flex min-h-screen w-full bg-background text-foreground">

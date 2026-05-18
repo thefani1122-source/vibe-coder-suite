@@ -35,10 +35,15 @@ function LoginPage() {
   const [liLoading, setLiLoading] = useState(false);
   const [suLoading, setSuLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { signIn } = useAuth();
+  const { user, signIn } = useAuth();
   const navigate = useNavigate();
 
   const theme = THEMES[cIdx];
+
+  // If already signed in, bounce to dashboard
+  useEffect(() => {
+    if (user) navigate({ to: "/dashboard", replace: true });
+  }, [user, navigate]);
 
   // Apply CSS vars to scoped root
   useEffect(() => {
@@ -84,10 +89,11 @@ function LoginPage() {
     setLiLoading(true);
     setTimeout(() => {
       setLiLoading(false);
-      const initials = (liEm[0] || "U").toUpperCase();
-      signIn({ name: liEm.split("@")[0], email: liEm, initials });
-      toast("Welcome back to Lampcode ✓");
-      navigate({ to: "/dashboard" });
+      const name = liEm.split("@")[0] || "Vibe Coder";
+      const initials = name.slice(0, 2).toUpperCase();
+      signIn({ name, email: liEm, initials });
+      toast(`Welcome back, ${name}!`);
+      navigate({ to: "/dashboard", replace: true });
     }, 1200);
   };
 
@@ -97,8 +103,9 @@ function LoginPage() {
     setSuLoading(true);
     setTimeout(() => {
       setSuLoading(false);
-      toast(`Welcome to Lampcode, ${suFn}! ✓`);
-      setTimeout(() => setTab("login"), 700);
+      toast("Account created! Please sign in.");
+      setTab("login");
+      setLiEm(suEm);
     }, 1400);
   };
 

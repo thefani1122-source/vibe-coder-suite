@@ -40,11 +40,14 @@ export function TopBar() {
 
       <div className="flex items-center gap-2">
         <Button
+          asChild
           size="sm"
           className="gap-1.5 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground font-semibold hover:opacity-90"
         >
-          <Zap className="h-3.5 w-3.5" />
-          Upgrade
+          <Link to="/pricing">
+            <Zap className="h-3.5 w-3.5" />
+            Upgrade
+          </Link>
         </Button>
         <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
           <LifeBuoy className="h-4 w-4" />

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
@@ -112,6 +112,16 @@ function LoginPage() {
   return (
     <div ref={rootRef} className={`lc-root ${on ? "is-on" : ""}`}>
       <style>{CSS}</style>
+
+      <Link
+        to="/dashboard"
+        className="fixed left-4 top-4 z-50 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur transition hover:border-white/25 hover:bg-black/60 hover:text-white"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+        </svg>
+        Back to Dashboard
+      </Link>
 
       <div className="ambient">
         <div

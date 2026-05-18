@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Paperclip, ArrowUp, Image, Globe, Github, Sparkles } from "lucide-react";
@@ -12,6 +13,8 @@ const ideas = [
 
 export function PromptComposer() {
   const [value, setValue] = useState("");
+  const { user } = useAuth();
+  const firstName = user?.name?.split(" ")[0] ?? "vibe coder";
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8">
@@ -21,7 +24,7 @@ export function PromptComposer() {
           Powered by Lampcode AI
         </div>
         <h1 className="bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-          What should we build today?
+          What should we build today, {firstName}?
         </h1>
         <p className="mt-3 text-sm text-muted-foreground">
           Describe an app, paste a screenshot, or drop a file — we&apos;ll vibe it into existence.

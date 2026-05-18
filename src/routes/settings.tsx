@@ -15,9 +15,50 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { useState } from "react";
-import { Eye, Sparkles, BookOpen, Compass, Layout, Server, Database, Shield } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useMemo, useState } from "react";
+import {
+  Eye,
+  Sparkles,
+  BookOpen,
+  Compass,
+  Layout,
+  Server,
+  Database,
+  Shield,
+  Plus,
+  Upload,
+  Copy,
+  Bell,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
@@ -40,10 +81,13 @@ function SettingsPage() {
         </div>
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="bg-card/60 backdrop-blur">
+          <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
             <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
             <TabsTrigger value="instructions">Instructions</TabsTrigger>
+            <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-4">
@@ -69,6 +113,18 @@ function SettingsPage() {
 
           <TabsContent value="instructions" className="mt-4">
             <InstructionsPanel />
+          </TabsContent>
+
+          <TabsContent value="general" className="mt-4">
+            <GeneralPanel />
+          </TabsContent>
+
+          <TabsContent value="notifications" className="mt-4">
+            <NotificationsPanel />
+          </TabsContent>
+
+          <TabsContent value="security" className="mt-4">
+            <SecurityPanel />
           </TabsContent>
         </Tabs>
       </div>

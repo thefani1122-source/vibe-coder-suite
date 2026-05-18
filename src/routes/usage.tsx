@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
+import { RequireAuth } from "@/components/RequireAuth";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ChevronRight } from "lucide-react";
@@ -24,6 +25,7 @@ function UsagePage() {
   const maxBar = Math.max(...monthly.map((x) => x.v));
 
   return (
+    <RequireAuth>
     <Shell>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex items-center gap-2 text-sm">
@@ -97,5 +99,6 @@ function UsagePage() {
         </Card>
       </div>
     </Shell>
+    </RequireAuth>
   );
 }

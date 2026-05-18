@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
+import { RequireAuth } from "@/components/RequireAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ const invoices = [
 
 function BillingPage() {
   return (
+    <RequireAuth>
     <Shell>
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
@@ -52,5 +54,6 @@ function BillingPage() {
         </Card>
       </div>
     </Shell>
+    </RequireAuth>
   );
 }

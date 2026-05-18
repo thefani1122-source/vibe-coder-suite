@@ -21,7 +21,7 @@ export function TopBar() {
 
   const handleLogout = () => {
     signOut();
-    navigate({ to: "/login", replace: true });
+    navigate({ to: "/", replace: true });
   };
 
   return (

@@ -7,18 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
-import {
   Table,
   TableBody,
   TableCell,
@@ -26,15 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { Bell, Copy, Github, Plug, Sparkles, Sun, Moon, Monitor, Eye, EyeOff, Lock } from "lucide-react";
+import { Bell, Copy, Github, Plug, Eye, EyeOff, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as OTPAuth from "otpauth";
@@ -54,18 +35,14 @@ function SettingsPage() {
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
             <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="labs">Labs</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
-          <TabsContent value="appearance" className="mt-4"><AppearancePanel /></TabsContent>
           <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>
           <TabsContent value="integrations" className="mt-4"><IntegrationsPanel /></TabsContent>
-          <TabsContent value="labs" className="mt-4"><LabsPanel /></TabsContent>
           <TabsContent value="security" className="mt-4"><SecurityPanel /></TabsContent>
         </Tabs>
       </div>
@@ -146,63 +123,6 @@ function PasswordPanel() {
   );
 }
 
-function AppearancePanel() {
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
-  const [accent, setAccent] = useState("#6c63ff");
-  return (
-    <Card className="border-border/60 bg-card/60 backdrop-blur">
-      <CardHeader><CardTitle>Appearance</CardTitle></CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label>Theme</Label>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              { id: "light", label: "Light", icon: Sun },
-              { id: "dark", label: "Dark", icon: Moon },
-              { id: "system", label: "System", icon: Monitor },
-            ] as const).map((t) => {
-              const Icon = t.icon;
-              const active = theme === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id)}
-                  className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition",
-                    active ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-card/60",
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="accent">Accent color</Label>
-            <div className="flex items-center gap-2">
-              <input id="accent" type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent" />
-              <Input value={accent} onChange={(e) => setAccent(e.target.value)} className="font-mono" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Code font</Label>
-            <Select defaultValue="geist-mono">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="geist-mono">Geist Mono</SelectItem>
-                <SelectItem value="jetbrains">JetBrains Mono</SelectItem>
-                <SelectItem value="fira">Fira Code</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 const notificationOptions = [
   { id: "email", label: "Email notifications", desc: "Project updates and weekly digest", on: true },
   { id: "browser", label: "Browser notifications", desc: "Real-time build status alerts", on: false },
@@ -271,40 +191,6 @@ function IntegrationsPanel() {
   );
 }
 
-const labsFeatures = [
-  { id: "agent-mode", label: "Agent mode", desc: "Multi-step autonomous planning before code edits", on: true },
-  { id: "voice", label: "Voice prompts", desc: "Talk to the AI instead of typing", on: false },
-  { id: "preview-ai", label: "AI design review", desc: "Auto-critique screenshots after each build", on: false },
-];
-
-function LabsPanel() {
-  const [state, setState] = useState<Record<string, boolean>>(
-    Object.fromEntries(labsFeatures.map((o) => [o.id, o.on])),
-  );
-  return (
-    <Card className="border-border/60 bg-card/60 backdrop-blur">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <CardTitle>Labs</CardTitle>
-        </div>
-        <p className="text-xs text-muted-foreground">Experimental features. May change or break.</p>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {labsFeatures.map((o) => (
-          <div key={o.id} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition">
-            <div>
-              <div className="text-sm font-medium">{o.label}</div>
-              <div className="text-xs text-muted-foreground">{o.desc}</div>
-            </div>
-            <Switch checked={state[o.id]} onCheckedChange={(v) => setState((s) => ({ ...s, [o.id]: v }))} />
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 // ---------------- Security ----------------
 
 type Severity = "Info" | "Warning" | "Error";
@@ -327,22 +213,7 @@ const sevColor: Record<Severity, string> = {
 
 function SecurityPanel() {
   const [filter, setFilter] = useState<"All" | Category>("All");
-  const [keys, setKeys] = useState([
-    { id: "1", name: "Production", prefix: "lc_live_a1b2", created: "Mar 12, 2026", lastUsed: "2 hours ago" },
-    { id: "2", name: "CI Pipeline", prefix: "lc_ci_x9y8", created: "Feb 28, 2026", lastUsed: "Yesterday" },
-    { id: "3", name: "Local Dev", prefix: "lc_dev_q4w5", created: "Jan 14, 2026", lastUsed: "5 days ago" },
-  ]);
-
   const filtered = auditLog.filter((r) => filter === "All" || r.category === filter);
-
-  const regenerate = (id: string) => {
-    setKeys((ks) => ks.map((k) => (k.id === id ? { ...k, prefix: "lc_new_" + Math.random().toString(36).slice(2, 6), lastUsed: "just now" } : k)));
-    toast.success("API key regenerated");
-  };
-  const revoke = (id: string) => {
-    setKeys((ks) => ks.filter((k) => k.id !== id));
-    toast.success("API key revoked");
-  };
 
   return (
     <div className="space-y-6">
@@ -385,52 +256,6 @@ function SecurityPanel() {
                 ))}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/60 bg-card/60 backdrop-blur">
-        <CardHeader>
-          <CardTitle>API Keys</CardTitle>
-          <p className="text-xs text-muted-foreground">Authenticate against the Lampcode API.</p>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border border-border/60 divide-y divide-border/60">
-            {keys.map((k) => (
-              <div key={k.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-medium">{k.name}</div>
-                    <Badge variant="secondary" className="font-mono text-[10px]">{k.prefix}****</Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">Created {k.created} · Last used {k.lastUsed}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" className="gap-1" onClick={() => { navigator.clipboard?.writeText(k.prefix); toast("Prefix copied"); }}>
-                    <Copy className="h-3.5 w-3.5" /> Copy
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => regenerate(k.id)}>Regenerate</Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-500 hover:bg-red-500/10">Revoke</Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This will immediately disable <span className="font-mono">{k.prefix}****</span>. Any service using it will stop working.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => revoke(k.id)} className="bg-red-600 hover:bg-red-600/90 text-white">Revoke</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-            ))}
-            {keys.length === 0 ? <div className="p-6 text-center text-sm text-muted-foreground">No API keys yet.</div> : null}
           </div>
         </CardContent>
       </Card>

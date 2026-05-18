@@ -198,6 +198,7 @@ export function PromptComposer() {
           >
             <ArrowUp className="h-4 w-4" />
           </Button>
+          </div>
         </div>
       </div>
 

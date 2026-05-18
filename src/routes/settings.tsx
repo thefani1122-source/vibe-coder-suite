@@ -26,15 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useEffect, useState } from "react";
-import { Bell, Copy, Github, Plug, Sparkles, Sun, Moon, Monitor, Eye, EyeOff, Lock } from "lucide-react";
+import { Bell, Copy, Github, Plug, Eye, EyeOff, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as OTPAuth from "otpauth";
@@ -54,18 +47,14 @@ function SettingsPage() {
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
             <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
-            <TabsTrigger value="labs">Labs</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
-          <TabsContent value="appearance" className="mt-4"><AppearancePanel /></TabsContent>
           <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>
           <TabsContent value="integrations" className="mt-4"><IntegrationsPanel /></TabsContent>
-          <TabsContent value="labs" className="mt-4"><LabsPanel /></TabsContent>
           <TabsContent value="security" className="mt-4"><SecurityPanel /></TabsContent>
         </Tabs>
       </div>

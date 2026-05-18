@@ -1,3 +1,4 @@
+import { Link, useNavigate } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,30 +12,14 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useState } from "react";
 
 export function TopBar() {
-  const { user, signIn, signOut } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSignIn = () => {
-    const n = name.trim() || "Vibe Coder";
-    const e = email.trim() || "vibe@lampcode.dev";
-    const initials = n.split(" ").map((s) => s[0]).slice(0, 2).join("").toUpperCase() || "VC";
-    signIn({ name: n, email: e, initials });
-    setOpen(false);
+  const handleLogout = () => {
+    signOut();
+    navigate({ to: "/login", replace: true });
   };
 
   return (
@@ -55,39 +40,9 @@ export function TopBar() {
         </Button>
 
         {!user ? (
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              className="ml-1"
-              onClick={() => setOpen(true)}
-            >
-              Sign in
-            </Button>
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Sign in to Lampcode</DialogTitle>
-                  <DialogDescription>Welcome back, vibe coder.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="signin-name">Name</Label>
-                    <Input id="signin-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Vibe Coder" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signin-email">Email</Label>
-                    <Input id="signin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@lampcode.dev" />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button onClick={handleSignIn} className="w-full bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground">
-                    Sign in
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </>
+          <Button size="sm" variant="outline" className="ml-1" asChild>
+            <Link to="/login">Sign in</Link>
+          </Button>
         ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -107,11 +62,17 @@ export function TopBar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem><User className="mr-2 h-4 w-4" /> Profile</DropdownMenuItem>
-            <DropdownMenuItem><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>
-            <DropdownMenuItem><CreditCard className="mr-2 h-4 w-4" /> Billing</DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/dashboard"><User className="mr-2 h-4 w-4" /> Profile</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/settings"><Settings className="mr-2 h-4 w-4" /> Settings</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/billing"><CreditCard className="mr-2 h-4 w-4" /> Billing</Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={signOut} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" /> Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

@@ -14,13 +14,13 @@ import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard, ArrowLeft } from "lu
 import { useAuth } from "@/lib/auth";
 
 export function TopBar() {
-  const { user, signOut } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const showBack = pathname !== "/" && pathname !== "/dashboard";
 
-  const handleLogout = () => {
-    signOut();
+  const handleLogout = async () => {
+    await logout();
     navigate({ to: "/", replace: true });
   };
 

@@ -14,21 +14,7 @@ export function LegalPage({ children }: { children: ReactNode }) {
           </Link>
         </Button>
         <Card className="border-border/60 bg-card/40 p-8 md:p-10">
-          <article
-            className="prose prose-invert max-w-none
-              prose-headings:text-foreground prose-headings:font-semibold prose-headings:tracking-tight
-              prose-h1:text-4xl prose-h1:mb-2 prose-h1:mt-0
-              prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-3 prose-h2:border-b prose-h2:border-border/40 prose-h2:pb-2
-              prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-2
-              prose-p:text-[#c8c6c0] prose-p:leading-relaxed
-              prose-li:text-[#c8c6c0] prose-li:marker:text-primary
-              prose-strong:text-foreground
-              prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-              prose-table:text-sm prose-th:text-foreground prose-td:text-[#c8c6c0]
-              prose-code:text-primary prose-code:bg-muted prose-code:px-1 prose-code:rounded prose-code:before:hidden prose-code:after:hidden"
-          >
-            {children}
-          </article>
+          <article className="legal-prose">{children}</article>
         </Card>
         <p className="mt-6 text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} Lampcode. All rights reserved.

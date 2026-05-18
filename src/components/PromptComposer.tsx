@@ -1,8 +1,29 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Paperclip, ArrowUp, Image, Globe, Github, Sparkles } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  ArrowUp,
+  Plus,
+  Sparkles,
+  Image as ImageIcon,
+  Link2,
+  ChevronDown,
+  Zap,
+  ClipboardList,
+  Code2,
+  X,
+  Figma,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const ideas = [
   "A neon dashboard for a crypto wallet",
@@ -11,10 +32,25 @@ const ideas = [
   "Habit tracker with streak fireworks",
 ];
 
+type Mode = "fast" | "plan" | "editor";
+const MODES: { id: Mode; label: string; icon: typeof Zap; soon?: boolean; desc: string }[] = [
+  { id: "fast", label: "Fast Mode", icon: Zap, desc: "Ship a working app instantly" },
+  { id: "plan", label: "Planning Mode", icon: ClipboardList, soon: true, desc: "Plan before building" },
+  { id: "editor", label: "Editor Mode", icon: Code2, soon: true, desc: "Tweak code directly" },
+];
+
 export function PromptComposer() {
   const [value, setValue] = useState("");
+  const [mode, setMode] = useState<Mode>("fast");
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const screenshotRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
   const firstName = user?.name?.split(" ")[0] ?? "vibe coder";
+
+  const current = MODES.find((m) => m.id === mode)!;
+  const CurrentIcon = current.icon;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-8">
@@ -38,28 +74,114 @@ export function PromptComposer() {
           placeholder="Build me a..."
           className="min-h-[120px] resize-none border-0 bg-transparent px-5 pt-5 pb-2 text-base shadow-none focus-visible:ring-0"
         />
+
+        {mode === "fast" && (
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-2">
+            <button
+              type="button"
+              onClick={() => screenshotRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+            >
+              <ImageIcon className="h-3.5 w-3.5" /> Screenshot
+            </button>
+            <button
+              type="button"
+              onClick={() => setUrlOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition",
+                urlOpen
+                  ? "border-primary/60 bg-primary/10 text-primary"
+                  : "border-border/70 bg-background/60 text-muted-foreground hover:border-primary/50 hover:text-foreground",
+              )}
+            >
+              <Link2 className="h-3.5 w-3.5" /> URL
+            </button>
+            <button
+              type="button"
+              onClick={() => toast("Figma import coming soon")}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+            >
+              <Figma className="h-3.5 w-3.5" /> Figma
+            </button>
+            <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+          </div>
+        )}
+
+        {mode === "fast" && urlOpen && (
+          <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com"
+              className="h-7 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+            />
+            <Button size="sm" className="h-7 rounded-md px-3 text-xs" onClick={() => { if (url) { toast.success("URL added"); setUrl(""); setUrlOpen(false); } }}>Add</Button>
+            <button type="button" onClick={() => { setUrlOpen(false); setUrl(""); }} className="text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-2 px-3 pb-3">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
-              <Paperclip className="h-4 w-4" /> Upload
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileRef.current?.click()}
+              className="h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-              <Image className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-              <Github className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-              <Globe className="h-4 w-4" />
+            <input ref={fileRef} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+          </div>
+          <div className="flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] p-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-white/10 transition">
+                  <CurrentIcon className="h-3.5 w-3.5" />
+                  {current.label}
+                  <ChevronDown className="h-3 w-3 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                {MODES.map((m) => {
+                  const Icon = m.icon;
+                  return (
+                    <DropdownMenuItem
+                      key={m.id}
+                      disabled={m.soon}
+                      onClick={() => !m.soon && setMode(m.id)}
+                      className="flex items-start gap-2 py-2"
+                    >
+                      <Icon className="mt-0.5 h-4 w-4 text-primary" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          {m.label}
+                          {m.soon && (
+                            <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-primary">
+                              Soon
+                            </span>
+                          )}
+                          {mode === m.id && !m.soon && (
+                            <span className="ml-auto text-[10px] text-primary">●</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{m.desc}</div>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="icon"
+              disabled={!value.trim()}
+              className="h-8 w-8 rounded-lg bg-background/20 text-primary-foreground hover:bg-background/30 disabled:opacity-40"
+            >
+              <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
-          <Button
-            size="icon"
-            disabled={!value.trim()}
-            className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90 disabled:opacity-40"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 

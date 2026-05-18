@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
+import { RequireAuth } from "@/components/RequireAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
 function SettingsPage() {
   return (
+    <RequireAuth>
     <Shell>
       <div className="mx-auto max-w-5xl space-y-6">
         <div>
@@ -47,6 +49,7 @@ function SettingsPage() {
         </Tabs>
       </div>
     </Shell>
+    </RequireAuth>
   );
 }
 

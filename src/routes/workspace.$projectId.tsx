@@ -1,5 +1,6 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { RequireAuth } from "@/components/RequireAuth";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
@@ -46,6 +47,14 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/workspace/$projectId")({
   component: WorkspacePage,
 });
+
+function WorkspacePage() {
+  return (
+    <RequireAuth>
+      <WorkspacePageInner />
+    </RequireAuth>
+  );
+}
 
 type StepStatus = "pending" | "running" | "done";
 type Step = {
@@ -124,7 +133,7 @@ const FILE_TREE = [
   },
 ];
 
-function WorkspacePage() {
+function WorkspacePageInner() {
   const { projectId } = useParams({ from: "/workspace/$projectId" });
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
   const [building, setBuilding] = useState(true);

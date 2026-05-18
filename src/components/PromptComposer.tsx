@@ -50,7 +50,7 @@ export function PromptComposer() {
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
-  const firstName = user?.name?.split(" ")[0] ?? "vibe coder";
+  void user;
 
   const current = MODES.find((m) => m.id === mode)!;
   const CurrentIcon = current.icon;
@@ -64,7 +64,7 @@ export function PromptComposer() {
           Powered by Lampcode AI
         </div>
         <h1 className="bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-          What should we build today, {firstName}?
+          What should we build today
         </h1>
         <p className="mt-3 text-sm text-muted-foreground">
           Describe an app, paste a screenshot, or drop a file — we&apos;ll vibe it into existence.

@@ -48,6 +48,14 @@ export const Route = createFileRoute("/workspace/$projectId")({
   component: WorkspacePage,
 });
 
+function WorkspacePage() {
+  return (
+    <RequireAuth>
+      <WorkspacePageInner />
+    </RequireAuth>
+  );
+}
+
 type StepStatus = "pending" | "running" | "done";
 type Step = {
   key: string;

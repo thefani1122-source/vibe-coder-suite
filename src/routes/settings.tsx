@@ -135,63 +135,6 @@ function PasswordPanel() {
   );
 }
 
-function AppearancePanel() {
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
-  const [accent, setAccent] = useState("#6c63ff");
-  return (
-    <Card className="border-border/60 bg-card/60 backdrop-blur">
-      <CardHeader><CardTitle>Appearance</CardTitle></CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label>Theme</Label>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              { id: "light", label: "Light", icon: Sun },
-              { id: "dark", label: "Dark", icon: Moon },
-              { id: "system", label: "System", icon: Monitor },
-            ] as const).map((t) => {
-              const Icon = t.icon;
-              const active = theme === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id)}
-                  className={cn(
-                    "flex items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm transition",
-                    active ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-card/60",
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="accent">Accent color</Label>
-            <div className="flex items-center gap-2">
-              <input id="accent" type="color" value={accent} onChange={(e) => setAccent(e.target.value)} className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent" />
-              <Input value={accent} onChange={(e) => setAccent(e.target.value)} className="font-mono" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Code font</Label>
-            <Select defaultValue="geist-mono">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="geist-mono">Geist Mono</SelectItem>
-                <SelectItem value="jetbrains">JetBrains Mono</SelectItem>
-                <SelectItem value="fira">Fira Code</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 const notificationOptions = [
   { id: "email", label: "Email notifications", desc: "Project updates and weekly digest", on: true },
   { id: "browser", label: "Browser notifications", desc: "Real-time build status alerts", on: false },
@@ -255,40 +198,6 @@ function IntegrationsPanel() {
             </div>
           );
         })}
-      </CardContent>
-    </Card>
-  );
-}
-
-const labsFeatures = [
-  { id: "agent-mode", label: "Agent mode", desc: "Multi-step autonomous planning before code edits", on: true },
-  { id: "voice", label: "Voice prompts", desc: "Talk to the AI instead of typing", on: false },
-  { id: "preview-ai", label: "AI design review", desc: "Auto-critique screenshots after each build", on: false },
-];
-
-function LabsPanel() {
-  const [state, setState] = useState<Record<string, boolean>>(
-    Object.fromEntries(labsFeatures.map((o) => [o.id, o.on])),
-  );
-  return (
-    <Card className="border-border/60 bg-card/60 backdrop-blur">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <CardTitle>Labs</CardTitle>
-        </div>
-        <p className="text-xs text-muted-foreground">Experimental features. May change or break.</p>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {labsFeatures.map((o) => (
-          <div key={o.id} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition">
-            <div>
-              <div className="text-sm font-medium">{o.label}</div>
-              <div className="text-xs text-muted-foreground">{o.desc}</div>
-            </div>
-            <Switch checked={state[o.id]} onCheckedChange={(v) => setState((s) => ({ ...s, [o.id]: v }))} />
-          </div>
-        ))}
       </CardContent>
     </Card>
   );

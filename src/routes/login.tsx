@@ -84,29 +84,34 @@ function LoginPage() {
   })();
   const strCls = strength <= 1 ? "w" : strength <= 2 ? "m" : "g";
 
-  const doLogin = () => {
+  const doLogin = async () => {
     if (!liEm || !liPw) return toast("Please fill in all fields.");
     setLiLoading(true);
-    setTimeout(() => {
-      setLiLoading(false);
-      const name = liEm.split("@")[0] || "Vibe Coder";
-      const initials = name.slice(0, 2).toUpperCase();
-      signIn({ name, email: liEm, initials });
-      toast(`Welcome back, ${name}!`);
+    try {
+      await login(liEm, liPw);
+      toast("Welcome back!");
       navigate({ to: "/dashboard", replace: true });
-    }, 1200);
+    } catch (err: any) {
+      toast.error(err?.message || "Login failed");
+    } finally {
+      setLiLoading(false);
+    }
   };
 
-  const doSignup = () => {
+  const doSignup = async () => {
     if (!suFn || !suEm || !suPw) return toast("Please complete all fields.");
     if (suPw.length < 8) return toast("Password needs 8+ characters.");
     setSuLoading(true);
-    setTimeout(() => {
+    try {
+      await register({ email: suEm, password: suPw, name: `${suFn} ${suLn}`.trim() });
+      toast("Account created! Signing you in…");
+      await login(suEm, suPw);
+      navigate({ to: "/dashboard", replace: true });
+    } catch (err: any) {
+      toast.error(err?.message || "Sign up failed");
+    } finally {
       setSuLoading(false);
-      toast("Account created! Please sign in.");
-      setTab("login");
-      setLiEm(suEm);
-    }, 1400);
+    }
   };
 
   return (

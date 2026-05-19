@@ -114,6 +114,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  useEffect(() => {
+    // Restore Better Auth session on app load
+    useAuthStore.getState().fetchUser().catch(() => {
+      /* ignore silent failures */
+    });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

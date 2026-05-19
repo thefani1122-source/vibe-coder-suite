@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { useNavigate } from "@tanstack/react-router";
+import { PlanInterview } from "@/components/PlanInterview";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -47,10 +49,26 @@ export function PromptComposer() {
   const [mode, setMode] = useState<Mode>("fast");
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
+  const [planOpen, setPlanOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   void user;
+
+  const submit = () => {
+    if (!value.trim()) return;
+    if (!isAuthenticated) {
+      navigate({ to: "/login" });
+      return;
+    }
+    if (mode === "plan") {
+      setPlanOpen(true);
+      return;
+    }
+    const id = `proj-${Math.random().toString(36).slice(2, 8)}`;
+    navigate({ to: "/workspace/$projectId", params: { projectId: id } });
+  };
 
   const current = MODES.find((m) => m.id === mode)!;
   const CurrentIcon = current.icon;
@@ -194,6 +212,7 @@ export function PromptComposer() {
           <Button
             size="icon"
             disabled={!value.trim()}
+            onClick={submit}
             className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90 disabled:opacity-40"
           >
             <ArrowUp className="h-4 w-4" />
@@ -213,6 +232,16 @@ export function PromptComposer() {
           </button>
         ))}
       </div>
+      <PlanInterview
+        open={planOpen}
+        initialPrompt={value}
+        onClose={() => setPlanOpen(false)}
+        onComplete={() => {
+          setPlanOpen(false);
+          const id = `proj-${Math.random().toString(36).slice(2, 8)}`;
+          navigate({ to: "/workspace/$projectId", params: { projectId: id } });
+        }}
+      />
     </div>
     </TooltipProvider>
   );

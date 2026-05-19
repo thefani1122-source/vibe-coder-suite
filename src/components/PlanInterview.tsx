@@ -371,13 +371,32 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
               Answer 7 questions so AI can build exactly what you need
             </p>
           </div>
-          <button
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                liveConnected
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                  : "border-border bg-muted text-muted-foreground",
+              )}
+              title={liveConnected ? "Streaming live updates" : "Offline — using local flow"}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  liveConnected ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground",
+                )}
+              />
+              {liveConnected ? "Live" : "Offline"}
+            </span>
+            <button
             onClick={onClose}
             className="rounded-md p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* Progress */}

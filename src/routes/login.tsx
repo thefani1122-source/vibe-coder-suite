@@ -35,7 +35,7 @@ function LoginPage() {
   const [liLoading, setLiLoading] = useState(false);
   const [suLoading, setSuLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { user, signIn } = useAuth();
+  const { user, login, register } = useAuth();
   const navigate = useNavigate();
 
   const theme = THEMES[cIdx];

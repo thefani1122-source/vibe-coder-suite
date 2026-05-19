@@ -8,7 +8,6 @@ let socket: Socket | null = null;
 /** Returns the singleton socket, creating + connecting it on first call. */
 export function getSocket(): Socket {
   if (socket) return socket;
-  const token = useAuthStore.getState().token;
   socket = io(WS_URL, {
     autoConnect: false,
     transports: ["websocket"],
@@ -16,7 +15,7 @@ export function getSocket(): Socket {
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    auth: token ? { token } : undefined,
+    withCredentials: true,
   });
 
   socket.on("connect_error", (err) => {
@@ -29,8 +28,6 @@ export function getSocket(): Socket {
 /** Idempotent connect with the current auth token attached. */
 export function connectSocket(): Socket {
   const s = getSocket();
-  const token = useAuthStore.getState().token;
-  if (token) s.auth = { token };
   if (!s.connected) s.connect();
   return s;
 }

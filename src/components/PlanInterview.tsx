@@ -565,7 +565,7 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
                     Agents are ready. Build will start automatically.
                   </p>
                   <div className="mt-5 space-y-5">
-                    {TASKS.map((p) => (
+                    {tasks.map((p) => (
                       <div key={p.phase}>
                         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {p.phase}

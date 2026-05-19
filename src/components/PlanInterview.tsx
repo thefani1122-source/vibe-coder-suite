@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings2,
@@ -27,6 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { connectSocket } from "@/lib/websocket";
+import type { Socket } from "socket.io-client";
 
 type Option = {
   id: string;
@@ -175,6 +177,11 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
   const [phase, setPhase] = useState<Phase>("interview");
   const [changes, setChanges] = useState("");
   const [requestingChanges, setRequestingChanges] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [serverContract, setServerContract] = useState<string | null>(null);
+  const [serverTasks, setServerTasks] = useState<typeof TASKS | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const total = QUESTIONS.length;
   const q = QUESTIONS[step];
@@ -190,7 +197,57 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
     setPhase("interview");
     setChanges("");
     setRequestingChanges(false);
+    setServerContract(null);
+    setServerTasks(null);
+    const id = `sess-${Math.random().toString(36).slice(2, 10)}`;
+    setSessionId(id);
   }, [open]);
+
+  // Wire WebSocket: connect on open, listen for server-driven interview events.
+  useEffect(() => {
+    if (!open || !sessionId) return;
+    const socket = connectSocket();
+    socketRef.current = socket;
+
+    const onConnect = () => {
+      setLiveConnected(true);
+      socket.emit("interview:start", { sessionId, prompt: initialPrompt });
+    };
+    const onDisconnect = () => setLiveConnected(false);
+
+    const onQuestion = (payload: { sessionId?: string; index?: number; progress?: number }) => {
+      if (payload?.sessionId && payload.sessionId !== sessionId) return;
+      if (typeof payload?.index === "number") {
+        setStep(Math.max(0, Math.min(QUESTIONS.length - 1, payload.index)));
+      }
+      setPhase("interview");
+    };
+    const onContract = (payload: { sessionId?: string; contract?: string }) => {
+      if (payload?.sessionId && payload.sessionId !== sessionId) return;
+      if (payload?.contract) setServerContract(payload.contract);
+      setPhase("contract");
+    };
+    const onApproved = (payload: { sessionId?: string; tasks?: typeof TASKS }) => {
+      if (payload?.sessionId && payload.sessionId !== sessionId) return;
+      if (payload?.tasks) setServerTasks(payload.tasks);
+      setPhase("tasks");
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("interview:question", onQuestion);
+    socket.on("interview:contract", onContract);
+    socket.on("interview:approved", onApproved);
+    if (socket.connected) onConnect();
+
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("interview:question", onQuestion);
+      socket.off("interview:contract", onContract);
+      socket.off("interview:approved", onApproved);
+    };
+  }, [open, sessionId, initialPrompt]);
 
   // Restore the previously selected option when navigating back/forward.
   useEffect(() => {
@@ -230,22 +287,41 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
 
   const next = () => {
     if (!selected) return;
-    saveCurrent(selected, customText.trim() || undefined);
+    const updated = saveCurrent(selected, customText.trim() || undefined);
+    socketRef.current?.emit("interview:answer", {
+      sessionId,
+      questionId: q.id,
+      optionId: selected,
+      custom: customText.trim() || undefined,
+      index: step,
+      answers: updated,
+    });
     if (step < total - 1) {
       setStep(step + 1);
     } else {
       setPhase("loading-contract");
-      setTimeout(() => setPhase("contract"), 1400);
+      // Fallback if server doesn't push interview:contract within 4s.
+      const t = setTimeout(() => setPhase("contract"), 4000);
+      socketRef.current?.once("interview:contract", () => clearTimeout(t));
     }
   };
 
   const skip = () => {
     const def = q.options[0].id;
-    saveCurrent(def);
+    const updated = saveCurrent(def);
+    socketRef.current?.emit("interview:answer", {
+      sessionId,
+      questionId: q.id,
+      optionId: def,
+      skipped: true,
+      index: step,
+      answers: updated,
+    });
     if (step < total - 1) setStep(step + 1);
     else {
       setPhase("loading-contract");
-      setTimeout(() => setPhase("contract"), 1400);
+      const t = setTimeout(() => setPhase("contract"), 4000);
+      socketRef.current?.once("interview:contract", () => clearTimeout(t));
     }
   };
 
@@ -254,16 +330,22 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
   };
 
   const approve = () => {
+    socketRef.current?.emit("interview:approve", { sessionId, approved: true });
     setPhase("loading-tasks");
-    setTimeout(() => setPhase("tasks"), 1200);
+    const t = setTimeout(() => setPhase("tasks"), 4000);
+    socketRef.current?.once("interview:approved", () => clearTimeout(t));
   };
 
   const startBuild = () => {
     onComplete({ answers, prompt: initialPrompt });
   };
 
-  const contract = useMemo(() => buildContract(answers, initialPrompt), [answers, initialPrompt]);
-  const totalMinutes = TASKS.reduce(
+  const contract = useMemo(
+    () => serverContract ?? buildContract(answers, initialPrompt),
+    [serverContract, answers, initialPrompt],
+  );
+  const tasks = serverTasks ?? TASKS;
+  const totalMinutes = tasks.reduce(
     (sum, p) => sum + p.items.reduce((s, t) => s + parseInt(t.time, 10), 0),
     0,
   );
@@ -289,13 +371,32 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
               Answer 7 questions so AI can build exactly what you need
             </p>
           </div>
-          <button
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                liveConnected
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                  : "border-border bg-muted text-muted-foreground",
+              )}
+              title={liveConnected ? "Streaming live updates" : "Offline — using local flow"}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  liveConnected ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground",
+                )}
+              />
+              {liveConnected ? "Live" : "Offline"}
+            </span>
+            <button
             onClick={onClose}
             className="rounded-md p-1 text-muted-foreground transition hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* Progress */}
@@ -483,7 +584,7 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
                     Agents are ready. Build will start automatically.
                   </p>
                   <div className="mt-5 space-y-5">
-                    {TASKS.map((p) => (
+                    {tasks.map((p) => (
                       <div key={p.phase}>
                         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {p.phase}

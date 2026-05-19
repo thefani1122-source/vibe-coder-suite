@@ -21,14 +21,12 @@ type ApiOptions = RequestInit & {
 };
 
 /**
- * Fetch wrapper that injects the auth bearer token, redirects to /login on 401,
- * and surfaces errors via toast notifications.
+ * Fetch wrapper that sends cookies (credentials: 'include') for Better Auth
+ * sessions, redirects to /login on 401, and surfaces errors via toast notifications.
  */
 export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
   const { silent, baseUrl, headers, ...rest } = options;
-  const token = useAuthStore.getState().token;
   const h = new Headers(headers);
-  if (token) h.set("Authorization", `Bearer ${token}`);
   if (rest.body && !h.has("Content-Type") && !(rest.body instanceof FormData)) {
     h.set("Content-Type", "application/json");
   }
@@ -37,7 +35,7 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 
   let res: Response;
   try {
-    res = await fetch(url, { ...rest, headers: h });
+    res = await fetch(url, { ...rest, headers: h, credentials: "include" });
   } catch (err) {
     if (!silent) toast.error("Network error. Please try again.");
     throw err;

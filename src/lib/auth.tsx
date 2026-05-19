@@ -6,16 +6,20 @@ export type User = { id?: string; name: string; email: string; initials: string;
 
 type AuthState = {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<User>;
-  logout: () => Promise<void>;
+  /** Load current session from server (Better Auth cookie). */
   fetchUser: () => Promise<User | null>;
-  /** Local-only sign-in helper (used by mocked /login flow). */
+  /** Email + password login via Better Auth. */
+  login: (email: string, password: string) => Promise<User>;
+  /** Register new account via Better Auth. */
+  register: (payload: { email: string; password: string; name: string }) => Promise<void>;
+  /** Server-side logout (clears Better Auth cookie). */
+  logout: () => Promise<void>;
+  /** Local-only sign-in helper (used by mocked /login flow or social redirects). */
   signIn: (u?: Partial<User>) => void;
   /** Alias of `logout` (sync, no network). */
   signOut: () => void;
-  setSession: (user: User | null, token: string | null) => void;
+  setSession: (user: User | null) => void;
 };
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -34,11 +38,9 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
       isAuthenticated: false,
 
-      setSession: (user, token) =>
-        set({ user, token, isAuthenticated: !!user }),
+      setSession: (user) => set({ user, isAuthenticated: !!user }),
 
       signIn: (u) => {
         const name = u?.name ?? "Vibe Coder";
@@ -50,54 +52,64 @@ export const useAuthStore = create<AuthState>()(
           avatarUrl: u?.avatarUrl,
           id: u?.id,
         };
-        const token = `lc.${btoa(email)}.${Date.now().toString(36)}`;
-        set({ user: next, token, isAuthenticated: true });
+        set({ user: next, isAuthenticated: true });
       },
 
-      signOut: () => set({ user: null, token: null, isAuthenticated: false }),
+      signOut: () => set({ user: null, isAuthenticated: false }),
 
       login: async (email, password) => {
         const res = await fetch(`${API_URL}/api/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
+          credentials: "include",
         });
         if (!res.ok) {
           const msg = await res.text().catch(() => "Login failed");
           throw new Error(msg || "Login failed");
         }
-        const data = (await res.json()) as { token: string; user: Partial<User> & { name: string; email: string } };
+        const data = (await res.json()) as { user: Partial<User> & { name: string; email: string } };
         const user: User = {
           ...data.user,
           name: data.user.name,
           email: data.user.email,
           initials: data.user.initials ?? deriveInitials(data.user.name),
         };
-        set({ user, token: data.token, isAuthenticated: true });
+        set({ user, isAuthenticated: true });
         return user;
       },
 
+      register: async (payload) => {
+        const res = await fetch(`${API_URL}/api/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "Registration failed");
+          throw new Error(msg || "Registration failed");
+        }
+      },
+
       logout: async () => {
-        const { token } = get();
         try {
           await fetch(`${API_URL}/api/auth/logout`, {
             method: "POST",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            credentials: "include",
           });
         } catch {
           /* ignore network errors on logout */
         }
-        set({ user: null, token: null, isAuthenticated: false });
+        set({ user: null, isAuthenticated: false });
       },
 
       fetchUser: async () => {
-        const { token } = get();
-        if (!token) return null;
         const res = await fetch(`${API_URL}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
         });
         if (res.status === 401) {
-          set({ user: null, token: null, isAuthenticated: false });
+          set({ user: null, isAuthenticated: false });
           return null;
         }
         if (!res.ok) return get().user;
@@ -112,7 +124,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "lampcode_auth",
-      partialize: (s) => ({ user: s.user, token: s.token, isAuthenticated: s.isAuthenticated }),
+      partialize: (s) => ({ user: s.user, isAuthenticated: s.isAuthenticated }),
     },
   ),
 );
@@ -120,14 +132,14 @@ export const useAuthStore = create<AuthState>()(
 /** Drop-in replacement for the previous Context API. */
 export function useAuth() {
   const user = useAuthStore((s) => s.user);
-  const token = useAuthStore((s) => s.token);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
   const fetchUser = useAuthStore((s) => s.fetchUser);
+  const register = useAuthStore((s) => s.register);
   const signIn = useAuthStore((s) => s.signIn);
   const signOut = useAuthStore((s) => s.signOut);
-  return { user, token, isAuthenticated, login, logout, fetchUser, signIn, signOut };
+  return { user, isAuthenticated, login, logout, fetchUser, register, signIn, signOut };
 }
 
 /** Kept as a no-op pass-through for backwards compatibility with __root.tsx. */

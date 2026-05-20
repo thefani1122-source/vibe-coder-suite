@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ReactNode } from "react";
+import { authClient, dashboardCallbackURL } from "@/lib/auth-client";
 
 export type User = { id?: string; name: string; email: string; initials: string; avatarUrl?: string };
 
@@ -21,8 +22,6 @@ type AuthState = {
   signOut: () => void;
   setSession: (user: User | null) => void;
 };
-
-const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 function deriveInitials(name: string) {
   return name
@@ -58,46 +57,38 @@ export const useAuthStore = create<AuthState>()(
       signOut: () => set({ user: null, isAuthenticated: false }),
 
       login: async (email, password) => {
-        const res = await fetch(`${API_URL}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-          credentials: "include",
+        const { data, error } = await authClient.signIn.email({
+          email,
+          password,
+          callbackURL: dashboardCallbackURL,
         });
-        if (!res.ok) {
-          const msg = await res.text().catch(() => "Login failed");
-          throw new Error(msg || "Login failed");
-        }
-        const data = (await res.json()) as { user: Partial<User> & { name: string; email: string } };
+        if (error) throw new Error(error.message || "Login failed");
+        const u = data?.user;
+        const name = u?.name ?? email;
         const user: User = {
-          ...data.user,
-          name: data.user.name,
-          email: data.user.email,
-          initials: data.user.initials ?? deriveInitials(data.user.name),
+          id: u?.id,
+          name,
+          email: u?.email ?? email,
+          initials: deriveInitials(name),
+          avatarUrl: (u as { image?: string } | undefined)?.image,
         };
         set({ user, isAuthenticated: true });
         return user;
       },
 
       register: async (payload) => {
-        const res = await fetch(`${API_URL}/api/auth/register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          credentials: "include",
+        const { error } = await authClient.signUp.email({
+          email: payload.email,
+          password: payload.password,
+          name: payload.name,
+          callbackURL: dashboardCallbackURL,
         });
-        if (!res.ok) {
-          const msg = await res.text().catch(() => "Registration failed");
-          throw new Error(msg || "Registration failed");
-        }
+        if (error) throw new Error(error.message || "Registration failed");
       },
 
       logout: async () => {
         try {
-          await fetch(`${API_URL}/api/auth/logout`, {
-            method: "POST",
-            credentials: "include",
-          });
+          await authClient.signOut();
         } catch {
           /* ignore network errors on logout */
         }
@@ -105,18 +96,18 @@ export const useAuthStore = create<AuthState>()(
       },
 
       fetchUser: async () => {
-        const res = await fetch(`${API_URL}/api/auth/me`, {
-          credentials: "include",
-        });
-        if (res.status === 401) {
+        const { data, error } = await authClient.getSession();
+        if (error || !data?.user) {
           set({ user: null, isAuthenticated: false });
           return null;
         }
-        if (!res.ok) return get().user;
-        const data = (await res.json()) as Partial<User> & { name: string; email: string };
+        const u = data.user;
         const user: User = {
-          ...data,
-          initials: data.initials ?? deriveInitials(data.name),
+          id: u.id,
+          name: u.name ?? u.email,
+          email: u.email,
+          initials: deriveInitials(u.name ?? u.email),
+          avatarUrl: (u as { image?: string }).image,
         };
         set({ user, isAuthenticated: true });
         return user;

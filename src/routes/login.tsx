@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
+import { authClient, dashboardCallbackURL } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -91,8 +92,9 @@ function LoginPage() {
       await login(liEm, liPw);
       toast("Welcome back!");
       navigate({ to: "/dashboard", replace: true });
-    } catch (err: any) {
-      toast.error(err?.message || "Login failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Login failed";
+      toast.error(msg);
     } finally {
       setLiLoading(false);
     }
@@ -107,8 +109,9 @@ function LoginPage() {
       toast("Account created! Signing you in…");
       await login(suEm, suPw);
       navigate({ to: "/dashboard", replace: true });
-    } catch (err: any) {
-      toast.error(err?.message || "Sign up failed");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Sign up failed";
+      toast.error(msg);
     } finally {
       setSuLoading(false);
     }
@@ -416,14 +419,16 @@ function LoginPage() {
 /* ─────── Sub components ─────── */
 
 function Socials() {
-  const API_URL = import.meta.env.VITE_API_URL ?? "";
-  const oauth = (provider: "google" | "github") => {
-    const redirect =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/dashboard`
-        : "/dashboard";
-    // Better Auth social sign-in endpoint
-    window.location.href = `${API_URL}/api/auth/sign-in/social?provider=${provider}&callbackURL=${encodeURIComponent(redirect)}`;
+  const oauth = async (provider: "google" | "github") => {
+    try {
+      await authClient.signIn.social({
+        provider,
+        callbackURL: dashboardCallbackURL,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : `${provider} sign-in failed`;
+      toast.error(msg);
+    }
   };
   return (
     <div className="socials">

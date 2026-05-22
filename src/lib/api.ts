@@ -1,7 +1,10 @@
 import { toast } from "sonner";
-import { useAuthStore } from "@/lib/auth";
+import { useAuthStore, getAccessToken } from "@/lib/auth";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+const API_URL =
+  (import.meta.env.VITE_BACKEND_URL as string | undefined) ??
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  "";
 
 export class ApiError extends Error {
   status: number;
@@ -33,9 +36,15 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 
   const url = path.startsWith("http") ? path : `${baseUrl ?? API_URL}${path}`;
 
+  // Attach Supabase access token if available
+  const token = await getAccessToken();
+  if (token && !h.has("Authorization")) {
+    h.set("Authorization", `Bearer ${token}`);
+  }
+
   let res: Response;
   try {
-    res = await fetch(url, { ...rest, headers: h, credentials: "include" });
+    res = await fetch(url, { ...rest, headers: h });
   } catch (err) {
     if (!silent) toast.error("Network error. Please try again.");
     throw err;

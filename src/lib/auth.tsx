@@ -1,139 +1,161 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import type { ReactNode } from "react";
-import { authClient, dashboardCallbackURL } from "@/lib/auth-client";
+import type { Session, User as SupabaseUser, Provider } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-export type User = { id?: string; name: string; email: string; initials: string; avatarUrl?: string };
-
-type AuthState = {
-  user: User | null;
-  isAuthenticated: boolean;
-  /** Load current session from server (Better Auth cookie). */
-  fetchUser: () => Promise<User | null>;
-  /** Email + password login via Better Auth. */
-  login: (email: string, password: string) => Promise<User>;
-  /** Register new account via Better Auth. */
-  register: (payload: { email: string; password: string; name: string }) => Promise<void>;
-  /** Server-side logout (clears Better Auth cookie). */
-  logout: () => Promise<void>;
-  /** Local-only sign-in helper (used by mocked /login flow or social redirects). */
-  signIn: (u?: Partial<User>) => void;
-  /** Alias of `logout` (sync, no network). */
-  signOut: () => void;
-  setSession: (user: User | null) => void;
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  initials: string;
+  avatarUrl?: string;
 };
 
 function deriveInitials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "U";
+  return (
+    name
+      .split(/\s+/)
+      .map((p) => p[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "U"
+  );
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      isAuthenticated: false,
+function toUser(su: SupabaseUser): User {
+  const meta = (su.user_metadata ?? {}) as { full_name?: string; name?: string; avatar_url?: string };
+  const name = meta.full_name ?? meta.name ?? su.email ?? "User";
+  return {
+    id: su.id,
+    name,
+    email: su.email ?? "",
+    initials: deriveInitials(name),
+    avatarUrl: meta.avatar_url,
+  };
+}
 
-      setSession: (user) => set({ user, isAuthenticated: !!user }),
+type AuthState = {
+  session: Session | null;
+  user: User | null;
+  loading: boolean;
+  isAuthenticated: boolean;
+  setSession: (s: Session | null) => void;
+  setLoading: (b: boolean) => void;
+  signOut: () => void;
+};
 
-      signIn: (u) => {
-        const name = u?.name ?? "Vibe Coder";
-        const email = u?.email ?? "vibe@lampcode.dev";
-        const next: User = {
-          name,
-          email,
-          initials: u?.initials ?? deriveInitials(name),
-          avatarUrl: u?.avatarUrl,
-          id: u?.id,
-        };
-        set({ user: next, isAuthenticated: true });
-      },
-
-      signOut: () => set({ user: null, isAuthenticated: false }),
-
-      login: async (email, password) => {
-        const { data, error } = await authClient.signIn.email({
-          email,
-          password,
-          callbackURL: dashboardCallbackURL,
-        });
-        if (error) throw new Error(error.message || "Login failed");
-        const u = data?.user;
-        const name = u?.name ?? email;
-        const user: User = {
-          id: u?.id,
-          name,
-          email: u?.email ?? email,
-          initials: deriveInitials(name),
-          avatarUrl: (u as { image?: string } | undefined)?.image,
-        };
-        set({ user, isAuthenticated: true });
-        return user;
-      },
-
-      register: async (payload) => {
-        const { error } = await authClient.signUp.email({
-          email: payload.email,
-          password: payload.password,
-          name: payload.name,
-          callbackURL: dashboardCallbackURL,
-        });
-        if (error) throw new Error(error.message || "Registration failed");
-      },
-
-      logout: async () => {
-        try {
-          await authClient.signOut();
-        } catch {
-          /* ignore network errors on logout */
-        }
-        set({ user: null, isAuthenticated: false });
-      },
-
-      fetchUser: async () => {
-        const { data, error } = await authClient.getSession();
-        if (error || !data?.user) {
-          set({ user: null, isAuthenticated: false });
-          return null;
-        }
-        const u = data.user;
-        const user: User = {
-          id: u.id,
-          name: u.name ?? u.email,
-          email: u.email,
-          initials: deriveInitials(u.name ?? u.email),
-          avatarUrl: (u as { image?: string }).image,
-        };
-        set({ user, isAuthenticated: true });
-        return user;
-      },
+export const useAuthStore = create<AuthState>((set) => ({
+  session: null,
+  user: null,
+  loading: true,
+  isAuthenticated: false,
+  setSession: (s) =>
+    set({
+      session: s,
+      user: s?.user ? toUser(s.user) : null,
+      isAuthenticated: !!s,
+      loading: false,
     }),
-    {
-      name: "lampcode_auth",
-      partialize: (s) => ({ user: s.user, isAuthenticated: s.isAuthenticated }),
-    },
-  ),
-);
+  setLoading: (b) => set({ loading: b }),
+  signOut: () => set({ session: null, user: null, isAuthenticated: false, loading: false }),
+}));
 
-/** Drop-in replacement for the previous Context API. */
-export function useAuth() {
-  const user = useAuthStore((s) => s.user);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const login = useAuthStore((s) => s.login);
-  const logout = useAuthStore((s) => s.logout);
-  const fetchUser = useAuthStore((s) => s.fetchUser);
-  const register = useAuthStore((s) => s.register);
-  const signIn = useAuthStore((s) => s.signIn);
-  const signOut = useAuthStore((s) => s.signOut);
-  return { user, isAuthenticated, login, logout, fetchUser, register, signIn, signOut };
+let authSubscribed = false;
+
+function initAuthListener() {
+  if (authSubscribed || typeof window === "undefined") return;
+  authSubscribed = true;
+  supabase.auth.getSession().then(({ data }) => {
+    useAuthStore.getState().setSession(data.session);
+  });
+  supabase.auth.onAuthStateChange((_event, session) => {
+    useAuthStore.getState().setSession(session);
+  });
 }
 
-/** Kept as a no-op pass-through for backwards compatibility with __root.tsx. */
+/** Hook exposing Supabase Auth state + actions. */
+export function useAuth() {
+  const session = useAuthStore((s) => s.session);
+  const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    initAuthListener();
+  }, []);
+
+  const signIn = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  const signUp = async (email: string, password: string, name: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name } },
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    useAuthStore.getState().signOut();
+  };
+
+  const socialSignIn = async (provider: Provider) => {
+    const redirectTo =
+      typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo },
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  // Back-compat aliases for legacy callers
+  const login = (email: string, password: string) => signIn(email, password);
+  const register = (payload: { email: string; password: string; name: string }) =>
+    signUp(payload.email, payload.password, payload.name);
+  const logout = () => signOut();
+  const fetchUser = async () => {
+    const { data } = await supabase.auth.getSession();
+    useAuthStore.getState().setSession(data.session);
+    return useAuthStore.getState().user;
+  };
+
+  return {
+    session,
+    user,
+    loading,
+    isAuthenticated,
+    signIn,
+    signUp,
+    signOut,
+    socialSignIn,
+    // legacy
+    login,
+    register,
+    logout,
+    fetchUser,
+  };
+}
+
+/** Get the current access token for authenticated API calls. */
+export async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    initAuthListener();
+    force((n) => n + 1);
+  }, []);
   return <>{children}</>;
 }

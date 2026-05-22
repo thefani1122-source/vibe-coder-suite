@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { authClient, dashboardCallbackURL } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,

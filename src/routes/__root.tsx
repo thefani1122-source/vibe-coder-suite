@@ -10,7 +10,7 @@ import {
 import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
-import { AuthProvider, useAuthStore } from "@/lib/auth";
+import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -113,13 +113,6 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
-  useEffect(() => {
-    // Restore Better Auth session on app load
-    useAuthStore.getState().fetchUser().catch(() => {
-      /* ignore silent failures */
-    });
-  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

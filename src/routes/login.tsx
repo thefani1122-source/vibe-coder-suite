@@ -35,15 +35,44 @@ function LoginPage() {
   const [liLoading, setLiLoading] = useState(false);
   const [suLoading, setSuLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { user, login, register } = useAuth();
+  const { user, loading: authLoading, login, register } = useAuth();
   const navigate = useNavigate();
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const theme = THEMES[cIdx];
 
-  // If already signed in, bounce to dashboard
+  // On mount, eagerly check for an existing Supabase session (handles OAuth
+  // callback case where the page reloads with a fresh session in the URL/storage
+  // before onAuthStateChange fires).
   useEffect(() => {
-    if (user) navigate({ to: "/dashboard", replace: true });
-  }, [user, navigate]);
+    let cancelled = false;
+    (async () => {
+      const { supabase } = await import("@/lib/supabase");
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (data.session) {
+        navigate({ to: "/dashboard", replace: true });
+        return;
+      }
+      setCheckingSession(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
+  // If session becomes available later (onAuthStateChange), redirect too.
+  useEffect(() => {
+    if (!authLoading && user) navigate({ to: "/dashboard", replace: true });
+  }, [authLoading, user, navigate]);
+
+  if (checkingSession || authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      </div>
+    );
+  }
 
   // Apply CSS vars to scoped root
   useEffect(() => {

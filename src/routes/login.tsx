@@ -418,19 +418,12 @@ function LoginPage() {
 /* ─────── Sub components ─────── */
 
 function Socials() {
+  const { socialSignIn } = useAuth();
   const oauth = async (provider: "google" | "github") => {
     try {
-      const { data, error } = await authClient.signIn.social({
-        provider,
-        callbackURL: dashboardCallbackURL,
-      });
-      if (error) throw new Error(error.message || `${provider} sign-in failed`);
-      // Better Auth returns the provider URL — perform a full redirect ourselves
-      // so it works reliably inside the Lovable preview fetch proxy and on Vercel.
-      const url = (data as { url?: string; redirect?: boolean } | null)?.url;
-      if (url) {
-        window.location.href = url;
-      }
+      await socialSignIn(provider);
+      // Supabase performs a full-page redirect to the provider, so we usually
+      // never reach the next line.
     } catch (err) {
       const msg = err instanceof Error ? err.message : `${provider} sign-in failed`;
       toast.error(msg);

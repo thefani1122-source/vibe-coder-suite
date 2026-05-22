@@ -66,14 +66,6 @@ function LoginPage() {
     if (!authLoading && user) navigate({ to: "/dashboard", replace: true });
   }, [authLoading, user, navigate]);
 
-  if (checkingSession || authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-sm text-muted-foreground">Loading…</div>
-      </div>
-    );
-  }
-
   // Apply CSS vars to scoped root
   useEffect(() => {
     const el = rootRef.current;
@@ -144,6 +136,14 @@ function LoginPage() {
       setSuLoading(false);
     }
   };
+
+  if (checkingSession || authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} className={`lc-root ${on ? "is-on" : ""}`}>

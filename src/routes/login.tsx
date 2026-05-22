@@ -137,6 +137,14 @@ function LoginPage() {
     }
   };
 
+  if (checkingSession || authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className={`lc-root ${on ? "is-on" : ""}`}>
       <style>{CSS}</style>

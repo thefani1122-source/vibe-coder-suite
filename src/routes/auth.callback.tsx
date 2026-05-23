@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useAuthStore } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/auth/callback")({
@@ -34,7 +35,10 @@ function AuthCallbackPage() {
       }
 
       const { data } = await supabase.auth.getSession();
-      if (data.session) finish("/dashboard");
+      if (data.session) {
+        useAuthStore.getState().setSession(data.session);
+        finish("/dashboard");
+      }
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

@@ -37,31 +37,13 @@ function LoginPage() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { user, loading: authLoading, login, register } = useAuth();
   const navigate = useNavigate();
-  const [checkingSession, setCheckingSession] = useState(true);
 
   const theme = THEMES[cIdx];
 
-  // On mount, eagerly check for an existing Supabase session (handles OAuth
-  // callback case where the page reloads with a fresh session in the URL/storage
-  // before onAuthStateChange fires).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { supabase } = await import("@/lib/supabase");
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (data.session) {
-        navigate({ to: "/dashboard", replace: true });
-        return;
-      }
-      setCheckingSession(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
-
-  // If session becomes available later (onAuthStateChange), redirect too.
+  // Redirect to dashboard when auth state resolves with a session.
+  // The Zustand store is the single source of truth — onAuthStateChange fires
+  // INITIAL_SESSION (from localStorage) or SIGNED_IN (after OAuth) and updates
+  // the store, which triggers this effect. No separate getSession() call needed.
   useEffect(() => {
     if (!authLoading && user) navigate({ to: "/dashboard", replace: true });
   }, [authLoading, user, navigate]);

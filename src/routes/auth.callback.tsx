@@ -50,6 +50,7 @@ function AuthCallbackPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === "SIGNED_IN" && session) {
+          useAuthStore.getState().setSession(session);
           finish("/dashboard");
         }
       }

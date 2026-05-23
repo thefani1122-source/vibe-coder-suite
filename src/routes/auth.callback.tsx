@@ -27,19 +27,30 @@ function AuthCallbackPage() {
       const code = url.searchParams.get("code");
 
       if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        // exchangeCodeForSession returns the session directly — use it instead of
+        // a separate getSession() call, which can race against SIGNED_IN and resolve
+        // with a stale null value after the session is already established.
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          const { data } = await supabase.auth.getSession();
-          if (data.session) {
-            useAuthStore.getState().setSession(data.session);
+          // Exchange failed (expired/used code, missing verifier, network error).
+          // Fall back to getSession in case the session was established by another
+          // path; otherwise onAuthStateChange + the timeout below handle it.
+          const { data: sd } = await supabase.auth.getSession();
+          if (sd.session) {
+            useAuthStore.getState().setSession(sd.session);
             finish("/dashboard");
-          } else {
-            finish("/login");
           }
           return;
         }
+        if (data.session) {
+          useAuthStore.getState().setSession(data.session);
+          finish("/dashboard");
+        }
+        return;
       }
 
+      // No code in URL — implicit-flow hash tokens or direct navigation.
+      // onAuthStateChange SIGNED_IN will handle it; getSession() is a safety net.
       const { data } = await supabase.auth.getSession();
       if (data.session) {
         useAuthStore.getState().setSession(data.session);

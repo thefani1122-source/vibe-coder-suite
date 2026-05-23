@@ -17,7 +17,10 @@ function createRealClient(): SupabaseClient {
     auth: {
       persistSession: isBrowser,
       autoRefreshToken: isBrowser,
-      detectSessionInUrl: isBrowser,
+      // Keep false: the /auth/callback route exchanges the PKCE code manually.
+      // Auto-detection races with that manual call and causes a lost-code error
+      // that bounces users back to /login even after a successful OAuth.
+      detectSessionInUrl: false,
     },
   });
 }

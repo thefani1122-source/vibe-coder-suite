@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -8,44 +8,21 @@ export const Route = createFileRoute("/auth/callback")({
 });
 
 function AuthCallbackPage() {
+  const navigate = useNavigate();
+
   useEffect(() => {
-    (async () => {
-      try {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-        const errorParam = url.searchParams.get("error_description") || url.searchParams.get("error");
-
-        if (errorParam) {
-          window.location.href = "/login?error=auth_failed";
-          return;
-        }
-
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            window.location.href = "/login?error=auth_failed";
-            return;
-          }
-          window.location.href = "/dashboard";
-          return;
-        }
-
-        // Implicit flow fallback (#access_token=...): detectSessionInUrl handles it.
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
-          window.location.href = "/dashboard";
-        } else {
-          window.location.href = "/login?error=auth_failed";
-        }
-      } catch {
-        window.location.href = "/login?error=auth_failed";
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate({ to: "/dashboard" });
+      } else {
+        navigate({ to: "/login" });
       }
-    })();
-  }, []);
+    });
+  }, [navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-sm text-muted-foreground">Completing sign in…</div>
+      <div className="text-sm text-muted-foreground">Loading...</div>
     </div>
   );
 }

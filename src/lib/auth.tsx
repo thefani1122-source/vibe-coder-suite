@@ -66,9 +66,10 @@ let authSubscribed = false;
 function initAuthListener() {
   if (authSubscribed || typeof window === "undefined") return;
   authSubscribed = true;
-  supabase.auth.getSession().then(({ data }) => {
-    useAuthStore.getState().setSession(data.session);
-  });
+  // onAuthStateChange fires INITIAL_SESSION with the localStorage-persisted session
+  // as soon as the Supabase client finishes initialization — no separate getSession()
+  // call needed. A parallel getSession() Promise can resolve at an arbitrary time and
+  // clobber a valid session that SIGNED_IN already wrote to the store.
   supabase.auth.onAuthStateChange((_event, session) => {
     useAuthStore.getState().setSession(session);
   });

@@ -1,3 +1,5 @@
+// Supabase client — reads ONLY from Vercel-provided VITE_* env vars at build time.
+// No fallbacks, no placeholders. If either var is missing, throws on first use.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;

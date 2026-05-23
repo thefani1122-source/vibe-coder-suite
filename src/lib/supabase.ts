@@ -20,9 +20,9 @@ function createRealClient(): SupabaseClient {
   });
 }
 
-// On the server during SSR we don't have access to VITE_ env vars at runtime
-// (they're build-time replaced). To avoid crashing SSR when they're missing,
-// expose a lazy proxy that only constructs the client on first use in the browser.
+// Lazy client: VITE_ env vars are replaced at build time, so on SSR (or if a
+// build was made without them) we must not throw at module load. Construct
+// the real client only on first use (in the browser).
 let _client: SupabaseClient | null = null;
 function getClient(): SupabaseClient {
   if (_client) return _client;

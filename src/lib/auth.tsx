@@ -108,7 +108,7 @@ export function useAuth() {
 
   const socialSignIn = async (provider: Provider) => {
     const redirectTo =
-      typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined;
+      typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo },

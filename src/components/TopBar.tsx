@@ -9,8 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard, ArrowLeft } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { LifeBuoy, Zap, LogOut, User, CreditCard, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export function TopBar() {
@@ -63,10 +63,14 @@ export function TopBar() {
           <DropdownMenuTrigger asChild>
             <button className="ml-1 flex items-center gap-2 rounded-full p-1 transition hover:bg-secondary">
               <Avatar className="h-8 w-8 ring-2 ring-primary/40">
+                {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
                 <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs font-semibold">
                   {user.initials}
                 </AvatarFallback>
               </Avatar>
+              <span className="hidden text-sm font-medium text-foreground/90 sm:inline">
+                {user.name}
+              </span>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
@@ -78,10 +82,7 @@ export function TopBar() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link to="/dashboard"><User className="mr-2 h-4 w-4" /> Profile</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link to="/settings"><Settings className="mr-2 h-4 w-4" /> Settings</Link>
+              <Link to="/settings"><User className="mr-2 h-4 w-4" /> Profile</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link to="/billing"><CreditCard className="mr-2 h-4 w-4" /> Billing</Link>

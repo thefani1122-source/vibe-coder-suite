@@ -29,7 +29,13 @@ function AuthCallbackPage() {
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          finish("/login");
+          const { data } = await supabase.auth.getSession();
+          if (data.session) {
+            useAuthStore.getState().setSession(data.session);
+            finish("/dashboard");
+          } else {
+            finish("/login");
+          }
           return;
         }
       }

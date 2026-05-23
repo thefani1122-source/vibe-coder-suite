@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LifeBuoy, Zap, Settings, LogOut, User, CreditCard, ArrowLeft } from "lucide-react";
+import { LifeBuoy, Zap, LogOut, User, CreditCard, ArrowLeft } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export function TopBar() {

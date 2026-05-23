@@ -11,18 +11,36 @@ function AuthCallbackPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate({ to: "/dashboard" });
-      } else {
-        navigate({ to: "/login" });
+    let settled = false;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (settled) return;
+        if (event === "SIGNED_IN" && session) {
+          settled = true;
+          subscription.unsubscribe();
+          navigate({ to: "/dashboard", replace: true });
+        }
       }
-    });
+    );
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        subscription.unsubscribe();
+        navigate({ to: "/login", replace: true });
+      }
+    }, 5000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [navigate]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-sm text-muted-foreground">Loading...</div>
+      <div className="text-sm text-muted-foreground">Completing sign in…</div>
     </div>
   );
 }

@@ -47,14 +47,14 @@ function AuthCallbackPage() {
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "SIGNED_IN" && session) {
           useAuthStore.getState().setSession(session);
           finish("/dashboard");
         }
-      }
-    );
+      });
     unsubscribe = () => subscription.unsubscribe();
 
     completeSignIn();

@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | und
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error(
-    "Missing required environment variable: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY",
+    "Missing required environment variable: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Set both in your Vercel project (Settings → Environment Variables → Production) and redeploy.",
   );
 }
 

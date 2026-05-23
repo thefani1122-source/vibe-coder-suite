@@ -29,12 +29,13 @@ function AuthCallbackPage() {
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
+          // Exchange can fail if detectSessionInUrl already consumed the code.
+          // Check whether the session landed anyway; if not, let onAuthStateChange
+          // catch SIGNED_IN. The 5-second timeout below handles true failures.
           const { data } = await supabase.auth.getSession();
           if (data.session) {
             useAuthStore.getState().setSession(data.session);
             finish("/dashboard");
-          } else {
-            finish("/login");
           }
           return;
         }

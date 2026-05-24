@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { connectSocket, disconnectSocket } from "@/lib/websocket";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import {
   Brain,
   Database,
@@ -46,6 +47,9 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspace/$projectId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    sessionId: typeof search.sessionId === "string" ? search.sessionId : undefined,
+  }),
   component: WorkspacePage,
 });
 
@@ -57,6 +61,8 @@ function WorkspacePage() {
   );
 }
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 type StepStatus = "pending" | "running" | "done";
 type Step = {
   key: string;
@@ -67,138 +73,131 @@ type Step = {
   progress: number;
 };
 
+type BuildFile = { lang: string; code: string };
+type FileMap = Record<string, BuildFile>;
+type TreeFolder = { name: string; children: { name: string; path: string }[] };
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
 const INITIAL_STEPS: Step[] = [
-  { key: "plan", label: "Planning", icon: Brain, detail: "Writing project brief", status: "pending", progress: 0 },
-  { key: "db", label: "Database", icon: Database, status: "pending", progress: 0 },
-  { key: "fe", label: "Frontend", icon: Palette, detail: "Creating login page", status: "pending", progress: 0 },
-  { key: "be", label: "Backend", icon: Settings2, status: "pending", progress: 0 },
-  { key: "sec", label: "Security", icon: Shield, status: "pending", progress: 0 },
-  { key: "conn", label: "Connection", icon: Link2, status: "pending", progress: 0 },
-  { key: "deploy", label: "Deploy", icon: Rocket, status: "pending", progress: 0 },
+  { key: "plan",   label: "Planning",   icon: Brain,     detail: "Writing project brief",   status: "pending", progress: 0 },
+  { key: "db",     label: "Database",   icon: Database,  status: "pending", progress: 0 },
+  { key: "fe",     label: "Frontend",   icon: Palette,   detail: "Creating login page",     status: "pending", progress: 0 },
+  { key: "be",     label: "Backend",    icon: Settings2, status: "pending", progress: 0 },
+  { key: "sec",    label: "Security",   icon: Shield,    status: "pending", progress: 0 },
+  { key: "conn",   label: "Connection", icon: Link2,     status: "pending", progress: 0 },
+  { key: "deploy", label: "Deploy",     icon: Rocket,    status: "pending", progress: 0 },
 ];
 
-const MOCK_FILES: Record<string, { lang: string; code: string }> = {
-  "app/page.tsx": {
-    lang: "tsx",
-    code: `export default function Page() {
-  return (
-    <main className="min-h-screen flex items-center justify-center">
-      <h1 className="text-4xl font-bold">Welcome to your app</h1>
-    </main>
-  );
-}
-`,
-  },
-  "app/layout.tsx": {
-    lang: "tsx",
-    code: `export default function Layout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
-  );
-}
-`,
-  },
-  "components/Button.tsx": {
-    lang: "tsx",
-    code: `export function Button({ children }: { children: React.ReactNode }) {
-  return <button className="rounded-md bg-primary px-4 py-2">{children}</button>;
-}
-`,
-  },
-  "lib/utils.ts": {
-    lang: "ts",
-    code: `export function cn(...inputs: string[]) {
-  return inputs.filter(Boolean).join(" ");
-}
-`,
-  },
+const EXT_LANG: Record<string, string> = {
+  tsx: "tsx", ts: "typescript", jsx: "jsx", js: "javascript",
+  css: "css", scss: "scss", json: "json", md: "markdown",
+  html: "html", py: "python", sql: "sql", sh: "bash",
 };
 
-const FILE_TREE = [
-  {
-    name: "app",
-    children: [
-      { name: "page.tsx", path: "app/page.tsx" },
-      { name: "layout.tsx", path: "app/layout.tsx" },
-    ],
-  },
-  {
-    name: "components",
-    children: [{ name: "Button.tsx", path: "components/Button.tsx" }],
-  },
-  {
-    name: "lib",
-    children: [{ name: "utils.ts", path: "lib/utils.ts" }],
-  },
-];
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function langForPath(path: string): string {
+  const ext = path.split(".").pop() ?? "";
+  return EXT_LANG[ext] ?? "text";
+}
+
+function deriveFileTree(files: FileMap): TreeFolder[] {
+  const folders: Record<string, TreeFolder> = {};
+  const order: string[] = [];
+  Object.keys(files).forEach((path) => {
+    const parts = path.split("/");
+    if (parts.length < 2) return;
+    const folder = parts[0];
+    if (!folders[folder]) {
+      folders[folder] = { name: folder, children: [] };
+      order.push(folder);
+    }
+    folders[folder].children.push({ name: parts.slice(1).join("/"), path });
+  });
+  return order.map((f) => folders[f]);
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 function WorkspacePageInner() {
   const { projectId } = useParams({ from: "/workspace/$projectId" });
+  const { sessionId } = Route.useSearch();
+
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
-  const [building, setBuilding] = useState(true);
+  const [building, setBuilding] = useState(!!sessionId);
   const [collapsedStatus, setCollapsedStatus] = useState(false);
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
-  const [activeFile, setActiveFile] = useState("app/page.tsx");
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({
-    app: true,
-    components: true,
-    lib: true,
-  });
+  const [activeFile, setActiveFile] = useState("");
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [prompt, setPrompt] = useState("");
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [files, setFiles] = useState<FileMap>({});
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const socketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
 
   useEffect(() => {
     const socket = connectSocket();
-    const onConnect = () => socket.emit("workspace:join", { projectId });
+    socketRef.current = socket;
+
+    const onConnect = () => socket.emit("workspace:join", { projectId, sessionId });
     socket.on("connect", onConnect);
     if (socket.connected) onConnect();
+
+    socket.on(
+      "agent:update",
+      (data: { agent: string; status: StepStatus; progress: number; detail?: string }) => {
+        setSteps((prev) =>
+          prev.map((s) =>
+            s.key === data.agent
+              ? { ...s, status: data.status, progress: data.progress, ...(data.detail ? { detail: data.detail } : {}) }
+              : s
+          )
+        );
+      }
+    );
+
+    socket.on(
+      "build:complete",
+      (data: { files: FileMap; previewUrl: string }) => {
+        setFiles(data.files);
+        setPreviewUrl(data.previewUrl);
+        setBuilding(false);
+
+        // Open top-level folders and select first file
+        const paths = Object.keys(data.files);
+        const topFolders = [...new Set(
+          paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0])
+        )];
+        setOpenFolders(Object.fromEntries(topFolders.map((f) => [f, true])));
+        if (paths.length > 0) setActiveFile(paths[0]);
+
+        setTimeout(() => setCollapsedStatus(true), 800);
+      }
+    );
+
+    socket.on("build:error", (data: { message: string }) => {
+      toast.error(`Build failed: ${data.message}`);
+      setBuilding(false);
+    });
+
     return () => {
       socket.off("connect", onConnect);
+      socket.off("agent:update");
+      socket.off("build:complete");
+      socket.off("build:error");
       disconnectSocket();
     };
-  }, [projectId]);
-
-  useEffect(() => {
-    if (!building) return;
-    let i = 0;
-    timerRef.current = setInterval(() => {
-      setSteps((prev) => {
-        const next = [...prev];
-        const idx = next.findIndex((s) => s.status !== "done");
-        if (idx === -1) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          setBuilding(false);
-          setTimeout(() => setCollapsedStatus(true), 800);
-          return next;
-        }
-        const s = { ...next[idx] };
-        if (s.status === "pending") s.status = "running";
-        s.progress = Math.min(100, s.progress + 20 + Math.random() * 15);
-        if (s.progress >= 100) {
-          s.progress = 100;
-          s.status = "done";
-        }
-        next[idx] = s;
-        return next;
-      });
-      i++;
-      if (i > 200 && timerRef.current) clearInterval(timerRef.current);
-    }, 350);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [building]);
+  }, [projectId, sessionId]);
 
   const cancelBuild = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    socketRef.current?.emit("build:cancel", { projectId, sessionId });
     setBuilding(false);
     setCollapsedStatus(true);
   };
 
-  const previewUrl = `https://example.com/preview/${projectId}`;
+  const fileTree = deriveFileTree(files);
+  const hasFiles = Object.keys(files).length > 0;
   const deviceWidths: Record<typeof device, string> = {
     desktop: "100%",
     tablet: "768px",
@@ -340,7 +339,8 @@ function WorkspacePageInner() {
               variant="outline"
               size="sm"
               className="h-8"
-              onClick={() => window.open(previewUrl, "_blank")}
+              disabled={!previewUrl}
+              onClick={() => previewUrl && window.open(previewUrl, "_blank")}
             >
               <ExternalLink className="h-3.5 w-3.5" /> Open
             </Button>
@@ -376,13 +376,17 @@ function WorkspacePageInner() {
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                     Building your app...
                   </div>
-                ) : (
+                ) : previewUrl ? (
                   <iframe
-                    src="about:blank"
+                    src={previewUrl}
                     title="preview"
-                    className="h-full w-full"
-                    srcDoc={`<!doctype html><html><body style="margin:0;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;background:#0a0a0a;color:#fff"><div style="text-align:center"><h1>🚀 Your App</h1><p style="opacity:.6">Live preview · ${projectId}</p></div></body></html>`}
+                    className="h-full w-full border-0"
                   />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                    <Eye className="h-6 w-6 opacity-30" />
+                    Preview will appear when the build completes
+                  </div>
                 )}
               </div>
             </div>
@@ -390,60 +394,76 @@ function WorkspacePageInner() {
             <div className="flex h-full">
               {/* File tree */}
               <div className="w-60 shrink-0 overflow-y-auto border-r border-border bg-card/30 p-2 text-sm">
-                {FILE_TREE.map((folder) => (
-                  <div key={folder.name}>
-                    <button
-                      onClick={() =>
-                        setOpenFolders((p) => ({ ...p, [folder.name]: !p[folder.name] }))
-                      }
-                      className="flex w-full items-center gap-1 rounded px-2 py-1 hover:bg-accent"
-                    >
-                      <ChevronRight
-                        className={cn(
-                          "h-3 w-3 transition-transform",
-                          openFolders[folder.name] && "rotate-90",
-                        )}
-                      />
-                      {openFolders[folder.name] ? (
-                        <FolderOpen className="h-3.5 w-3.5 text-primary" />
-                      ) : (
-                        <Folder className="h-3.5 w-3.5 text-primary" />
-                      )}
-                      <span>{folder.name}</span>
-                    </button>
-                    {openFolders[folder.name] && (
-                      <div className="ml-4">
-                        {folder.children.map((f) => (
-                          <button
-                            key={f.path}
-                            onClick={() => setActiveFile(f.path)}
-                            className={cn(
-                              "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent",
-                              activeFile === f.path && "bg-accent text-foreground",
-                            )}
-                          >
-                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                            {f.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                {!hasFiles ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {building ? "Generating files…" : "No files yet"}
                   </div>
-                ))}
+                ) : (
+                  fileTree.map((folder) => (
+                    <div key={folder.name}>
+                      <button
+                        onClick={() =>
+                          setOpenFolders((p) => ({ ...p, [folder.name]: !p[folder.name] }))
+                        }
+                        className="flex w-full items-center gap-1 rounded px-2 py-1 hover:bg-accent"
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "h-3 w-3 transition-transform",
+                            openFolders[folder.name] && "rotate-90",
+                          )}
+                        />
+                        {openFolders[folder.name] ? (
+                          <FolderOpen className="h-3.5 w-3.5 text-primary" />
+                        ) : (
+                          <Folder className="h-3.5 w-3.5 text-primary" />
+                        )}
+                        <span>{folder.name}</span>
+                      </button>
+                      {openFolders[folder.name] && (
+                        <div className="ml-4">
+                          {folder.children.map((f) => (
+                            <button
+                              key={f.path}
+                              onClick={() => setActiveFile(f.path)}
+                              className={cn(
+                                "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent",
+                                activeFile === f.path && "bg-accent text-foreground",
+                              )}
+                            >
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                              {f.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
+
               {/* Code viewer */}
               <div className="flex-1 overflow-auto">
-                <div className="border-b border-border bg-card/30 px-3 py-1.5 text-xs text-muted-foreground">
-                  {activeFile}
-                </div>
-                <SyntaxHighlighter
-                  language={MOCK_FILES[activeFile].lang}
-                  style={vscDarkPlus}
-                  showLineNumbers
-                  customStyle={{ margin: 0, background: "transparent", fontSize: 13 }}
-                >
-                  {MOCK_FILES[activeFile].code}
-                </SyntaxHighlighter>
+                {!activeFile || !files[activeFile] ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    {building ? "Generating code…" : "Select a file to view its code"}
+                  </div>
+                ) : (
+                  <>
+                    <div className="border-b border-border bg-card/30 px-3 py-1.5 text-xs text-muted-foreground">
+                      {activeFile}
+                    </div>
+                    <SyntaxHighlighter
+                      language={files[activeFile].lang ?? langForPath(activeFile)}
+                      style={vscDarkPlus}
+                      showLineNumbers
+                      customStyle={{ margin: 0, background: "transparent", fontSize: 13 }}
+                    >
+                      {files[activeFile].code}
+                    </SyntaxHighlighter>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -452,6 +472,8 @@ function WorkspacePageInner() {
     </div>
   );
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StepCard({ step }: { step: Step }) {
   const Icon = step.icon;

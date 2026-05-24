@@ -78,10 +78,12 @@ export function PromptComposer() {
       });
       console.log("[FastMode] 3. Project created:", projectRes);
 
-      // Handle id / projectId / project_id response conventions; use optional
-      // chaining in case the server returns a non-object (empty 201, etc.)
+      // Backend wraps response as { project: { id } }; fall back to flat shapes too
       const pid =
-        (projectRes?.id ?? projectRes?.projectId ?? projectRes?.project_id) as string | undefined;
+        ((projectRes?.project as Record<string, unknown>)?.id
+        ?? projectRes?.id
+        ?? projectRes?.projectId
+        ?? projectRes?.project_id) as string | undefined;
       console.log("[FastMode] 4. Extracted pid:", pid);
 
       if (!pid) {
@@ -98,9 +100,12 @@ export function PromptComposer() {
       });
       console.log("[FastMode] 6. Build response:", buildRes);
 
-      // Handle sessionId / session_id response conventions
+      // Backend may wrap as { session: { sessionId } }; fall back to flat shapes too
       const sessionId =
-        (buildRes?.sessionId ?? buildRes?.session_id) as string | undefined;
+        ((buildRes?.session as Record<string, unknown>)?.sessionId
+        ?? (buildRes?.session as Record<string, unknown>)?.session_id
+        ?? buildRes?.sessionId
+        ?? buildRes?.session_id) as string | undefined;
       console.log("[FastMode] 7. Navigating to workspace:", { projectId: pid, sessionId });
 
       navigate({

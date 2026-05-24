@@ -1,6 +1,5 @@
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Plus,
   LayoutDashboard,
   FolderGit2,
   Settings,
@@ -26,8 +25,6 @@ import {
   SidebarMenuItem,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth";
 
 const workspaceNav = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -51,18 +48,10 @@ const legalNav = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (path: string) => currentPath === path;
-  const { isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-  const handleNewApp = (e: React.MouseEvent) => {
-    if (!isAuthenticated) {
-      e.preventDefault();
-      navigate({ to: "/login", replace: true });
-    }
-  };
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <Link to="/" className="flex items-center gap-2 px-2 py-3">
+        <Link to="/dashboard" className="flex items-center gap-2 px-2 py-3">
           <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
             <Lamp className="h-5 w-5 text-primary-foreground" />
           </div>
@@ -74,17 +63,6 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent className="px-2 pt-2">
-            <Button asChild className="w-full justify-start gap-2 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground font-semibold hover:opacity-90 shadow-[var(--shadow-glow)]">
-              <Link to="/dashboard" onClick={handleNewApp}>
-                <Plus className="h-4 w-4" />
-                <span className="group-data-[collapsible=icon]:hidden">New App</span>
-              </Link>
-            </Button>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
         <SidebarGroup>
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>

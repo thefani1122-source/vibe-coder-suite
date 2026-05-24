@@ -21,6 +21,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
+import { useAuth } from "@/lib/auth";
+import { apiPatch } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
 
@@ -54,18 +57,56 @@ function SettingsPage() {
 }
 
 function ProfilePanel() {
+  const { user } = useAuth();
+  const [name, setName] = useState(user?.name ?? "");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [bio, setBio] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setName((prev) => prev || user.name);
+      setEmail((prev) => prev || user.email);
+    }
+  }, [user?.id]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiPatch("/api/users/me/settings", { name, username, bio });
+      toast.success("Profile saved");
+    } catch {
+      // apiPatch already shows toast.error
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="border-border/60 bg-card/60 backdrop-blur">
         <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2"><Label htmlFor="name">Display name</Label><Input id="name" defaultValue="Vibe Coder" /></div>
-            <div className="space-y-2"><Label htmlFor="username">Username</Label><Input id="username" defaultValue="vibecoder" /></div>
+            <div className="space-y-2">
+              <Label htmlFor="name">Display name</Label>
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" defaultValue="vibe@lampcode.dev" /></div>
-          <div className="space-y-2"><Label htmlFor="bio">Bio</Label><Input id="bio" placeholder="Building vibes with code" /></div>
-          <Button onClick={() => toast.success("Profile saved")}>Save changes</Button>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="bio">Bio</Label>
+            <Input id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Building vibes with code" />
+          </div>
+          <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
         </CardContent>
       </Card>
       <PasswordPanel />
@@ -76,10 +117,12 @@ function ProfilePanel() {
 function PasswordPanel() {
   const [show, setShow] = useState({ current: false, next: false, confirm: false });
   const [vals, setVals] = useState({ current: "", next: "", confirm: "" });
-  const submit = () => {
+  const submit = async () => {
     if (!vals.current || !vals.next) return toast.error("Fill in all fields");
     if (vals.next.length < 8) return toast.error("Password must be at least 8 characters");
     if (vals.next !== vals.confirm) return toast.error("Passwords do not match");
+    const { error } = await supabase.auth.updateUser({ password: vals.next });
+    if (error) return toast.error(error.message);
     toast.success("Password updated");
     setVals({ current: "", next: "", confirm: "" });
   };

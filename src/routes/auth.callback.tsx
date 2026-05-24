@@ -22,57 +22,56 @@ function AuthCallbackPage() {
       navigate({ to, replace: true });
     };
 
-    const completeSignIn = async () => {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
-
-      if (code) {
-        // exchangeCodeForSession returns the session directly — use it instead of
-        // a separate getSession() call, which can race against SIGNED_IN and resolve
-        // with a stale null value after the session is already established.
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          // Exchange failed (expired/used code, missing verifier, network error).
-          // Fall back to getSession in case the session was established by another
-          // path; otherwise onAuthStateChange + the timeout below handle it.
-          const { data: sd } = await supabase.auth.getSession();
-          if (sd.session) {
-            useAuthStore.getState().setSession(sd.session);
-            finish("/dashboard");
-          }
-          return;
-        }
-        if (data.session) {
-          useAuthStore.getState().setSession(data.session);
-          finish("/dashboard");
-        }
-        return;
-      }
-
-      // No code in URL — implicit-flow hash tokens or direct navigation.
-      // onAuthStateChange SIGNED_IN will handle it; getSession() is a safety net.
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        useAuthStore.getState().setSession(data.session);
-        finish("/dashboard");
-      }
-    };
-
+    // With detectSessionInUrl: true, Supabase automatically processes both:
+    //   ?code=xxx        (PKCE flow) — internal exchangeCodeForSession call
+    //   #access_token=   (implicit flow) — internal setSession call
+    // Both fire SIGNED_IN on all onAuthStateChange listeners.
+    // We must NOT call exchangeCodeForSession manually here — codes are one-time use.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN" && session) {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
         useAuthStore.getState().setSession(session);
         finish("/dashboard");
       }
     });
     unsubscribe = () => subscription.unsubscribe();
 
-    completeSignIn();
+    // Fallback chain: runs after a short delay to let auto-detection fire SIGNED_IN first.
+    const tryFallbacks = async () => {
+      await new Promise((r) => setTimeout(r, 400));
+      if (settled) return;
 
-    const timeout = setTimeout(() => {
-      finish("/login");
-    }, 5000);
+      // Fallback 1: session may already exist if SIGNED_IN fired before listener registered.
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        useAuthStore.getState().setSession(data.session);
+        finish("/dashboard");
+        return;
+      }
+
+      // Fallback 2: manual hash parsing for implicit-flow tokens that auto-detection missed.
+      const hash = window.location.hash.slice(1);
+      if (hash) {
+        const params = new URLSearchParams(hash);
+        const access_token = params.get("access_token");
+        const refresh_token = params.get("refresh_token");
+        if (access_token) {
+          const { data: sd } = await supabase.auth.setSession({
+            access_token,
+            refresh_token: refresh_token ?? "",
+          });
+          if (sd.session) {
+            useAuthStore.getState().setSession(sd.session);
+            finish("/dashboard");
+          }
+        }
+      }
+    };
+
+    tryFallbacks();
+
+    const timeout = setTimeout(() => finish("/login"), 8000);
 
     return () => {
       unsubscribe?.();

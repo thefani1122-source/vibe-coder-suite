@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
-import { apiPost } from "@/lib/api";
+import { apiPost, ApiError } from "@/lib/api";
 import { PlanInterview } from "@/components/PlanInterview";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,32 +68,55 @@ export function PromptComposer() {
       setPlanOpen(true);
       return;
     }
+    console.log("[FastMode] 1. Starting submit...");
     setSubmitting(true);
     try {
+      console.log("[FastMode] 2. Creating project...");
       const projectRes = await apiPost<Record<string, unknown>>("/api/projects", {
         name: value.trim().slice(0, 50),
         mode: "fast",
       });
-      // Handle id / projectId / project_id response conventions
+      console.log("[FastMode] 3. Project created:", projectRes);
+
+      // Handle id / projectId / project_id response conventions; use optional
+      // chaining in case the server returns a non-object (empty 201, etc.)
       const pid =
-        (projectRes.id ?? projectRes.projectId ?? projectRes.project_id) as string | undefined;
+        (projectRes?.id ?? projectRes?.projectId ?? projectRes?.project_id) as string | undefined;
+      console.log("[FastMode] 4. Extracted pid:", pid);
+
       if (!pid) {
-        throw new Error("Missing project ID in server response");
+        throw new Error(`No project ID in server response — got: ${JSON.stringify(projectRes)}`);
       }
+
+      console.log("[FastMode] 5. Calling /api/build/fast with:", {
+        project_id: pid,
+        prompt: value.trim(),
+      });
       const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
         project_id: pid,
         prompt: value.trim(),
       });
+      console.log("[FastMode] 6. Build response:", buildRes);
+
       // Handle sessionId / session_id response conventions
       const sessionId =
-        (buildRes.sessionId ?? buildRes.session_id) as string | undefined;
+        (buildRes?.sessionId ?? buildRes?.session_id) as string | undefined;
+      console.log("[FastMode] 7. Navigating to workspace:", { projectId: pid, sessionId });
+
       navigate({
         to: "/workspace/$projectId",
         params: { projectId: pid },
         search: { sessionId },
       });
-    } catch {
-      // apiPost already shows toast.error on failure
+    } catch (err) {
+      console.error("[FastMode] Error:", err);
+      // Show the actual error — apiPost toasts HTTP errors, but our own throws
+      // (e.g. missing pid) were previously swallowed silently.
+      const msg = err instanceof Error ? err.message : "Failed to start build";
+      // Avoid double-toasting ApiError — those already fire inside apiPost
+      if (!(err instanceof ApiError)) {
+        toast.error(msg);
+      }
       setSubmitting(false);
     }
   };

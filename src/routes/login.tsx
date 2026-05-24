@@ -45,7 +45,7 @@ function LoginPage() {
   // INITIAL_SESSION (from localStorage) or SIGNED_IN (after OAuth) and updates
   // the store, which triggers this effect. No separate getSession() call needed.
   useEffect(() => {
-    if (!authLoading && user) navigate({ to: "/dashboard", replace: true });
+    if (!authLoading && user) navigate({ to: "/", replace: true });
   }, [authLoading, user, navigate]);
 
   // Apply CSS vars to scoped root
@@ -93,7 +93,7 @@ function LoginPage() {
     try {
       await login(liEm, liPw);
       toast("Welcome back!");
-      navigate({ to: "/dashboard", replace: true });
+      navigate({ to: "/", replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";
       toast.error(msg);
@@ -110,7 +110,7 @@ function LoginPage() {
       await register({ email: suEm, password: suPw, name: `${suFn} ${suLn}`.trim() });
       toast("Account created! Signing you in…");
       await login(suEm, suPw);
-      navigate({ to: "/dashboard", replace: true });
+      navigate({ to: "/", replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sign up failed";
       toast.error(msg);
@@ -132,7 +132,7 @@ function LoginPage() {
       <style>{CSS}</style>
 
       <Link
-        to="/dashboard"
+        to="/"
         className="fixed left-4 top-4 z-50 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-xs font-medium text-white/80 backdrop-blur transition hover:border-white/25 hover:bg-black/60 hover:text-white"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

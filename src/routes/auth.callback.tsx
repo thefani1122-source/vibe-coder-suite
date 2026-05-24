@@ -15,7 +15,7 @@ function AuthCallbackPage() {
     let settled = false;
     let unsubscribe: (() => void) | null = null;
 
-    const finish = (to: "/dashboard" | "/login") => {
+    const finish = (to: "/" | "/login") => {
       if (settled) return;
       settled = true;
       unsubscribe?.();
@@ -32,7 +32,7 @@ function AuthCallbackPage() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
         useAuthStore.getState().setSession(session);
-        finish("/dashboard");
+        finish("/");
       }
     });
     unsubscribe = () => subscription.unsubscribe();
@@ -47,7 +47,7 @@ function AuthCallbackPage() {
       const { data } = await supabase.auth.getSession();
       if (data.session) {
         useAuthStore.getState().setSession(data.session);
-        finish("/dashboard");
+        finish("/");
         return;
       }
 
@@ -64,7 +64,7 @@ function AuthCallbackPage() {
           });
           if (sd.session) {
             useAuthStore.getState().setSession(sd.session);
-            finish("/dashboard");
+            finish("/");
           }
         }
       }

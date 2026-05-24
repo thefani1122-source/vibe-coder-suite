@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const workspaceNav = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "My Projects", url: "/projects", icon: FolderGit2 },
   { title: "MCP", url: "/mcp", icon: Plug },
 ];
@@ -51,7 +51,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <Link to="/dashboard" className="flex items-center gap-2 px-2 py-3">
+        <Link to="/" className="flex items-center gap-2 px-2 py-3">
           <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
             <Lamp className="h-5 w-5 text-primary-foreground" />
           </div>

@@ -10,7 +10,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (loading) return;
     if (!isAuthenticated) {
-      const redirect = pathname.startsWith("/login") ? "/dashboard" : pathname;
+      const redirect = pathname.startsWith("/login") ? "/" : pathname;
       navigate({ to: "/login", replace: true, search: { redirect } as never });
     }
   }, [loading, isAuthenticated, navigate, pathname]);

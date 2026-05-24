@@ -9,7 +9,7 @@ export function LegalPage({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-[#0a0a0b] text-[#e8e6e0]">
       <div className="mx-auto max-w-[800px] px-6 py-10">
         <Button asChild variant="ghost" size="sm" className="mb-6 -ml-2 text-muted-foreground hover:text-foreground">
-          <Link to="/dashboard">
+          <Link to="/">
             <ArrowLeft className="h-4 w-4" /> Back to Dashboard
           </Link>
         </Button>

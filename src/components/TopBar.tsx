@@ -17,7 +17,7 @@ export function TopBar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const showBack = pathname !== "/" && pathname !== "/dashboard";
+  const showBack = pathname !== "/";
 
   const handleLogout = async () => {
     await logout();
@@ -30,7 +30,7 @@ export function TopBar() {
         <SidebarTrigger />
         {showBack && (
           <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground">
-            <Link to="/dashboard">
+            <Link to="/">
               <ArrowLeft className="h-4 w-4" />
               Back to Dashboard
             </Link>

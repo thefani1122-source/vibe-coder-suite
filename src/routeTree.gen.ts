@@ -18,7 +18,6 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DocsRouteImport } from './routes/docs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceProjectIdRouteImport } from './routes/workspace.$projectId'
@@ -69,11 +68,6 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BillingRoute = BillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -98,7 +92,6 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -114,7 +107,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -131,7 +123,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -149,7 +140,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -165,7 +155,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -181,7 +170,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -198,7 +186,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BillingRoute: typeof BillingRoute
-  DashboardRoute: typeof DashboardRoute
   DocsRoute: typeof DocsRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
@@ -277,13 +264,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/billing': {
       id: '/billing'
       path: '/billing'
@@ -318,7 +298,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BillingRoute: BillingRoute,
-  DashboardRoute: DashboardRoute,
   DocsRoute: DocsRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,

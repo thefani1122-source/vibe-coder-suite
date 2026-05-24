@@ -70,17 +70,26 @@ export function PromptComposer() {
     }
     setSubmitting(true);
     try {
-      const project = await apiPost<{ id: string }>("/api/projects", {
+      const projectRes = await apiPost<Record<string, unknown>>("/api/projects", {
         name: value.trim().slice(0, 50),
         mode: "fast",
       });
-      const { sessionId } = await apiPost<{ sessionId: string }>("/api/build/fast", {
-        projectId: project.id,
+      // Handle id / projectId / project_id response conventions
+      const pid =
+        (projectRes.id ?? projectRes.projectId ?? projectRes.project_id) as string | undefined;
+      if (!pid) {
+        throw new Error("Missing project ID in server response");
+      }
+      const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
+        project_id: pid,
         prompt: value.trim(),
       });
+      // Handle sessionId / session_id response conventions
+      const sessionId =
+        (buildRes.sessionId ?? buildRes.session_id) as string | undefined;
       navigate({
         to: "/workspace/$projectId",
-        params: { projectId: project.id },
+        params: { projectId: pid },
         search: { sessionId },
       });
     } catch {

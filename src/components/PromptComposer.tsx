@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
+import { apiPost } from "@/lib/api";
 import { PlanInterview } from "@/components/PlanInterview";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,14 +51,15 @@ export function PromptComposer() {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [planOpen, setPlanOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   void user;
 
-  const submit = () => {
-    if (!value.trim()) return;
+  const submit = async () => {
+    if (!value.trim() || submitting) return;
     if (!isAuthenticated) {
       navigate({ to: "/login" });
       return;
@@ -66,8 +68,25 @@ export function PromptComposer() {
       setPlanOpen(true);
       return;
     }
-    const id = `proj-${Math.random().toString(36).slice(2, 8)}`;
-    navigate({ to: "/workspace/$projectId", params: { projectId: id } });
+    setSubmitting(true);
+    try {
+      const project = await apiPost<{ id: string }>("/api/projects", {
+        name: value.trim().slice(0, 50),
+        mode: "fast",
+      });
+      const { sessionId } = await apiPost<{ sessionId: string }>("/api/build/fast", {
+        projectId: project.id,
+        prompt: value.trim(),
+      });
+      navigate({
+        to: "/workspace/$projectId",
+        params: { projectId: project.id },
+        search: { sessionId },
+      });
+    } catch {
+      // apiPost already shows toast.error on failure
+      setSubmitting(false);
+    }
   };
 
   const current = MODES.find((m) => m.id === mode)!;
@@ -211,7 +230,7 @@ export function PromptComposer() {
           </DropdownMenu>
           <Button
             size="icon"
-            disabled={!value.trim()}
+            disabled={!value.trim() || submitting}
             onClick={submit}
             className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90 disabled:opacity-40"
           >

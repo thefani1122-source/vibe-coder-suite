@@ -2,6 +2,7 @@ import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
 import { createBuildSocket, WS_URL } from "@/lib/websocket";
+import { apiGet, ApiError } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -303,6 +304,92 @@ function WorkspacePageInner() {
       socket.disconnect();
     };
   }, [sessionId]);
+
+  // ─── REST polling fallback ─────────────────────────────────────────────────
+  // The WebSocket on /build is the primary delivery channel for progress &
+  // completion. But in production some users see the agent finish on the
+  // backend with no `build:complete` ever reaching the client (WS dropped,
+  // CORS, namespace mismatch, etc.). Poll the REST status endpoint every 5s
+  // while we're still "building" so the UI can recover the final result.
+  useEffect(() => {
+    if (!sessionId || !building) return;
+
+    let cancelled = false;
+
+    const tryEndpoints = async (): Promise<Record<string, unknown> | null> => {
+      const candidates = [
+        `/api/build/${sessionId}`,
+        `/api/build/${sessionId}/status`,
+        `/api/sessions/${sessionId}`,
+        `/api/projects/${projectId}/build`,
+      ];
+      for (const path of candidates) {
+        try {
+          const res = await apiGet<Record<string, unknown>>(path, { silent: true });
+          if (res && typeof res === "object") return res;
+        } catch (err) {
+          // 404 just means this backend doesn't expose that path — try the next.
+          if (err instanceof ApiError && err.status !== 404) {
+            console.log("[poll] error on", path, err.status, err.message);
+          }
+        }
+      }
+      return null;
+    };
+
+    const applyIfDone = (raw: Record<string, unknown>): boolean => {
+      // Unwrap common envelopes
+      const data = (raw.data ?? raw.result ?? raw.build ?? raw.session ?? raw) as Record<string, unknown>;
+      const status = (data.status ?? data.state ?? raw.status) as string | undefined;
+      const files = (data.files ?? raw.files) as FileMap | undefined;
+      const previewUrl =
+        (data.previewUrl ?? data.preview_url ?? data.url ?? raw.previewUrl ?? raw.preview_url ?? null) as string | null;
+      const errorMsg = (data.error ?? data.message ?? raw.error) as string | undefined;
+
+      if (status === "failed" || status === "error") {
+        setBuildError(errorMsg ?? "Build failed");
+        setBuilding(false);
+        return true;
+      }
+
+      const isDone =
+        status === "done" ||
+        status === "completed" ||
+        status === "complete" ||
+        status === "success" ||
+        !!previewUrl ||
+        (files && Object.keys(files).length > 0);
+
+      if (isDone) {
+        const filesMap = files ?? {};
+        setFiles(filesMap);
+        setPreviewUrl(previewUrl);
+        setBuilding(false);
+        const paths = Object.keys(filesMap);
+        const topFolders = [...new Set(paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0]))];
+        setOpenFolders(Object.fromEntries(topFolders.map((f) => [f, true])));
+        if (paths.length > 0) setActiveFile(paths[0]);
+        setTimeout(() => setCollapsedStatus(true), 800);
+        return true;
+      }
+      return false;
+    };
+
+    const tick = async () => {
+      const res = await tryEndpoints();
+      if (cancelled) return;
+      if (res) applyIfDone(res);
+    };
+
+    // First poll after 4s to give WS a chance, then every 5s.
+    const initial = setTimeout(tick, 4000);
+    const interval = setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
+  }, [sessionId, projectId, building]);
 
   const cancelBuild = () => {
     socketRef.current?.emit("build:cancel", { projectId, sessionId });

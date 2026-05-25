@@ -1,7 +1,7 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
-import { connectSocket, disconnectSocket } from "@/lib/websocket";
+import { connectSocket, disconnectSocket, WS_URL } from "@/lib/websocket";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -126,6 +126,8 @@ function WorkspacePageInner() {
 
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
   const [building, setBuilding] = useState(!!sessionId);
+  const [hasReceivedEvents, setHasReceivedEvents] = useState(false);
+  const [buildError, setBuildError] = useState<string | null>(null);
   const [collapsedStatus, setCollapsedStatus] = useState(false);
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -137,16 +139,26 @@ function WorkspacePageInner() {
   const socketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
 
   useEffect(() => {
+    console.log("[WS] Connecting to", WS_URL || "(empty — check VITE_WS_URL)");
     const socket = connectSocket();
     socketRef.current = socket;
 
-    const onConnect = () => socket.emit("workspace:join", { projectId, sessionId });
+    const onConnect = () => {
+      console.log("[WS] Connected");
+      socket.emit("workspace:join", { projectId, sessionId });
+    };
     socket.on("connect", onConnect);
     if (socket.connected) onConnect();
+
+    socket.on("connect_error", (err) => {
+      console.log("[WS] connect_error", err.message, err);
+    });
 
     socket.on(
       "agent:update",
       (data: { agent: string; status: StepStatus; progress: number; detail?: string }) => {
+        console.log("[WS] agent:update", data);
+        setHasReceivedEvents(true);
         setSteps((prev) =>
           prev.map((s) =>
             s.key === data.agent
@@ -160,11 +172,11 @@ function WorkspacePageInner() {
     socket.on(
       "build:complete",
       (data: { files: FileMap; previewUrl: string }) => {
+        console.log("[WS] build:complete", data);
         setFiles(data.files);
         setPreviewUrl(data.previewUrl);
         setBuilding(false);
 
-        // Open top-level folders and select first file
         const paths = Object.keys(data.files);
         const topFolders = [...new Set(
           paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0])
@@ -177,12 +189,15 @@ function WorkspacePageInner() {
     );
 
     socket.on("build:error", (data: { message: string }) => {
+      console.log("[WS] build:error", data);
+      setBuildError(data.message);
       toast.error(`Build failed: ${data.message}`);
       setBuilding(false);
     });
 
     return () => {
       socket.off("connect", onConnect);
+      socket.off("connect_error");
       socket.off("agent:update");
       socket.off("build:complete");
       socket.off("build:error");
@@ -222,7 +237,20 @@ function WorkspacePageInner() {
         {/* Activity area */}
         <div className="flex-1 overflow-y-auto p-4">
           <AnimatePresence mode="wait">
-            {!collapsedStatus ? (
+            {buildError ? (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-3 text-sm"
+              >
+                <X className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div>
+                  <p className="font-medium text-destructive">Build failed</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{buildError}</p>
+                </div>
+              </motion.div>
+            ) : !collapsedStatus ? (
               <motion.div
                 key="cards"
                 initial={{ opacity: 0 }}
@@ -230,9 +258,14 @@ function WorkspacePageInner() {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-2"
               >
-                {steps.map((s) => (
-                  <StepCard key={s.key} step={s} />
-                ))}
+                {building && !hasReceivedEvents ? (
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-4 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                    Waiting for agent to start...
+                  </div>
+                ) : (
+                  steps.map((s) => <StepCard key={s.key} step={s} />)
+                )}
                 {building && (
                   <Button
                     variant="outline"

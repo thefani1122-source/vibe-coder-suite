@@ -1,7 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "@/lib/auth";
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? "";
+export const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined) ?? "";
 
 let socket: Socket | null = null;
 

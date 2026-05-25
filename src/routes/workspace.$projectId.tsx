@@ -141,26 +141,34 @@ function WorkspacePageInner() {
   const socketRef = useRef<ReturnType<typeof createBuildSocket> | null>(null);
 
   useEffect(() => {
+    // No sessionId means this workspace was opened without a build — nothing to connect to.
+    if (!sessionId) {
+      console.log("[WS] No sessionId — skipping socket connection");
+      return;
+    }
+
     console.log("[WS] Backend URL:", WS_URL || "(empty — check VITE_BACKEND_URL)", "| sessionId:", sessionId);
 
-    // Per-session socket: connects to /build namespace with sessionId in handshake query
-    // so the backend can join the room immediately without waiting for a join event.
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      console.log("[WS] Connected — socket.id:", socket.id);
-      // Also emit join event as fallback for backends that use event-based room join
-      socket.emit("workspace:join", { projectId, sessionId });
-      socket.emit("build:join", { projectId, sessionId });
-    });
+    // join() is called on every (re)connect so the room is always rejoined after
+    // a disconnect. The backend room name is session:${sessionId}.
+    const join = () => {
+      console.log("[WS] Connected — socket.id:", socket.id, "| emitting join { sessionId:", sessionId, "}");
+      socket.emit("join", { sessionId });
+    };
+
+    socket.on("connect", join);
+    // If already connected when the effect runs (hot-reload), join immediately.
+    if (socket.connected) join();
 
     socket.on("connect_error", (err) => {
       console.log("[WS] connect_error:", err.message, err);
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("[WS] Disconnected:", reason);
+      console.log("[WS] Disconnected:", reason, "— socket.io will auto-reconnect");
     });
 
     // Normalize progress data to a step update
@@ -202,8 +210,7 @@ function WorkspacePageInner() {
     };
     const onProgress = (data: unknown) => {
       console.log("[WS] progress:", data);
-      // Generic progress — just mark events as received so waiting state clears
-      setHasReceivedEvents(true);
+      applyAgentUpdate(data as Record<string, unknown>);
     };
 
     socket.on("agent_progress", onAgentProgress);
@@ -261,7 +268,7 @@ function WorkspacePageInner() {
     socket.on("build_error", onBuildErrorAlt);
 
     return () => {
-      socket.off("connect");
+      socket.off("connect", join);
       socket.off("connect_error");
       socket.off("disconnect");
       socket.off("agent_progress", onAgentProgress);
@@ -273,7 +280,7 @@ function WorkspacePageInner() {
       socket.off("build_error", onBuildErrorAlt);
       socket.disconnect();
     };
-  }, [projectId, sessionId]);
+  }, [sessionId]);
 
   const cancelBuild = () => {
     socketRef.current?.emit("build:cancel", { projectId, sessionId });

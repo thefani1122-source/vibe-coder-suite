@@ -80,9 +80,10 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
     if (token) {
       socket.auth = { token, sessionId: sessionId ?? "" };
       // Some backends look at extraHeaders for HTTP-style Bearer.
-      // (Ignored on websocket transport in browsers — harmless.)
-      // @ts-expect-error io types don't expose io.opts directly
-      socket.io.opts.extraHeaders = { Authorization: `Bearer ${token}` };
+      // (Ignored on websocket transport in browsers — harmless on polling.)
+      (socket.io.opts as { extraHeaders?: Record<string, string> }).extraHeaders = {
+        Authorization: `Bearer ${token}`,
+      };
     }
     socket.connect();
   });

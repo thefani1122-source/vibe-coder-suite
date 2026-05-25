@@ -1,4 +1,5 @@
 import { io, Socket } from "socket.io-client";
+import { getAccessToken } from "@/lib/auth";
 
 const BACKEND_URL =
   (import.meta.env.VITE_BACKEND_URL as string | undefined) ??
@@ -58,16 +59,33 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
   const base = BACKEND_URL;
   console.log("[WS] createBuildSocket — base:", base || "(empty — check VITE_BACKEND_URL)", "sessionId:", sessionId);
 
-  // withCredentials is intentionally false — /build namespace is auth-free.
-  // Sending cookies causes UNAUTHORIZED from the backend auth middleware.
-  return io(`${base}/build`, {
+  // Connect to the DEFAULT namespace (the backend exposes /socket.io/ only —
+  // there is no /build namespace). Pass the Supabase JWT via the standard
+  // `auth` handshake field so the backend's auth middleware accepts it; also
+  // mirror in query for backends that read it there.
+  const socket = io(base, {
+    path: "/socket.io",
     query: { sessionId: sessionId ?? "" },
     transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    withCredentials: false,
-    autoConnect: true,
+    withCredentials: true,
+    autoConnect: false,
   });
+
+  // Resolve the token, attach it, then connect.
+  void getAccessToken().then((token) => {
+    if (token) {
+      socket.auth = { token, sessionId: sessionId ?? "" };
+      // Some backends look at extraHeaders for HTTP-style Bearer.
+      // (Ignored on websocket transport in browsers — harmless.)
+      // @ts-expect-error io types don't expose io.opts directly
+      socket.io.opts.extraHeaders = { Authorization: `Bearer ${token}` };
+    }
+    socket.connect();
+  });
+
+  return socket;
 }

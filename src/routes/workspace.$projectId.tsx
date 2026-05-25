@@ -1,7 +1,7 @@
 import { createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/RequireAuth";
-import { connectSocket, disconnectSocket, WS_URL } from "@/lib/websocket";
+import { createBuildSocket, WS_URL } from "@/lib/websocket";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import {
@@ -136,77 +136,137 @@ function WorkspacePageInner() {
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState<FileMap>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const socketRef = useRef<ReturnType<typeof connectSocket> | null>(null);
+  const socketRef = useRef<ReturnType<typeof createBuildSocket> | null>(null);
 
   useEffect(() => {
-    console.log("[WS] Connecting to", WS_URL || "(empty — check VITE_WS_URL)");
-    const socket = connectSocket();
+    console.log("[WS] Backend URL:", WS_URL || "(empty — check VITE_BACKEND_URL)", "| sessionId:", sessionId);
+
+    // Per-session socket: connects to /build namespace with sessionId in handshake query
+    // so the backend can join the room immediately without waiting for a join event.
+    const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    const onConnect = () => {
-      console.log("[WS] Connected");
+    socket.on("connect", () => {
+      console.log("[WS] Connected — socket.id:", socket.id);
+      // Also emit join event as fallback for backends that use event-based room join
       socket.emit("workspace:join", { projectId, sessionId });
-    };
-    socket.on("connect", onConnect);
-    if (socket.connected) onConnect();
-
-    socket.on("connect_error", (err) => {
-      console.log("[WS] connect_error", err.message, err);
+      socket.emit("build:join", { projectId, sessionId });
     });
 
-    socket.on(
-      "agent:update",
-      (data: { agent: string; status: StepStatus; progress: number; detail?: string }) => {
-        console.log("[WS] agent:update", data);
-        setHasReceivedEvents(true);
+    socket.on("connect_error", (err) => {
+      console.log("[WS] connect_error:", err.message, err);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("[WS] Disconnected:", reason);
+    });
+
+    // Normalize progress data to a step update
+    const applyAgentUpdate = (data: Record<string, unknown>) => {
+      setHasReceivedEvents(true);
+      const agentKey = (data.agent ?? data.name ?? data.step ?? "") as string;
+      const status = (data.status ?? (data.done ? "done" : data.running ? "running" : undefined)) as StepStatus | undefined;
+      const progress = (data.progress ?? data.percent ?? 0) as number;
+      const detail = (data.detail ?? data.message ?? data.msg ?? undefined) as string | undefined;
+
+      if (agentKey) {
         setSteps((prev) =>
           prev.map((s) =>
-            s.key === data.agent
-              ? { ...s, status: data.status, progress: data.progress, ...(data.detail ? { detail: data.detail } : {}) }
+            s.key === agentKey
+              ? { ...s, ...(status ? { status } : {}), progress, ...(detail ? { detail } : {}) }
               : s
           )
         );
       }
-    );
+    };
 
-    socket.on(
-      "build:complete",
-      (data: { files: FileMap; previewUrl: string }) => {
-        console.log("[WS] build:complete", data);
-        setFiles(data.files);
-        setPreviewUrl(data.previewUrl);
-        setBuilding(false);
+    // Listen for all known agent progress event name variants
+    const onAgentProgress = (data: unknown) => {
+      console.log("[WS] agent_progress:", data);
+      applyAgentUpdate(data as Record<string, unknown>);
+    };
+    const onAgentUpdate = (data: unknown) => {
+      console.log("[WS] agent:update:", data);
+      applyAgentUpdate(data as Record<string, unknown>);
+    };
+    const onProgress = (data: unknown) => {
+      console.log("[WS] progress:", data);
+      // Generic progress — just mark events as received so waiting state clears
+      setHasReceivedEvents(true);
+    };
 
-        const paths = Object.keys(data.files);
-        const topFolders = [...new Set(
-          paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0])
-        )];
-        setOpenFolders(Object.fromEntries(topFolders.map((f) => [f, true])));
-        if (paths.length > 0) setActiveFile(paths[0]);
+    socket.on("agent_progress", onAgentProgress);
+    socket.on("agent:update", onAgentUpdate);
+    socket.on("progress", onProgress);
 
-        setTimeout(() => setCollapsedStatus(true), 800);
-      }
-    );
-
-    socket.on("build:error", (data: { message: string }) => {
-      console.log("[WS] build:error", data);
-      setBuildError(data.message);
-      toast.error(`Build failed: ${data.message}`);
+    // Normalize build complete (both naming conventions)
+    const applyBuildComplete = (data: Record<string, unknown>) => {
+      const files = (data.files ?? {}) as FileMap;
+      const url = (data.previewUrl ?? data.preview_url ?? data.url ?? null) as string | null;
+      setFiles(files);
+      setPreviewUrl(url);
       setBuilding(false);
-    });
+
+      const paths = Object.keys(files);
+      const topFolders = [...new Set(
+        paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0])
+      )];
+      setOpenFolders(Object.fromEntries(topFolders.map((f) => [f, true])));
+      if (paths.length > 0) setActiveFile(paths[0]);
+
+      setTimeout(() => setCollapsedStatus(true), 800);
+    };
+
+    const onBuildComplete = (data: unknown) => {
+      console.log("[WS] build:complete:", data);
+      applyBuildComplete(data as Record<string, unknown>);
+    };
+    const onBuildDone = (data: unknown) => {
+      console.log("[WS] build_complete:", data);
+      applyBuildComplete(data as Record<string, unknown>);
+    };
+
+    socket.on("build:complete", onBuildComplete);
+    socket.on("build_complete", onBuildDone);
+
+    // Normalize build error
+    const applyBuildError = (data: Record<string, unknown>) => {
+      const msg = (data.message ?? data.error ?? data.msg ?? "Unknown error") as string;
+      setBuildError(msg);
+      toast.error(`Build failed: ${msg}`);
+      setBuilding(false);
+    };
+
+    const onBuildError = (data: unknown) => {
+      console.log("[WS] build:error:", data);
+      applyBuildError(data as Record<string, unknown>);
+    };
+    const onBuildErrorAlt = (data: unknown) => {
+      console.log("[WS] build_error:", data);
+      applyBuildError(data as Record<string, unknown>);
+    };
+
+    socket.on("build:error", onBuildError);
+    socket.on("build_error", onBuildErrorAlt);
 
     return () => {
-      socket.off("connect", onConnect);
+      socket.off("connect");
       socket.off("connect_error");
-      socket.off("agent:update");
-      socket.off("build:complete");
-      socket.off("build:error");
-      disconnectSocket();
+      socket.off("disconnect");
+      socket.off("agent_progress", onAgentProgress);
+      socket.off("agent:update", onAgentUpdate);
+      socket.off("progress", onProgress);
+      socket.off("build:complete", onBuildComplete);
+      socket.off("build_complete", onBuildDone);
+      socket.off("build:error", onBuildError);
+      socket.off("build_error", onBuildErrorAlt);
+      socket.disconnect();
     };
   }, [projectId, sessionId]);
 
   const cancelBuild = () => {
     socketRef.current?.emit("build:cancel", { projectId, sessionId });
+    socketRef.current?.emit("build_cancel", { projectId, sessionId });
     setBuilding(false);
     setCollapsedStatus(true);
   };

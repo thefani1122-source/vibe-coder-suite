@@ -69,6 +69,8 @@ type Step = {
   label: string;
   icon: typeof Brain;
   detail?: string;
+  currentFile?: string;
+  statusText?: string;
   status: StepStatus;
   progress: number;
 };
@@ -168,12 +170,21 @@ function WorkspacePageInner() {
       const status = (data.status ?? (data.done ? "done" : data.running ? "running" : undefined)) as StepStatus | undefined;
       const progress = (data.progress ?? data.percent ?? 0) as number;
       const detail = (data.detail ?? data.message ?? data.msg ?? undefined) as string | undefined;
+      const currentFile = (data.current_file ?? data.file ?? data.currentFile ?? undefined) as string | undefined;
+      const statusText = (data.status_text ?? data.statusText ?? data.action ?? undefined) as string | undefined;
 
       if (agentKey) {
         setSteps((prev) =>
           prev.map((s) =>
             s.key === agentKey
-              ? { ...s, ...(status ? { status } : {}), progress, ...(detail ? { detail } : {}) }
+              ? {
+                  ...s,
+                  ...(status ? { status } : {}),
+                  progress,
+                  ...(detail ? { detail } : {}),
+                  ...(currentFile !== undefined ? { currentFile } : {}),
+                  ...(statusText !== undefined ? { statusText } : {}),
+                }
               : s
           )
         );
@@ -579,13 +590,13 @@ function StepCard({ step }: { step: Step }) {
         "rounded-lg border bg-card p-3 transition-colors",
         step.status === "running" && "border-primary/40",
         step.status === "done" && "border-emerald-500/30",
-        step.status === "pending" && "border-border opacity-60",
+        step.status === "pending" && "border-border opacity-50",
       )}
     >
       <div className="flex items-center gap-2">
         <div
           className={cn(
-            "flex h-6 w-6 items-center justify-center rounded",
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded",
             step.status === "done" && "bg-emerald-500/15 text-emerald-500",
             step.status === "running" && "bg-primary/15 text-primary",
             step.status === "pending" && "bg-muted text-muted-foreground",
@@ -594,7 +605,15 @@ function StepCard({ step }: { step: Step }) {
           <Icon className="h-3.5 w-3.5" />
         </div>
         <span className="text-sm font-medium">{step.label}</span>
-        <div className="ml-auto">
+        {step.status === "running" && step.progress > 0 && (
+          <span className="ml-1 text-xs text-primary">{step.progress}%</span>
+        )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {step.statusText && step.status === "running" && (
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              {step.statusText}
+            </span>
+          )}
           {step.status === "done" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
           {step.status === "running" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
           {step.status === "pending" && <Clock className="h-4 w-4 text-muted-foreground" />}
@@ -602,6 +621,11 @@ function StepCard({ step }: { step: Step }) {
       </div>
       {step.detail && step.status !== "pending" && (
         <p className="mt-1.5 pl-8 text-xs text-muted-foreground">{step.detail}</p>
+      )}
+      {step.currentFile && step.status === "running" && (
+        <p className="mt-1 pl-8 font-mono text-[10px] text-primary/70 truncate" title={step.currentFile}>
+          {step.currentFile}
+        </p>
       )}
       {step.status === "running" && (
         <Progress value={step.progress} className="mt-2 h-1" />

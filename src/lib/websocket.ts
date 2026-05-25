@@ -58,6 +58,8 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
   const base = BACKEND_URL;
   console.log("[WS] createBuildSocket — base:", base || "(empty — check VITE_BACKEND_URL)", "sessionId:", sessionId);
 
+  // withCredentials is intentionally false — /build namespace is auth-free.
+  // Sending cookies causes UNAUTHORIZED from the backend auth middleware.
   return io(`${base}/build`, {
     query: { sessionId: sessionId ?? "" },
     transports: ["websocket", "polling"],
@@ -65,7 +67,7 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    withCredentials: true,
+    withCredentials: false,
     autoConnect: true,
   });
 }

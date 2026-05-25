@@ -130,6 +130,7 @@ function WorkspacePageInner() {
   const [building, setBuilding] = useState(!!sessionId);
   const [hasReceivedEvents, setHasReceivedEvents] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
+  const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "failed">("connecting");
   const [collapsedStatus, setCollapsedStatus] = useState(false);
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -139,36 +140,55 @@ function WorkspacePageInner() {
   const [files, setFiles] = useState<FileMap>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const socketRef = useRef<ReturnType<typeof createBuildSocket> | null>(null);
+  const wsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // No sessionId means this workspace was opened without a build — nothing to connect to.
+    // WS is progress-display only — the build API already fired before navigation.
+    // A WS failure must never block or appear to block the build.
     if (!sessionId) {
       console.log("[WS] No sessionId — skipping socket connection");
+      setWsStatus("failed");
       return;
     }
 
     console.log("[WS] Backend URL:", WS_URL || "(empty — check VITE_BACKEND_URL)", "| sessionId:", sessionId);
+    setWsStatus("connecting");
 
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    // join() is called on every (re)connect so the room is always rejoined after
-    // a disconnect. The backend room name is session:${sessionId}.
+    // Safety net: if no connection within 20 s, stop waiting and show fallback.
+    wsTimeoutRef.current = setTimeout(() => {
+      if (socket.connected) return;
+      console.log("[WS] Connection timeout — showing offline fallback");
+      setWsStatus("failed");
+    }, 20_000);
+
+    // join() fires on every (re)connect so the room is always rejoined after drops.
     const join = () => {
       console.log("[WS] Connected — socket.id:", socket.id, "| emitting join { sessionId:", sessionId, "}");
+      setWsStatus("connected");
+      if (wsTimeoutRef.current) clearTimeout(wsTimeoutRef.current);
       socket.emit("join", { sessionId });
     };
 
     socket.on("connect", join);
-    // If already connected when the effect runs (hot-reload), join immediately.
     if (socket.connected) join();
 
     socket.on("connect_error", (err) => {
       console.log("[WS] connect_error:", err.message, err);
     });
 
+    // After all reconnect attempts are exhausted, show fallback immediately.
+    socket.on("reconnect_failed", () => {
+      console.log("[WS] reconnect_failed — showing offline fallback");
+      setWsStatus("failed");
+      if (wsTimeoutRef.current) clearTimeout(wsTimeoutRef.current);
+    });
+
     socket.on("disconnect", (reason) => {
       console.log("[WS] Disconnected:", reason, "— socket.io will auto-reconnect");
+      setWsStatus("connecting");
     });
 
     // Normalize progress data to a step update
@@ -268,8 +288,10 @@ function WorkspacePageInner() {
     socket.on("build_error", onBuildErrorAlt);
 
     return () => {
+      if (wsTimeoutRef.current) clearTimeout(wsTimeoutRef.current);
       socket.off("connect", join);
       socket.off("connect_error");
+      socket.off("reconnect_failed");
       socket.off("disconnect");
       socket.off("agent_progress", onAgentProgress);
       socket.off("agent:update", onAgentUpdate);
@@ -309,7 +331,19 @@ function WorkspacePageInner() {
             </div>
             <span className="text-sm font-semibold">Lampcode AI</span>
           </div>
-          <span className="text-xs text-muted-foreground truncate max-w-[180px]">{projectId}</span>
+          <div className="flex items-center gap-2">
+            {/* WS connection indicator — purely informational, never blocks build */}
+            <span
+              title={wsStatus === "connected" ? "Live updates active" : wsStatus === "connecting" ? "Connecting…" : "Live updates unavailable"}
+              className={cn(
+                "h-2 w-2 rounded-full",
+                wsStatus === "connected" && "bg-emerald-500",
+                wsStatus === "connecting" && "animate-pulse bg-amber-400",
+                wsStatus === "failed" && "bg-muted-foreground",
+              )}
+            />
+            <span className="text-xs text-muted-foreground truncate max-w-[160px]">{projectId}</span>
+          </div>
         </div>
 
         {/* Activity area */}
@@ -337,10 +371,22 @@ function WorkspacePageInner() {
                 className="space-y-2"
               >
                 {building && !hasReceivedEvents ? (
-                  <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-4 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                    Waiting for agent to start...
-                  </div>
+                  wsStatus === "failed" ? (
+                    // WS failed — build is still running on backend, just no live view
+                    <div className="rounded-lg border border-border bg-card px-4 py-4 text-sm space-y-1">
+                      <p className="font-medium text-foreground">Build is running</p>
+                      <p className="text-xs text-muted-foreground">
+                        Real-time progress unavailable — live updates couldn&apos;t connect.
+                        The build continues in the background; reload this page in a few
+                        minutes to see the result.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-4 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+                      Waiting for agent to start...
+                    </div>
+                  )
                 ) : (
                   steps.map((s) => <StepCard key={s.key} step={s} />)
                 )}

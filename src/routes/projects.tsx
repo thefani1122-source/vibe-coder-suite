@@ -50,10 +50,19 @@ function ProjectsPage() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
 
-  const { data: projects = [], isPending } = useQuery<Project[]>({
+  const { data, isPending } = useQuery<Project[]>({
     queryKey: ["projects"],
-    queryFn: () => apiGet<Project[]>("/api/projects"),
+    queryFn: async () => {
+      const res = await apiGet<unknown>("/api/projects");
+      if (Array.isArray(res)) return res as Project[];
+      // Backend may wrap as { projects: [...] } or { data: [...] } etc.
+      const wrapped = res as Record<string, unknown>;
+      const arr = wrapped.projects ?? wrapped.data ?? wrapped.items ?? [];
+      return Array.isArray(arr) ? (arr as Project[]) : [];
+    },
   });
+
+  const projects = Array.isArray(data) ? data : [];
 
   const filtered = search
     ? projects.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))

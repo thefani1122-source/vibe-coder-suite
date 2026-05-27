@@ -96,7 +96,7 @@ function TreeNode({
       <button
         onClick={() => onSelect(node.path)}
         className={cn(
-          "w-full flex items-center gap-1.5 py-[3px] pr-2 rounded-sm text-left text-xs transition-colors group",
+          "file-row w-full flex items-center gap-1.5 py-[4px] pr-2 rounded-sm text-left text-xs group",
           isSelected ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
           isNew && "text-green-400"
         )}
@@ -117,7 +117,7 @@ function TreeNode({
     <div>
       <button
         onClick={() => setOpen(p => !p)}
-        className="w-full flex items-center gap-1.5 py-[3px] pr-2 rounded-sm text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+        className="file-row w-full flex items-center gap-1.5 py-[4px] pr-2 rounded-sm text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {open

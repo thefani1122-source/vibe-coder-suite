@@ -166,3 +166,127 @@
 .legal-prose th { background: color-mix(in oklab, var(--color-muted) 60%, transparent); color: var(--color-foreground); font-weight: 600; }
 .legal-prose hr { border: 0; border-top: 1px solid var(--color-border); margin: 2rem 0; }
 .legal-prose blockquote { border-left: 3px solid var(--color-primary); padding-left: 1rem; margin: 1rem 0; color: var(--color-muted-foreground); }
+
+/* ─── Workspace polish utilities ─────────────────────────────────────────── */
+
+/* Gradient-bordered chat bubble */
+.chat-bubble-gradient {
+  position: relative;
+  background: color-mix(in oklab, var(--color-card) 80%, transparent);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+.chat-bubble-gradient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg,
+    color-mix(in oklab, var(--color-primary) 70%, transparent),
+    color-mix(in oklab, var(--accent) 80%, transparent) 50%,
+    color-mix(in oklab, var(--color-primary) 40%, transparent));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* File row hover lift */
+.file-row {
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+.file-row:hover {
+  transform: translateX(2px);
+  box-shadow: inset 2px 0 0 0 var(--color-primary);
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--color-muted) 60%, transparent) 0%,
+    color-mix(in oklab, var(--color-muted) 90%, transparent) 50%,
+    color-mix(in oklab, var(--color-muted) 60%, transparent) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 8px;
+}
+
+/* Macbook frame */
+.device-macbook {
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px 14px 0;
+  background: linear-gradient(180deg, oklch(0.30 0.012 270), oklch(0.22 0.012 270));
+  border-radius: 18px 18px 4px 4px;
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+.device-macbook::before {
+  content: "";
+  position: absolute;
+  top: 6px; left: 50%;
+  transform: translateX(-50%);
+  width: 60px; height: 6px;
+  background: oklch(0.18 0.01 270);
+  border-radius: 0 0 6px 6px;
+}
+.device-macbook-screen {
+  background: #000;
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 16/10;
+}
+.device-macbook-base {
+  height: 14px;
+  margin: 0 -24px;
+  background: linear-gradient(180deg, oklch(0.26 0.012 270), oklch(0.16 0.012 270));
+  border-radius: 0 0 16px 16px;
+  position: relative;
+}
+.device-macbook-base::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 22%; height: 4px;
+  background: oklch(0.14 0.01 270);
+  border-radius: 0 0 8px 8px;
+}
+
+/* iPhone frame */
+.device-iphone {
+  position: relative;
+  width: 380px;
+  max-width: 90%;
+  margin: 0 auto;
+  padding: 14px;
+  background: linear-gradient(180deg, oklch(0.22 0.012 270), oklch(0.14 0.012 270));
+  border-radius: 44px;
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+.device-iphone-screen {
+  background: #000;
+  border-radius: 32px;
+  overflow: hidden;
+  aspect-ratio: 9/19.5;
+  position: relative;
+}
+.device-iphone-notch {
+  position: absolute;
+  top: 10px; left: 50%;
+  transform: translateX(-50%);
+  width: 110px; height: 26px;
+  background: #000;
+  border-radius: 18px;
+  z-index: 10;
+}

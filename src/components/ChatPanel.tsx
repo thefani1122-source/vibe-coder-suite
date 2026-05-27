@@ -77,26 +77,37 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
       >
-        {groups.length === 0 && (
+        {groups.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
             <span className="text-3xl">⚡</span>
             <p className="text-sm text-muted-foreground">
-              {isBuilding ? "Agents warming up..." : "Start a build to see agent output"}
+              Start a build to see agent output
             </p>
+          </div>
+        )}
+
+        {groups.length === 0 && isBuilding && (
+          <div className="space-y-3">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="skeleton-shimmer h-3 w-28" />
+                <div className="skeleton-shimmer h-16 w-full rounded-2xl" />
+              </div>
+            ))}
           </div>
         )}
 
         {groups.map((group, i) => {
           const meta = AGENT_META[group.agent]
           return (
-            <div key={i} className="flex flex-col gap-1">
+            <div key={i} className="flex flex-col gap-1 animate-fade-in">
               <span className={cn(
                 "text-xs font-semibold flex items-center gap-1",
                 meta?.color ?? "text-muted-foreground"
               )}>
                 {meta?.icon} {meta?.label ?? group.agent}
               </span>
-              <div className="bg-muted/40 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
+              <div className="chat-bubble-gradient rounded-tl-sm">
                 <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed text-foreground/90">
                   {group.text}
                 </pre>
@@ -106,14 +117,14 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
         })}
 
         {isBuilding && (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 animate-fade-in">
             <span className={cn(
               "text-xs font-semibold flex items-center gap-1",
               activeMeta?.color ?? "text-muted-foreground"
             )}>
               {activeMeta ? `${activeMeta.icon} ${activeMeta.label}` : "Agent"}
             </span>
-            <div className="bg-muted/40 rounded-2xl rounded-tl-sm px-4 py-3 w-fit">
+            <div className="chat-bubble-gradient rounded-tl-sm w-fit">
               <div className="flex gap-1 items-center">
                 {[0, 150, 300].map((delay) => (
                   <span

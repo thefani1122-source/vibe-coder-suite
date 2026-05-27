@@ -292,10 +292,28 @@ export function PromptComposer() {
         open={planOpen}
         initialPrompt={value}
         onClose={() => setPlanOpen(false)}
-        onComplete={() => {
+        onComplete={async () => {
           setPlanOpen(false);
-          const id = `proj-${Math.random().toString(36).slice(2, 8)}`;
-          navigate({ to: "/workspace/$projectId", params: { projectId: id } });
+          try {
+            const project = await apiPost<{ id: string }>("/api/projects", {
+              name: value.slice(0, 60) || "New Project",
+              description: value,
+            })
+
+            const build = await apiPost<{ sessionId: string }>("/api/build/fast", {
+              projectId: project.id,
+              prompt: value,
+              mode: "fast",
+            })
+
+            navigate({
+              to: "/workspace/$projectId",
+              params: { projectId: project.id },
+              search: { sessionId: build.sessionId },
+            })
+          } catch (err) {
+            toast.error("Could not start build. Please try again.")
+          }
         }}
       />
     </div>

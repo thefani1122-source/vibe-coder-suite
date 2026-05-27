@@ -531,7 +531,7 @@ export function PlanInterview({ open, initialPrompt = "", onClose, onComplete }:
                       "Row-level security on all user tables",
                       "Auth tokens stored httpOnly",
                       "Input validation on every endpoint",
-                      "Secrets stored in Lovable Cloud secrets",
+                      "Secrets stored in BuildForge encrypted storage",
                       "Rate limiting on auth endpoints",
                     ].map((c) => (
                       <li key={c} className="flex items-center gap-2 text-muted-foreground">

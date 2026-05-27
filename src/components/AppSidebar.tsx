@@ -1,4 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/lib/api";
 import {
   LayoutDashboard,
   FolderGit2,
@@ -48,6 +50,11 @@ const legalNav = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (path: string) => currentPath === path;
+  const { data: billing } = useQuery({
+    queryKey: ["billing"],
+    queryFn: () => apiGet<{ creditsUsed: number; creditsLimit: number }>("/api/users/me/billing"),
+    staleTime: 30_000,
+  });
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -125,7 +132,7 @@ export function AppSidebar() {
           <Sparkles className="h-4 w-4 text-primary" />
           <div className="flex-1 text-xs">
             <div className="font-medium">Starter</div>
-            <div className="text-muted-foreground">340 / 500 credits</div>
+            <div className="text-muted-foreground">{billing?.creditsUsed ?? 0} / {billing?.creditsLimit ?? 500} credits</div>
           </div>
         </Link>
       </SidebarFooter>

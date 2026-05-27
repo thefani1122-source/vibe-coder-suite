@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard,
   FolderGit2,
@@ -50,10 +51,13 @@ const legalNav = [
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (path: string) => currentPath === path;
+  const { isAuthenticated } = useAuth();
   const { data: billing } = useQuery({
     queryKey: ["billing"],
     queryFn: () => apiGet<{ creditsUsed: number; creditsLimit: number }>("/api/users/me/billing"),
-    staleTime: 30_000,
+    staleTime: 60_000,
+    retry: false,
+    enabled: isAuthenticated,
   });
   return (
     <Sidebar collapsible="icon">

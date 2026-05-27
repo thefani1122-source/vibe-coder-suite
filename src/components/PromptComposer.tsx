@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
 import { apiPost, ApiError } from "@/lib/api";
-import { PlanInterview } from "@/components/PlanInterview";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -50,7 +49,6 @@ export function PromptComposer() {
   const [mode, setMode] = useState<Mode>("fast");
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const [planOpen, setPlanOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
@@ -65,7 +63,7 @@ export function PromptComposer() {
       return;
     }
     if (mode === "plan") {
-      setPlanOpen(true);
+      toast("Plan Mode coming soon");
       return;
     }
     console.log("[FastMode] 1. Starting submit...");
@@ -288,34 +286,6 @@ export function PromptComposer() {
           </button>
         ))}
       </div>
-      <PlanInterview
-        open={planOpen}
-        initialPrompt={value}
-        onClose={() => setPlanOpen(false)}
-        onComplete={async () => {
-          setPlanOpen(false);
-          try {
-            const project = await apiPost<{ id: string }>("/api/projects", {
-              name: value.slice(0, 60) || "New Project",
-              description: value,
-            })
-
-            const build = await apiPost<{ sessionId: string }>("/api/build/fast", {
-              projectId: project.id,
-              prompt: value,
-              mode: "fast",
-            })
-
-            navigate({
-              to: "/workspace/$projectId",
-              params: { projectId: project.id },
-              search: { sessionId: build.sessionId },
-            })
-          } catch (err) {
-            toast.error("Could not start build. Please try again.")
-          }
-        }}
-      />
     </div>
     </TooltipProvider>
   );

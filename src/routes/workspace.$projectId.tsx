@@ -288,7 +288,7 @@ function WorkspacePageInner() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+    <div className="dark flex h-screen w-full overflow-hidden bg-background text-foreground">
       {/* LEFT PANEL */}
       <aside className="flex h-full w-[40%] min-w-[400px] flex-col border-r border-border bg-card/30">
         {/* Header */}
@@ -350,9 +350,17 @@ function WorkspacePageInner() {
                       </p>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-4 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                      Waiting for agent to start...
+                    <div className="space-y-2">
+                      {[0, 1, 2, 3].map(i => (
+                        <div key={i} className="rounded-lg border border-border bg-card p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="skeleton-shimmer h-6 w-6 rounded" />
+                            <div className="skeleton-shimmer h-3 w-24" />
+                            <div className="skeleton-shimmer ml-auto h-3 w-12" />
+                          </div>
+                          <div className="skeleton-shimmer h-1.5 w-full" />
+                        </div>
+                      ))}
                     </div>
                   )
                 ) : (
@@ -446,52 +454,69 @@ function WorkspacePageInner() {
 
         {/* Tab Content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === "chat" && (
-            <ChatPanel
-              messages={agentMessages}
-              isBuilding={building}
-              currentAgent={currentAgent}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
               className="h-full"
-            />
-          )}
-
-          {activeTab === "files" && (
-            <div className="flex h-full">
-              <div className="w-56 border-r h-full overflow-hidden shrink-0">
-                <FileTree
-                  files={files}
-                  selectedFile={selectedFile}
-                  onSelectFile={setSelectedFile}
-                  newFiles={newFiles}
+            >
+              {activeTab === "chat" && (
+                <ChatPanel
+                  messages={agentMessages}
+                  isBuilding={building}
+                  currentAgent={currentAgent}
                   className="h-full"
                 />
-              </div>
-              <div className="flex-1 h-full overflow-auto bg-[#1e1e1e]">
-                {selectedFile && files[selectedFile] ? (
-                  <SyntaxHighlighter
-                    language={EXT_LANG[selectedFile.split(".").pop() ?? ""] ?? "text"}
-                    style={vscDarkPlus}
-                    showLineNumbers
-                    customStyle={{ margin: 0, height: "100%", background: "transparent", fontSize: "12px" }}
-                  >
-                    {files[selectedFile]}
-                  </SyntaxHighlighter>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-sm text-muted-foreground">Select a file to view code</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+              )}
 
-          {activeTab === "preview" && (
-            <SandpackPreview
-              files={files}
-              isBuilding={building}
-              className="h-full"
-            />
-          )}
+              {activeTab === "files" && (
+                <div className="flex h-full">
+                  <div className="w-56 border-r h-full overflow-hidden shrink-0 bg-card/40">
+                    <FileTree
+                      files={files}
+                      selectedFile={selectedFile}
+                      onSelectFile={setSelectedFile}
+                      newFiles={newFiles}
+                      className="h-full"
+                    />
+                  </div>
+                  <div className="flex-1 h-full overflow-auto bg-[#0f0f17]">
+                    {selectedFile && files[selectedFile] ? (
+                      <SyntaxHighlighter
+                        language={EXT_LANG[selectedFile.split(".").pop() ?? ""] ?? "text"}
+                        style={vscDarkPlus}
+                        showLineNumbers
+                        customStyle={{ margin: 0, height: "100%", background: "transparent", fontSize: "12px" }}
+                      >
+                        {files[selectedFile]}
+                      </SyntaxHighlighter>
+                    ) : building && Object.keys(files).length === 0 ? (
+                      <div className="p-6 space-y-2">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                          <div key={i} className="skeleton-shimmer h-4" style={{ width: `${50 + Math.random() * 40}%` }} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <p className="text-sm text-muted-foreground">Select a file to view code</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "preview" && (
+                <SandpackPreview
+                  files={files}
+                  isBuilding={building}
+                  className="h-full"
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </section>
     </div>

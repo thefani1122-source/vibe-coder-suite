@@ -19,18 +19,6 @@ import {
   Image as ImageIcon,
   Link as LinkIcon,
   Paperclip,
-  Monitor,
-  Smartphone,
-  Tablet,
-  ExternalLink,
-  ChevronDown,
-  Code2,
-  Eye,
-  ChevronRight,
-  Folder,
-  FolderOpen,
-  FileText,
-  Github,
   X,
 } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -38,13 +26,10 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { ChatPanel, type AgentMessage } from "@/components/ChatPanel";
+import { FileTree } from "@/components/FileTree";
+import { SandpackPreview } from "@/components/SandpackPreview";
 
 export const Route = createFileRoute("/workspace/$projectId")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -75,10 +60,6 @@ type Step = {
   progress: number;
 };
 
-type BuildFile = { lang: string; code: string };
-type FileMap = Record<string, BuildFile>;
-type TreeFolder = { name: string; children: { name: string; path: string }[] };
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const INITIAL_STEPS: Step[] = [
@@ -97,29 +78,6 @@ const EXT_LANG: Record<string, string> = {
   html: "html", py: "python", sql: "sql", sh: "bash",
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function langForPath(path: string): string {
-  const ext = path.split(".").pop() ?? "";
-  return EXT_LANG[ext] ?? "text";
-}
-
-function deriveFileTree(files: FileMap): TreeFolder[] {
-  const folders: Record<string, TreeFolder> = {};
-  const order: string[] = [];
-  Object.keys(files).forEach((path) => {
-    const parts = path.split("/");
-    if (parts.length < 2) return;
-    const folder = parts[0];
-    if (!folders[folder]) {
-      folders[folder] = { name: folder, children: [] };
-      order.push(folder);
-    }
-    folders[folder].children.push({ name: parts.slice(1).join("/"), path });
-  });
-  return order.map((f) => folders[f]);
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 function WorkspacePageInner() {
@@ -132,13 +90,13 @@ function WorkspacePageInner() {
   const [buildError, setBuildError] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<"connecting" | "connected" | "failed">("connecting");
   const [collapsedStatus, setCollapsedStatus] = useState(false);
-  const [tab, setTab] = useState<"preview" | "code">("preview");
-  const [device, setDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
-  const [activeFile, setActiveFile] = useState("");
-  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
   const [prompt, setPrompt] = useState("");
-  const [files, setFiles] = useState<FileMap>({});
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<Record<string, string>>({});
+  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
+  const [currentAgent, setCurrentAgent] = useState<string>("");
+  const [selectedFile, setSelectedFile] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"chat" | "files" | "preview">("chat");
+  const [newFiles, setNewFiles] = useState<Set<string>>(new Set());
   const socketRef = useRef<ReturnType<typeof createBuildSocket> | null>(null);
   const wsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -237,21 +195,37 @@ function WorkspacePageInner() {
     socket.on("agent:update", onAgentUpdate);
     socket.on("progress", onProgress);
 
+    // Token streaming — append agent output to chat
+    const onAgentToken = (data: { agent: string; content: string }) => {
+      setCurrentAgent(data.agent);
+      setAgentMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.agent === data.agent) {
+          return [...prev.slice(0, -1), { ...last, content: last.content + data.content }];
+        }
+        return [...prev, {
+          id: `${Date.now()}-${Math.random()}`,
+          agent: data.agent,
+          content: data.content,
+          timestamp: Date.now(),
+        }];
+      });
+    };
+
+    // Live file creation — populate tree incrementally as files generate
+    const onFileCreated = (data: { path: string; content: string }) => {
+      setFiles(prev => ({ ...prev, [data.path]: data.content }));
+      setNewFiles(prev => new Set([...prev, data.path]));
+    };
+
+    socket.on("agent:token", onAgentToken);
+    socket.on("file:created", onFileCreated);
+
     // Normalize build complete (both naming conventions)
     const applyBuildComplete = (data: Record<string, unknown>) => {
-      const files = (data.files ?? {}) as FileMap;
-      const url = (data.previewUrl ?? data.preview_url ?? data.url ?? null) as string | null;
-      setFiles(files);
-      setPreviewUrl(url);
+      if (data.files) setFiles(data.files as Record<string, string>);
+      setCurrentAgent("");
       setBuilding(false);
-
-      const paths = Object.keys(files);
-      const topFolders = [...new Set(
-        paths.filter((p) => p.includes("/")).map((p) => p.split("/")[0])
-      )];
-      setOpenFolders(Object.fromEntries(topFolders.map((f) => [f, true])));
-      if (paths.length > 0) setActiveFile(paths[0]);
-
       setTimeout(() => setCollapsedStatus(true), 800);
     };
 
@@ -296,6 +270,8 @@ function WorkspacePageInner() {
       socket.off("agent_progress", onAgentProgress);
       socket.off("agent:update", onAgentUpdate);
       socket.off("progress", onProgress);
+      socket.off("agent:token", onAgentToken);
+      socket.off("file:created", onFileCreated);
       socket.off("build:complete", onBuildComplete);
       socket.off("build_complete", onBuildDone);
       socket.off("build:error", onBuildError);
@@ -309,14 +285,6 @@ function WorkspacePageInner() {
     socketRef.current?.emit("build_cancel", { projectId, sessionId });
     setBuilding(false);
     setCollapsedStatus(true);
-  };
-
-  const fileTree = deriveFileTree(files);
-  const hasFiles = Object.keys(files).length > 0;
-  const deviceWidths: Record<typeof device, string> = {
-    desktop: "100%",
-    tablet: "768px",
-    mobile: "390px",
   };
 
   return (
@@ -446,183 +414,83 @@ function WorkspacePageInner() {
 
       {/* RIGHT PANEL */}
       <section className="flex h-full flex-1 flex-col">
-        {/* Top bar */}
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-          <div className="flex rounded-lg border border-border bg-card p-0.5">
+        {/* Tab Bar */}
+        <div className="flex border-b shrink-0 bg-background">
+          {([
+            { id: "chat" as const,    label: "Chat",    showBadge: agentMessages.length > 0, badge: agentMessages.length },
+            { id: "files" as const,   label: "Files",   showBadge: Object.keys(files).length > 0, badge: Object.keys(files).length },
+            { id: "preview" as const, label: "Preview", showBadge: false, badge: 0 },
+          ]).map(tab => (
             <button
-              onClick={() => setTab("preview")}
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === "files") setNewFiles(new Set());
+              }}
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition",
-                tab === "preview" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground",
+                "px-5 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5",
+                activeTab === tab.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
-              <Eye className="h-3.5 w-3.5" /> Preview
-              {tab === "preview" && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-            </button>
-            <button
-              onClick={() => setTab("code")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition",
-                tab === "code" ? "bg-background text-foreground shadow" : "text-muted-foreground hover:text-foreground",
+              {tab.label}
+              {tab.showBadge && (
+                <span className="bg-primary/20 text-primary text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                  {tab.badge > 99 ? "99+" : tab.badge}
+                </span>
               )}
-            >
-              <Code2 className="h-3.5 w-3.5" /> Code
             </button>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            {tab === "preview" && (
-              <div className="flex rounded-lg border border-border bg-card p-0.5">
-                {([
-                  ["desktop", Monitor],
-                  ["tablet", Tablet],
-                  ["mobile", Smartphone],
-                ] as const).map(([d, Icon]) => (
-                  <button
-                    key={d}
-                    onClick={() => setDevice(d)}
-                    className={cn(
-                      "rounded-md p-1.5 transition",
-                      device === d ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground",
-                    )}
-                    title={d}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </button>
-                ))}
-              </div>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8"
-              disabled={!previewUrl}
-              onClick={() => previewUrl && window.open(previewUrl, "_blank")}
-            >
-              <ExternalLink className="h-3.5 w-3.5" /> Open
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" className="h-8">
-                  <Github className="h-3.5 w-3.5" /> Publish
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem>
-                  <Rocket className="h-4 w-4" /> Deploy to Vercel
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Github className="h-4 w-4" /> Push to GitHub
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          ))}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden bg-muted/20">
-          {tab === "preview" ? (
-            <div className="flex h-full items-center justify-center p-4">
-              <div
-                className="h-full overflow-hidden rounded-lg border border-border bg-background shadow-xl transition-all"
-                style={{ width: deviceWidths[device], maxWidth: "100%" }}
-              >
-                {building ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    Building your app...
-                  </div>
-                ) : previewUrl ? (
-                  <iframe
-                    src={previewUrl}
-                    title="preview"
-                    className="h-full w-full border-0"
-                  />
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-                    <Eye className="h-6 w-6 opacity-30" />
-                    Preview will appear when the build completes
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex h-full">
-              {/* File tree */}
-              <div className="w-60 shrink-0 overflow-y-auto border-r border-border bg-card/30 p-2 text-sm">
-                {!hasFiles ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {building ? "Generating files…" : "No files yet"}
-                  </div>
-                ) : (
-                  fileTree.map((folder) => (
-                    <div key={folder.name}>
-                      <button
-                        onClick={() =>
-                          setOpenFolders((p) => ({ ...p, [folder.name]: !p[folder.name] }))
-                        }
-                        className="flex w-full items-center gap-1 rounded px-2 py-1 hover:bg-accent"
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "h-3 w-3 transition-transform",
-                            openFolders[folder.name] && "rotate-90",
-                          )}
-                        />
-                        {openFolders[folder.name] ? (
-                          <FolderOpen className="h-3.5 w-3.5 text-primary" />
-                        ) : (
-                          <Folder className="h-3.5 w-3.5 text-primary" />
-                        )}
-                        <span>{folder.name}</span>
-                      </button>
-                      {openFolders[folder.name] && (
-                        <div className="ml-4">
-                          {folder.children.map((f) => (
-                            <button
-                              key={f.path}
-                              onClick={() => setActiveFile(f.path)}
-                              className={cn(
-                                "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-accent",
-                                activeFile === f.path && "bg-accent text-foreground",
-                              )}
-                            >
-                              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                              {f.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
+        {/* Tab Content */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === "chat" && (
+            <ChatPanel
+              messages={agentMessages}
+              isBuilding={building}
+              currentAgent={currentAgent}
+              className="h-full"
+            />
+          )}
 
-              {/* Code viewer */}
-              <div className="flex-1 overflow-auto">
-                {!activeFile || !files[activeFile] ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    {building ? "Generating code…" : "Select a file to view its code"}
-                  </div>
+          {activeTab === "files" && (
+            <div className="flex h-full">
+              <div className="w-56 border-r h-full overflow-hidden shrink-0">
+                <FileTree
+                  files={files}
+                  selectedFile={selectedFile}
+                  onSelectFile={setSelectedFile}
+                  newFiles={newFiles}
+                  className="h-full"
+                />
+              </div>
+              <div className="flex-1 h-full overflow-auto bg-[#1e1e1e]">
+                {selectedFile && files[selectedFile] ? (
+                  <SyntaxHighlighter
+                    language={EXT_LANG[selectedFile.split(".").pop() ?? ""] ?? "text"}
+                    style={vscDarkPlus}
+                    showLineNumbers
+                    customStyle={{ margin: 0, height: "100%", background: "transparent", fontSize: "12px" }}
+                  >
+                    {files[selectedFile]}
+                  </SyntaxHighlighter>
                 ) : (
-                  <>
-                    <div className="border-b border-border bg-card/30 px-3 py-1.5 text-xs text-muted-foreground">
-                      {activeFile}
-                    </div>
-                    <SyntaxHighlighter
-                      language={files[activeFile].lang ?? langForPath(activeFile)}
-                      style={vscDarkPlus}
-                      showLineNumbers
-                      customStyle={{ margin: 0, background: "transparent", fontSize: 13 }}
-                    >
-                      {files[activeFile].code}
-                    </SyntaxHighlighter>
-                  </>
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-sm text-muted-foreground">Select a file to view code</p>
+                  </div>
                 )}
               </div>
             </div>
+          )}
+
+          {activeTab === "preview" && (
+            <SandpackPreview
+              files={files}
+              isBuilding={building}
+              className="h-full"
+            />
           )}
         </div>
       </section>

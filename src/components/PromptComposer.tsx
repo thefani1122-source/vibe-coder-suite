@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
-import { apiPost } from "@/lib/api";
-import { PlanInterview } from "@/components/PlanInterview";
+import { apiPost, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -50,7 +49,6 @@ export function PromptComposer() {
   const [mode, setMode] = useState<Mode>("fast");
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
-  const [planOpen, setPlanOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
@@ -64,27 +62,57 @@ export function PromptComposer() {
       navigate({ to: "/login" });
       return;
     }
-    if (mode === "plan") {
-      setPlanOpen(true);
-      return;
-    }
     setSubmitting(true);
     try {
-      const project = await apiPost<{ id: string }>("/api/projects", {
+      const projectRes = await apiPost<Record<string, unknown>>("/api/projects", {
         name: value.trim().slice(0, 50),
-        mode: "fast",
+        mode,
       });
-      const { sessionId } = await apiPost<{ sessionId: string }>("/api/build/fast", {
-        projectId: project.id,
+
+      // Backend wraps response as { project: { id } }; fall back to flat shapes too
+      const pid =
+        ((projectRes?.project as Record<string, unknown>)?.id
+        ?? projectRes?.id
+        ?? projectRes?.projectId
+        ?? projectRes?.project_id) as string | undefined;
+
+      if (!pid) {
+        throw new Error(`No project ID in server response — got: ${JSON.stringify(projectRes)}`);
+      }
+
+      const buildPath = mode === "plan" ? "/api/plan/start" : "/api/build/fast";
+      const buildRes = await apiPost<Record<string, unknown>>(buildPath, {
+        project_id: pid,
         prompt: value.trim(),
       });
-      navigate({
-        to: "/workspace/$projectId",
-        params: { projectId: project.id },
-        search: { sessionId },
-      });
-    } catch {
-      // apiPost already shows toast.error on failure
+
+      // Backend may wrap as { session: { sessionId } }; fall back to flat shapes too
+      const sessionId =
+        ((buildRes?.session as Record<string, unknown>)?.sessionId
+        ?? (buildRes?.session as Record<string, unknown>)?.session_id
+        ?? buildRes?.sessionId
+        ?? buildRes?.session_id) as string | undefined;
+
+      setSubmitting(false);
+      if (mode === "plan") {
+        if (!sessionId) throw new Error("No session ID from /api/plan/start");
+        navigate({
+          to: "/plan/$sessionId",
+          params: { sessionId },
+          search: { projectId: pid },
+        });
+      } else {
+        navigate({
+          to: "/workspace/$projectId",
+          params: { projectId: pid },
+          search: { sessionId: sessionId ?? "", mode: "fast" },
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to start build";
+      if (!(err instanceof ApiError)) {
+        toast.error(msg);
+      }
       setSubmitting(false);
     }
   };
@@ -251,16 +279,6 @@ export function PromptComposer() {
           </button>
         ))}
       </div>
-      <PlanInterview
-        open={planOpen}
-        initialPrompt={value}
-        onClose={() => setPlanOpen(false)}
-        onComplete={() => {
-          setPlanOpen(false);
-          const id = `proj-${Math.random().toString(36).slice(2, 8)}`;
-          navigate({ to: "/workspace/$projectId", params: { projectId: id } });
-        }}
-      />
     </div>
     </TooltipProvider>
   );

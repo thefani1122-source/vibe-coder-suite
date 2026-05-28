@@ -38,3 +38,25 @@ export function disconnectSocket(): void {
 }
 
 export { socket };
+
+/**
+ * Creates a per-session Socket.IO connection for a build session.
+ * Unlike the singleton getSocket(), each call returns a new socket so
+ * multiple workspace tabs can coexist without sharing state.
+ */
+export function createBuildSocket(sessionId: string): Socket {
+  const token = useAuthStore.getState().session?.access_token ?? "";
+  const s = io(WS_URL, {
+    autoConnect: true,
+    transports: ["websocket"],
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    withCredentials: true,
+    auth: { token },
+    extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+    query: sessionId ? { sessionId } : {},
+  });
+  return s;
+}

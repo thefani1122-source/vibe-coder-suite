@@ -120,7 +120,7 @@ function ProjectsPage() {
                   <div
                     key={p.id}
                     onClick={() =>
-                      navigate({ to: "/workspace/$projectId", params: { projectId: p.id } })
+                      navigate({ to: "/workspace/$projectId", params: { projectId: p.id }, search: { sessionId: "", mode: undefined } })
                     }
                     className="group cursor-pointer overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]"
                   >

@@ -181,8 +181,8 @@ function WorkspacePage() {
             <div className="h-2/5 border-b border-border">
               <FileTree
                 files={files}
-                selectedFile={selectedFile ?? undefined}
-                onSelectFile={setSelectedFile}
+                selectedFile={selectedFile}
+                onFileSelect={setSelectedFile}
                 newFiles={newFiles}
                 className="h-full"
               />

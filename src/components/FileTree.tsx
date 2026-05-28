@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { ChevronRight, ChevronDown, FileIcon, Folder, FolderOpen } from "lucide-react"
+import { ChevronRight, ChevronDown, Folder, FolderOpen } from "lucide-react"
 
 interface FileNode {
   name: string
@@ -11,79 +11,81 @@ interface FileNode {
 
 interface FileTreeProps {
   files: Record<string, string>
-  selectedFile?: string
-  onSelectFile: (path: string) => void
+  selectedFile: string | null
+  onFileSelect: (path: string) => void
   newFiles?: Set<string>
   className?: string
 }
 
+// Build a proper nested tree. Uses a plain-object hierarchy (null = leaf file)
+// so children are accumulated correctly before converting to arrays.
 function buildTree(files: Record<string, string>): FileNode[] {
-  const root: Map<string, FileNode> = new Map()
-
-  const getOrCreate = (map: Map<string, FileNode>, name: string, path: string, isFile: boolean): FileNode => {
-    if (!map.has(name)) {
-      map.set(name, {
-        name,
-        path,
-        type: isFile ? "file" : "folder",
-        children: isFile ? undefined : [],
-      })
-    }
-    return map.get(name)!
-  }
+  const dir: Record<string, unknown> = {}
 
   for (const filePath of Object.keys(files)) {
     const parts = filePath.split("/").filter(Boolean)
-    let currentMap = root
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]
-      const nodePath = parts.slice(0, i + 1).join("/")
-      const isLast = i === parts.length - 1
-      const node = getOrCreate(currentMap, part, nodePath, isLast)
-
-      if (!isLast) {
-        const childMap = new Map(
-          (node.children ?? []).map(c => [c.name, c])
-        )
-        currentMap = childMap
-        node.children = Array.from(childMap.values())
+    let cursor = dir
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (typeof cursor[parts[i]] !== "object" || cursor[parts[i]] === null) {
+        cursor[parts[i]] = {}
       }
+      cursor = cursor[parts[i]] as Record<string, unknown>
+    }
+    // Mark the leaf — only set to null if not already a folder object
+    const leaf = parts[parts.length - 1]
+    if (!(leaf in cursor)) {
+      cursor[leaf] = null
     }
   }
 
-  const sortNodes = (nodes: FileNode[]): FileNode[] =>
-    nodes
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1
-        return a.name.localeCompare(b.name)
+  function toNodes(obj: Record<string, unknown>, prefix: string): FileNode[] {
+    return Object.entries(obj)
+      .sort(([aName, aVal], [bName, bVal]) => {
+        const aIsDir = aVal !== null && typeof aVal === "object"
+        const bIsDir = bVal !== null && typeof bVal === "object"
+        if (aIsDir !== bIsDir) return aIsDir ? -1 : 1
+        return aName.localeCompare(bName)
       })
-      .map(n => ({ ...n, children: n.children ? sortNodes(n.children) : undefined }))
+      .map(([name, val]) => {
+        const path = prefix ? `${prefix}/${name}` : name
+        if (val === null) {
+          return { name, path, type: "file" as const }
+        }
+        return {
+          name,
+          path,
+          type: "folder" as const,
+          children: toNodes(val as Record<string, unknown>, path),
+        }
+      })
+  }
 
-  return sortNodes(Array.from(root.values()))
+  return toNodes(dir, "")
 }
 
-const EXT_COLOR: Record<string, string> = {
-  tsx: "text-blue-400", ts: "text-blue-400",
-  jsx: "text-yellow-400", js: "text-yellow-400",
-  css: "text-pink-400", scss: "text-pink-400",
-  json: "text-orange-400",
-  md: "text-gray-400",
-  html: "text-red-400",
-  env: "text-green-400",
-}
-
-function getExtColor(filename: string): string {
-  const ext = filename.split(".").pop() ?? ""
-  return EXT_COLOR[ext] ?? "text-muted-foreground"
+function FileTypeIcon({ name }: { name: string }) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? ""
+  if (ext === "tsx" || ext === "jsx")
+    return <span className="w-4 shrink-0 text-center text-[11px] leading-none text-blue-400">⚛</span>
+  if (ext === "ts" || ext === "js")
+    return <span className="w-4 shrink-0 text-center text-[9px] font-bold leading-none text-yellow-400">JS</span>
+  if (ext === "css" || ext === "scss")
+    return <span className="w-4 shrink-0 text-center text-[11px] leading-none">🎨</span>
+  if (ext === "json")
+    return <span className="w-4 shrink-0 text-center font-mono text-[10px] leading-none text-orange-400">{"{}"}</span>
+  return <span className="w-4 shrink-0 text-center text-[11px] leading-none">📄</span>
 }
 
 function TreeNode({
-  node, depth, selectedFile, onSelect, newFiles,
+  node,
+  depth,
+  selectedFile,
+  onSelect,
+  newFiles,
 }: {
   node: FileNode
   depth: number
-  selectedFile?: string
+  selectedFile: string | null
   onSelect: (path: string) => void
   newFiles: Set<string>
 }) {
@@ -94,18 +96,20 @@ function TreeNode({
   if (node.type === "file") {
     return (
       <button
+        type="button"
         onClick={() => onSelect(node.path)}
         className={cn(
-          "file-row w-full flex items-center gap-1.5 py-[4px] pr-2 rounded-sm text-left text-xs group",
-          isSelected ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-          isNew && "text-green-400"
+          "flex w-full items-center gap-1.5 rounded-sm py-[4px] pr-2 text-left text-xs",
+          isSelected
+            ? "bg-primary/20 text-foreground"
+            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
-        <FileIcon className={cn("h-3.5 w-3.5 shrink-0", getExtColor(node.name))} />
-        <span className="truncate flex-1">{node.name}</span>
+        <FileTypeIcon name={node.name} />
+        <span className="flex-1 truncate">{node.name}</span>
         {isNew && (
-          <span className="text-[9px] font-bold text-green-400 bg-green-400/10 px-1 rounded">
+          <span className="rounded bg-green-400/10 px-1 text-[9px] font-bold text-green-400">
             NEW
           </span>
         )}
@@ -116,8 +120,9 @@ function TreeNode({
   return (
     <div>
       <button
+        type="button"
         onClick={() => setOpen(p => !p)}
-        className="file-row w-full flex items-center gap-1.5 py-[4px] pr-2 rounded-sm text-left text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50"
+        className="flex w-full items-center gap-1.5 rounded-sm py-[4px] pr-2 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
         {open
@@ -149,22 +154,32 @@ function TreeNode({
   )
 }
 
-export function FileTree({ files, selectedFile, onSelectFile, newFiles = new Set(), className }: FileTreeProps) {
+export function FileTree({
+  files,
+  selectedFile,
+  onFileSelect,
+  newFiles = new Set(),
+  className,
+}: FileTreeProps) {
   const tree = buildTree(files)
   const count = Object.keys(files).length
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
-      <div className="flex items-center justify-between px-3 py-2.5 border-b shrink-0">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Files</span>
-        <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
-          {count}
+      <div className="flex items-center justify-between border-b px-3 py-2.5 shrink-0">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {count === 0 ? "Files" : `${count} files generated`}
         </span>
+        {count > 0 && (
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {count}
+          </span>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {count === 0 ? (
-          <div className="flex items-center justify-center h-20">
-            <p className="text-xs text-muted-foreground">Files appear as they generate</p>
+          <div className="flex h-20 items-center justify-center">
+            <p className="text-xs text-muted-foreground">Waiting for build...</p>
           </div>
         ) : (
           tree.map(node => (
@@ -173,7 +188,7 @@ export function FileTree({ files, selectedFile, onSelectFile, newFiles = new Set
               node={node}
               depth={0}
               selectedFile={selectedFile}
-              onSelect={onSelectFile}
+              onSelect={onFileSelect}
               newFiles={newFiles}
             />
           ))

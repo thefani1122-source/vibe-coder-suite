@@ -94,11 +94,20 @@ export function PromptComposer() {
         ?? buildRes?.session_id) as string | undefined;
 
       setSubmitting(false);
-      navigate({
-        to: "/workspace/$projectId",
-        params: { projectId: pid },
-        search: { sessionId, mode: mode === "plan" ? "plan" : "fast" },
-      });
+      if (mode === "plan") {
+        if (!sessionId) throw new Error("No session ID from /api/plan/start");
+        navigate({
+          to: "/plan/$sessionId",
+          params: { sessionId },
+          search: { projectId: pid },
+        });
+      } else {
+        navigate({
+          to: "/workspace/$projectId",
+          params: { projectId: pid },
+          search: { sessionId, mode: "fast" },
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to start build";
       if (!(err instanceof ApiError)) {

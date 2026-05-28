@@ -67,7 +67,7 @@ function WorkspacePage() {
       const token = data.text ?? data.token ?? "";
       setMessages(prev => {
         const last = prev[prev.length - 1];
-        if (last?.type === "text") {
+        if (prev.length > 0 && last.type === "text") {
           return [...prev.slice(0, -1), { ...last, text: last.text + token, streaming: true }];
         }
         return [
@@ -120,6 +120,7 @@ function WorkspacePage() {
       }
       setBuildStatus("complete");
       setCurrentAgent(undefined);
+      setNewFiles(new Set());
       setMessages(prev => [
         ...closeStreaming(prev),
         newMsg({ type: "text", text: "✅ Build complete" }),

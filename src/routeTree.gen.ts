@@ -108,8 +108,8 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,8 +124,8 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -141,8 +141,8 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -159,8 +159,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -175,8 +175,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   id:
     | '__root__'
     | '/'
@@ -191,8 +191,8 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -208,8 +208,8 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UsageRoute: typeof UsageRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
-  WorkspaceProjectIdRoute: typeof WorkspaceProjectIdRoute
   PlanSessionIdRoute: typeof PlanSessionIdRoute
+  WorkspaceProjectIdRoute: typeof WorkspaceProjectIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -328,8 +328,8 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UsageRoute: UsageRoute,
   AuthCallbackRoute: AuthCallbackRoute,
-  WorkspaceProjectIdRoute: WorkspaceProjectIdRoute,
   PlanSessionIdRoute: PlanSessionIdRoute,
+  WorkspaceProjectIdRoute: WorkspaceProjectIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

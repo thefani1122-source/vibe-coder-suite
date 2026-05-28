@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
 import { RequireAuth } from "@/components/RequireAuth";
-import { ChatPanel, type AgentMessage } from "@/components/ChatPanel";
+import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
@@ -25,11 +25,21 @@ function toolToAgent(tool: string): string {
   return "connection";
 }
 
+function newMsg(partial: Omit<BuildMessage, "id">): BuildMessage {
+  return { id: crypto.randomUUID(), ...partial };
+}
+
+// Clears the streaming flag on the tail message, if set.
+function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
+  if (!prev.length || !prev[prev.length - 1].streaming) return prev;
+  return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
+}
+
 function WorkspacePage() {
   const { projectId } = Route.useParams();
   const { sessionId } = Route.useSearch();
 
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [messages, setMessages] = useState<BuildMessage[]>([]);
   const [files, setFiles] = useState<Record<string, string>>({});
   const [newFiles, setNewFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -41,42 +51,47 @@ function WorkspacePage() {
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    const push = (agent: string, content: string): void =>
-      setMessages(prev => [
-        ...prev,
-        { id: crypto.randomUUID(), agent, content, timestamp: Date.now() },
-      ]);
-
+    // Thinking blocks arrive as a complete chunk — no streaming cursor needed.
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
       setCurrentAgent("planning");
-      push("planning", data.text ?? data.content ?? "");
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "thinking", text: data.text ?? data.content ?? "" }),
+      ]);
     });
 
+    // Tokens stream into a 'text' bubble. Append if the tail is already streaming text;
+    // otherwise close any open streaming message and open a new text bubble.
     socket.on("build:token", (data: { text?: string; token?: string }) => {
       const token = data.text ?? data.token ?? "";
       setMessages(prev => {
-        if (!prev.length) return prev;
         const last = prev[prev.length - 1];
-        return [...prev.slice(0, -1), { ...last, content: last.content + token }];
+        if (last?.type === "text") {
+          return [...prev.slice(0, -1), { ...last, text: last.text + token, streaming: true }];
+        }
+        return [
+          ...closeStreaming(prev),
+          newMsg({ type: "text", text: token, streaming: true }),
+        ];
       });
     });
 
     socket.on("build:tool_call", (data: { tool?: string; name?: string }) => {
       const tool = data.tool ?? data.name ?? "tool";
-      const agent = toolToAgent(tool);
-      setCurrentAgent(agent);
-      push(agent, `▶ ${tool}`);
+      setCurrentAgent(toolToAgent(tool));
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "tool_call", text: tool, tool, done: false }),
+      ]);
     });
 
     socket.on("build:tool_result", () => {
       setMessages(prev => {
-        const ri = [...prev]
-          .reverse()
-          .findIndex(m => m.content.startsWith("▶ ") && !m.content.endsWith(" ✓"));
+        const ri = [...prev].reverse().findIndex(m => m.type === "tool_call" && !m.done);
         if (ri === -1) return prev;
         const idx = prev.length - 1 - ri;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], content: updated[idx].content + " ✓" };
+        updated[idx] = { ...updated[idx], done: true };
         return updated;
       });
     });
@@ -90,7 +105,10 @@ function WorkspacePage() {
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
         setCurrentAgent("frontend");
-        push("frontend", `📄 ${path}`);
+        setMessages(prev => [
+          ...closeStreaming(prev),
+          newMsg({ type: "file_write", text: path, path }),
+        ]);
       },
     );
 
@@ -101,13 +119,19 @@ function WorkspacePage() {
       }
       setBuildStatus("complete");
       setCurrentAgent(undefined);
-      push("deploy", "✅ Build complete");
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "✅ Build complete" }),
+      ]);
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
       setBuildStatus("error");
       setCurrentAgent(undefined);
-      push("fix", `❌ ${data?.message ?? data?.error ?? "Build failed"}`);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "error", text: data?.message ?? data?.error ?? "Build failed" }),
+      ]);
     });
 
     return () => {

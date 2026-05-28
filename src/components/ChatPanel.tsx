@@ -1,35 +1,29 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle } from "lucide-react"
 
-export interface AgentMessage {
+export interface BuildMessage {
   id: string
-  agent: string
-  content: string
-  timestamp: number
+  type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "error"
+  text: string
+  tool?: string
+  path?: string
+  done?: boolean
+  streaming?: boolean
 }
 
 interface ChatPanelProps {
-  messages: AgentMessage[]
+  messages: BuildMessage[]
   isBuilding: boolean
   currentAgent?: string
   className?: string
-}
-
-const AGENT_META: Record<string, { label: string; color: string; icon: string }> = {
-  planning:   { label: "Planning Agent",    color: "text-violet-400", icon: "🧠" },
-  frontend:   { label: "Frontend Agent",    color: "text-blue-400",   icon: "🎨" },
-  backend:    { label: "Backend Agent",     color: "text-green-400",  icon: "⚙️" },
-  db:         { label: "Database Agent",    color: "text-yellow-400", icon: "🗄️" },
-  security:   { label: "Security Verifier", color: "text-red-400",    icon: "🔒" },
-  connection: { label: "Connection Check",  color: "text-orange-400", icon: "🔗" },
-  fix:        { label: "Fix Agent",         color: "text-pink-400",   icon: "🔧" },
-  deploy:     { label: "Deploy Agent",      color: "text-cyan-400",   icon: "🚀" },
 }
 
 export function ChatPanel({ messages, isBuilding, currentAgent, className }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (isAtBottomRef.current) {
@@ -43,30 +37,27 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
     isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 50
   }
 
-  type Group = { agent: string; text: string; timestamp: number }
-  const groups = messages.reduce<Group[]>((acc, msg) => {
-    const last = acc[acc.length - 1]
-    if (last && last.agent === msg.agent) {
-      last.text += msg.content
-    } else {
-      acc.push({ agent: msg.agent, text: msg.content, timestamp: msg.timestamp })
-    }
-    return acc
-  }, [])
+  const toggle = (id: string) =>
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
-  const activeMeta = currentAgent ? AGENT_META[currentAgent] : undefined
+  const lastMsg = messages[messages.length - 1]
+  const showDots = isBuilding && messages.length > 0 && !lastMsg?.streaming
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
       <div className="flex items-center gap-2.5 px-4 py-3 border-b shrink-0">
         <div className={cn(
           "w-2 h-2 rounded-full transition-colors",
-          isBuilding ? "bg-green-400 animate-pulse" : "bg-muted-foreground/30"
+          isBuilding ? "bg-green-400 animate-pulse" : "bg-muted-foreground/30",
         )} />
         <span className="text-sm font-medium">
           {isBuilding
-            ? activeMeta
-              ? `${activeMeta.icon} ${activeMeta.label}`
+            ? currentAgent
+              ? currentAgent.charAt(0).toUpperCase() + currentAgent.slice(1)
               : "Building..."
             : messages.length > 0 ? "Build Complete" : "Ready"}
         </span>
@@ -75,18 +66,16 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-2"
       >
-        {groups.length === 0 && !isBuilding && (
+        {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
             <span className="text-3xl">⚡</span>
-            <p className="text-sm text-muted-foreground">
-              Start a build to see agent output
-            </p>
+            <p className="text-sm text-muted-foreground">Start a build to see agent output</p>
           </div>
         )}
 
-        {groups.length === 0 && isBuilding && (
+        {messages.length === 0 && isBuilding && (
           <div className="space-y-3">
             {[0, 1, 2].map(i => (
               <div key={i} className="flex flex-col gap-1.5">
@@ -97,49 +86,131 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
           </div>
         )}
 
-        {groups.map((group, i) => {
-          const meta = AGENT_META[group.agent]
-          return (
-            <div key={i} className="flex flex-col gap-1 animate-fade-in">
-              <span className={cn(
-                "text-xs font-semibold flex items-center gap-1",
-                meta?.color ?? "text-muted-foreground"
-              )}>
-                {meta?.icon} {meta?.label ?? group.agent}
-              </span>
-              <div className="chat-bubble-gradient rounded-tl-sm">
-                <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed text-foreground/90">
-                  {group.text}
-                </pre>
-              </div>
-            </div>
-          )
-        })}
+        {messages.map((msg, i) => (
+          <MessageRow
+            key={msg.id}
+            msg={msg}
+            isLast={i === messages.length - 1}
+            isCollapsed={collapsed.has(msg.id)}
+            onToggle={() => toggle(msg.id)}
+          />
+        ))}
 
-        {isBuilding && (
-          <div className="flex flex-col gap-1 animate-fade-in">
-            <span className={cn(
-              "text-xs font-semibold flex items-center gap-1",
-              activeMeta?.color ?? "text-muted-foreground"
-            )}>
-              {activeMeta ? `${activeMeta.icon} ${activeMeta.label}` : "Agent"}
-            </span>
-            <div className="chat-bubble-gradient rounded-tl-sm w-fit">
-              <div className="flex gap-1 items-center">
-                {[0, 150, 300].map((delay) => (
-                  <span
-                    key={delay}
-                    className="w-1.5 h-1.5 bg-muted-foreground/60 rounded-full animate-bounce"
-                    style={{ animationDelay: `${delay}ms` }}
-                  />
-                ))}
-              </div>
-            </div>
+        {showDots && (
+          <div className="flex gap-1 items-center px-1 py-2">
+            {[0, 150, 300].map(delay => (
+              <span
+                key={delay}
+                className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
+                style={{ animationDelay: `${delay}ms` }}
+              />
+            ))}
           </div>
         )}
 
         <div ref={bottomRef} />
       </div>
     </div>
+  )
+}
+
+function MessageRow({
+  msg,
+  isLast,
+  isCollapsed,
+  onToggle,
+}: {
+  msg: BuildMessage
+  isLast: boolean
+  isCollapsed: boolean
+  onToggle: () => void
+}) {
+  const showCursor = isLast && msg.streaming === true
+
+  switch (msg.type) {
+    case "thinking":
+      return (
+        <div className="flex flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex w-fit items-center gap-1 text-xs italic text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+          >
+            {isCollapsed
+              ? <ChevronRight className="h-3 w-3" />
+              : <ChevronDown className="h-3 w-3" />
+            }
+            Thinking...
+          </button>
+          {!isCollapsed && (
+            <div className="ml-4 rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
+              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-muted-foreground/80">
+                {msg.text}
+                {showCursor && <BlinkCursor />}
+              </p>
+            </div>
+          )}
+        </div>
+      )
+
+    case "text":
+      return (
+        <div className="rounded-2xl border border-border/40 bg-card/80 px-3.5 py-2.5">
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+            {msg.text}
+            {showCursor && <BlinkCursor />}
+          </p>
+        </div>
+      )
+
+    case "tool_call":
+    case "tool_result": {
+      const isDone = msg.done === true
+      const label = msg.tool ?? msg.text
+      return (
+        <div className={cn(
+          "flex items-center gap-2.5 rounded-lg border px-3 py-2",
+          isDone
+            ? "border-border/40 bg-muted/10"
+            : "border-primary/20 bg-primary/5",
+        )}>
+          {isDone
+            ? <Check className="h-3.5 w-3.5 shrink-0 text-green-400" />
+            : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+          }
+          <span className={cn(
+            "truncate font-mono text-xs",
+            isDone ? "text-muted-foreground" : "text-foreground/90",
+          )}>
+            {isDone ? label : `${label}...`}
+          </span>
+        </div>
+      )
+    }
+
+    case "file_write":
+      return (
+        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/40 bg-muted/20 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+          <span className="shrink-0">📄</span>
+          <span className="truncate">{msg.path ?? msg.text}</span>
+        </div>
+      )
+
+    case "error":
+      return (
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+          <p className="break-words text-xs leading-relaxed text-destructive">{msg.text}</p>
+        </div>
+      )
+
+    default:
+      return null
+  }
+}
+
+function BlinkCursor() {
+  return (
+    <span className="ml-px inline-block h-[0.85em] w-px animate-pulse align-text-bottom bg-current" />
   )
 }

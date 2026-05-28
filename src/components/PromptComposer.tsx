@@ -62,19 +62,12 @@ export function PromptComposer() {
       navigate({ to: "/login" });
       return;
     }
-    if (mode === "plan") {
-      toast("Plan Mode coming soon");
-      return;
-    }
-    console.log("[FastMode] 1. Starting submit...");
     setSubmitting(true);
     try {
-      console.log("[FastMode] 2. Creating project...");
       const projectRes = await apiPost<Record<string, unknown>>("/api/projects", {
         name: value.trim().slice(0, 50),
-        mode: "fast",
+        mode,
       });
-      console.log("[FastMode] 3. Project created:", projectRes);
 
       // Backend wraps response as { project: { id } }; fall back to flat shapes too
       const pid =
@@ -82,21 +75,16 @@ export function PromptComposer() {
         ?? projectRes?.id
         ?? projectRes?.projectId
         ?? projectRes?.project_id) as string | undefined;
-      console.log("[FastMode] 4. Extracted pid:", pid);
 
       if (!pid) {
         throw new Error(`No project ID in server response — got: ${JSON.stringify(projectRes)}`);
       }
 
-      console.log("[FastMode] 5. Calling /api/build/fast with:", {
+      const buildPath = mode === "plan" ? "/api/plan/start" : "/api/build/fast";
+      const buildRes = await apiPost<Record<string, unknown>>(buildPath, {
         project_id: pid,
         prompt: value.trim(),
       });
-      const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
-        project_id: pid,
-        prompt: value.trim(),
-      });
-      console.log("[FastMode] 6. Build response:", buildRes);
 
       // Backend may wrap as { session: { sessionId } }; fall back to flat shapes too
       const sessionId =
@@ -104,19 +92,15 @@ export function PromptComposer() {
         ?? (buildRes?.session as Record<string, unknown>)?.session_id
         ?? buildRes?.sessionId
         ?? buildRes?.session_id) as string | undefined;
-      console.log("[FastMode] 7. Navigating to workspace:", { projectId: pid, sessionId });
 
+      setSubmitting(false);
       navigate({
         to: "/workspace/$projectId",
         params: { projectId: pid },
-        search: { sessionId },
+        search: { sessionId, mode: mode === "plan" ? "plan" : "fast" },
       });
     } catch (err) {
-      console.error("[FastMode] Error:", err);
-      // Show the actual error — apiPost toasts HTTP errors, but our own throws
-      // (e.g. missing pid) were previously swallowed silently.
       const msg = err instanceof Error ? err.message : "Failed to start build";
-      // Avoid double-toasting ApiError — those already fire inside apiPost
       if (!(err instanceof ApiError)) {
         toast.error(msg);
       }

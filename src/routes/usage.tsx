@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronRight } from "lucide-react";
 import { apiGet } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/usage")({ component: UsagePage });
 
@@ -24,9 +25,12 @@ const EMPTY_MONTHLY = [
 ].map((month) => ({ month, value: 0 }));
 
 function UsagePage() {
+  const { isAuthenticated } = useAuth();
   const { data, isPending } = useQuery<UsageData>({
     queryKey: ["usage"],
     queryFn: () => apiGet<UsageData>("/api/users/me/usage"),
+    enabled: isAuthenticated,
+    retry: false,
   });
 
   const creditsUsed = data?.credits_used ?? 0;

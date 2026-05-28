@@ -6,6 +6,13 @@ const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ??
   "";
 
+if (!API_URL) {
+  console.error(
+    "[Lampcode] VITE_BACKEND_URL is not set — all API calls will fail. " +
+    "Set this env var in Vercel (Settings → Environment Variables → Production) and redeploy.",
+  );
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;

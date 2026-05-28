@@ -11,6 +11,7 @@ import { createBuildSocket } from "@/lib/websocket";
 export const Route = createFileRoute("/workspace/$projectId")({
   validateSearch: (search: Record<string, unknown>) => ({
     sessionId: typeof search.sessionId === "string" ? search.sessionId : undefined,
+    mode: search.mode === "plan" || search.mode === "fast" ? (search.mode as "plan" | "fast") : undefined,
   }),
   component: WorkspacePage,
 });

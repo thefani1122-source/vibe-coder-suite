@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreditCard, Download } from "lucide-react";
 import { apiGet } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/billing")({ component: BillingPage });
 
@@ -29,9 +30,12 @@ type BillingData = {
 };
 
 function BillingPage() {
+  const { isAuthenticated } = useAuth();
   const { data, isPending } = useQuery<BillingData>({
     queryKey: ["billing"],
     queryFn: () => apiGet<BillingData>("/api/users/me/billing"),
+    enabled: isAuthenticated,
+    retry: false,
   });
 
   const planLabel = data?.plan

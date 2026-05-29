@@ -8,9 +8,9 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
 import {
-  PanelGroup as ResizablePanelGroup,
+  Group as ResizablePanelGroup,
   Panel as ResizablePanel,
-  PanelResizeHandle,
+  Separator as PanelResizeHandle,
 } from "react-resizable-panels";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -185,7 +185,7 @@ function WorkspacePage() {
         </header>
 
         {/* 3-panel body */}
-        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 flex">
           {/* LEFT — Chat */}
           <ResizablePanel defaultSize={30} minSize={22}>
             <ChatColumn

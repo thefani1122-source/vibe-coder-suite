@@ -7,7 +7,17 @@ import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
-import { Globe, Code2, Rocket, Lock } from "lucide-react";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Paperclip, Mic, ArrowUp, ChevronDown, Sparkles, Zap,
+  RotateCw, ExternalLink, Monitor, Tablet, Smartphone,
+  Search, Copy, Check, FileCode2, Globe,
+} from "lucide-react";
 
 export const Route = createFileRoute("/workspace/$projectId")({
   validateSearch: (search: Record<string, unknown>) => ({

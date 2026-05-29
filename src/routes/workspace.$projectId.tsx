@@ -8,10 +8,10 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
+  PanelGroup as ResizablePanelGroup,
+  Panel as ResizablePanel,
+  PanelResizeHandle,
+} from "react-resizable-panels";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Paperclip, Mic, ArrowUp, ChevronDown, Sparkles, Zap,
@@ -197,7 +197,7 @@ function WorkspacePage() {
             />
           </ResizablePanel>
 
-          <ResizableHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
+          <PanelResizeHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
 
           {/* MIDDLE — Code */}
           <ResizablePanel defaultSize={35} minSize={22}>
@@ -212,7 +212,7 @@ function WorkspacePage() {
             />
           </ResizablePanel>
 
-          <ResizableHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
+          <PanelResizeHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
 
           {/* RIGHT — Preview */}
           <ResizablePanel defaultSize={35} minSize={22}>

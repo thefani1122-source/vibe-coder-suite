@@ -7,15 +7,10 @@ import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
-import {
-  Group as ResizablePanelGroup,
-  Panel as ResizablePanel,
-  Separator as PanelResizeHandle,
-} from "react-resizable-panels";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Paperclip, Mic, ArrowUp, ChevronDown, Sparkles, Zap,
-  RotateCw, ExternalLink, Monitor, Tablet, Smartphone,
+  RotateCw, Monitor, Smartphone, Maximize2,
   Search, Copy, Check, FileCode2, Globe, Code2,
 } from "lucide-react";
 
@@ -28,8 +23,9 @@ export const Route = createFileRoute("/workspace/$projectId")({
 });
 
 type BuildStatus = "running" | "complete" | "error";
+type ActiveTab = "code" | "preview";
+type Device = "desktop" | "mobile" | "full";
 type MidTab = "files" | "code";
-type Device = "desktop" | "tablet" | "mobile";
 
 function toolToAgent(tool: string): string {
   if (/file|write|create/i.test(tool)) return "frontend";
@@ -73,13 +69,17 @@ function WorkspacePage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [buildStatus, setBuildStatus] = useState<BuildStatus>("running");
   const [currentAgent, setCurrentAgent] = useState<string | undefined>();
-  const [midTab, setMidTab] = useState<MidTab>("files");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("code");
   const [device, setDevice] = useState<Device>("desktop");
+  const [reloadKey, setReloadKey] = useState(0);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
+
+    // Seed the chat with a start message so it's never blank
+    setMessages([newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." })]);
 
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
       setCurrentAgent("planning");
@@ -88,16 +88,27 @@ function WorkspacePage() {
         newMsg({ type: "thinking", text: data.text ?? data.content ?? "" }),
       ]);
     });
+
+    // Only accumulate tokens into a short, single-line status bubble.
+    // Tokens that arrive during code generation are raw JSX/TS — drop them
+    // rather than flooding the chat with file content.
     socket.on("build:token", (data: { text?: string; token?: string }) => {
-      const token = data.text ?? data.token ?? "";
+      const text = data.text ?? data.token ?? "";
       setMessages(prev => {
         const last = prev[prev.length - 1];
-        if (prev.length > 0 && last.type === "text") {
-          return [...prev.slice(0, -1), { ...last, text: last.text + token, streaming: true }];
+        if (
+          last?.type === "text" &&
+          !last.text.includes("\n") &&
+          last.text.length < 200
+        ) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + text } : m,
+          );
         }
-        return [...closeStreaming(prev), newMsg({ type: "text", text: token, streaming: true })];
+        return prev; // drop code tokens silently
       });
     });
+
     socket.on("build:tool_call", (data: { tool?: string; name?: string }) => {
       const tool = data.tool ?? data.name ?? "tool";
       setCurrentAgent(toolToAgent(tool));
@@ -106,6 +117,7 @@ function WorkspacePage() {
         newMsg({ type: "tool_call", text: tool, tool, done: false }),
       ]);
     });
+
     socket.on("build:tool_result", () => {
       setMessages(prev => {
         const ri = [...prev].reverse().findIndex(m => m.type === "tool_call" && !m.done);
@@ -116,6 +128,7 @@ function WorkspacePage() {
         return updated;
       });
     });
+
     socket.on(
       "build:file_write",
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
@@ -131,7 +144,10 @@ function WorkspacePage() {
         ]);
       },
     );
+
     socket.on("build:complete", (data?: { files?: Record<string, string> }) => {
+      const completedFiles = data?.files ?? {};
+      const count = Object.keys(completedFiles).length;
       if (data?.files) {
         setFiles(data.files);
         setSelectedFile(prev => prev ?? Object.keys(data.files!)[0] ?? null);
@@ -139,11 +155,16 @@ function WorkspacePage() {
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
+      setActiveTab("preview");
       setMessages(prev => [
         ...closeStreaming(prev),
-        newMsg({ type: "text", text: "✅ Build complete" }),
+        newMsg({
+          type: "text",
+          text: `✅ Build complete! ${count > 0 ? count : "All"} files generated.`,
+        }),
       ]);
     });
+
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
       setBuildStatus("error");
       setCurrentAgent(undefined);
@@ -164,30 +185,75 @@ function WorkspacePage() {
   return (
     <RequireAuth>
       <div className="dark ws-root flex h-screen w-full flex-col overflow-hidden">
-        {/* Top bar */}
+
+        {/* ── Top bar ────────────────────────────────────────────────── */}
         <header className="flex h-11 shrink-0 items-center gap-3 border-b border-white/5 px-4">
-          <div className="flex items-center gap-2">
-            <div className="grid h-6 w-6 place-content-center rounded-md bg-gradient-to-br from-violet-500 to-blue-500">
+
+          {/* Left: icon + project name + status badge */}
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="grid h-6 w-6 shrink-0 place-content-center rounded-md bg-gradient-to-br from-violet-500 to-blue-500">
               <Sparkles className="h-3.5 w-3.5 text-white" />
             </div>
             <span className="truncate text-sm font-medium text-white/90">{projectId}</span>
-            <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
+            <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-white/70">
               <span className={cn(
                 "h-1.5 w-1.5 rounded-full",
-                isBuilding && "bg-emerald-400 animate-pulse",
+                isBuilding          && "animate-pulse bg-emerald-400",
                 buildStatus === "complete" && "bg-blue-400",
-                buildStatus === "error" && "bg-red-400",
+                buildStatus === "error"    && "bg-red-400",
               )} />
               {isBuilding ? "Running" : buildStatus === "complete" ? "Ready" : "Error"}
             </span>
           </div>
-          <div className="ml-auto text-xs text-white/40">Lovable-style workspace</div>
+
+          {/* Center: Preview | Code tab switcher */}
+          <div className="flex items-center gap-0.5 rounded-lg border border-white/10 bg-white/[0.04] p-1">
+            <TabBtn
+              active={activeTab === "preview"}
+              onClick={() => setActiveTab("preview")}
+              icon={<Globe className="h-3.5 w-3.5" />}
+              label="Preview"
+            />
+            <TabBtn
+              active={activeTab === "code"}
+              onClick={() => setActiveTab("code")}
+              icon={<Code2 className="h-3.5 w-3.5" />}
+              label="Code"
+            />
+          </div>
+
+          {/* Right: device controls (preview tab only) + reload */}
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+            {activeTab === "preview" && (
+              <>
+                <div className="flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.03] p-0.5">
+                  <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")}>
+                    <Monitor className="h-3.5 w-3.5" />
+                  </DeviceBtn>
+                  <DeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")}>
+                    <Smartphone className="h-3.5 w-3.5" />
+                  </DeviceBtn>
+                  <DeviceBtn active={device === "full"} onClick={() => setDevice("full")}>
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </DeviceBtn>
+                </div>
+                <button
+                  className="ws-iconbtn"
+                  title="Reload preview"
+                  onClick={() => setReloadKey(k => k + 1)}
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
         </header>
 
-        {/* 3-panel body */}
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 flex">
-          {/* LEFT — Chat */}
-          <ResizablePanel defaultSize={30} minSize={22}>
+        {/* ── Body: 2-column ─────────────────────────────────────────── */}
+        <div className="flex min-h-0 flex-1">
+
+          {/* Left 35%: chat — always visible */}
+          <div className="w-[35%] shrink-0 border-r border-white/5">
             <ChatColumn
               projectId={projectId}
               messages={messages}
@@ -195,35 +261,33 @@ function WorkspacePage() {
               currentAgent={currentAgent}
               buildStatus={buildStatus}
             />
-          </ResizablePanel>
+          </div>
 
-          <PanelResizeHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
+          {/* Right 65%: tab-switched panel */}
+          <div className="flex min-h-0 flex-1">
+            {activeTab === "code" && (
+              <CodeColumn
+                files={files}
+                newFiles={newFiles}
+                selectedFile={selectedFile}
+                setSelectedFile={setSelectedFile}
+                isBuilding={isBuilding}
+              />
+            )}
 
-          {/* MIDDLE — Code */}
-          <ResizablePanel defaultSize={35} minSize={22}>
-            <CodeColumn
-              tab={midTab}
-              setTab={setMidTab}
-              files={files}
-              newFiles={newFiles}
-              selectedFile={selectedFile}
-              setSelectedFile={setSelectedFile}
-              isBuilding={isBuilding}
-            />
-          </ResizablePanel>
+            {activeTab === "preview" && (
+              <div key={reloadKey} className="h-full w-full">
+                <SandpackPreview
+                  files={buildStatus === "complete" ? files : {}}
+                  isBuilding={isBuilding}
+                  externalDevice={device}
+                  className="h-full w-full"
+                />
+              </div>
+            )}
+          </div>
 
-          <PanelResizeHandle className="ws-divider w-px transition-colors hover:w-[2px]" />
-
-          {/* RIGHT — Preview */}
-          <ResizablePanel defaultSize={35} minSize={22}>
-            <PreviewColumn
-              files={buildStatus === "complete" ? files : {}}
-              isBuilding={isBuilding}
-              device={device}
-              setDevice={setDevice}
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+        </div>
       </div>
     </RequireAuth>
   );
@@ -244,40 +308,40 @@ function ChatColumn({
   return (
     <div className="ws-panel flex h-full flex-col">
       {/* header */}
-      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           <span className={cn(
-            "h-2 w-2 rounded-full",
-            isBuilding && "bg-emerald-400 animate-pulse",
+            "h-2 w-2 shrink-0 rounded-full",
+            isBuilding                 && "animate-pulse bg-emerald-400",
             buildStatus === "complete" && "bg-blue-400",
-            buildStatus === "error" && "bg-red-400",
+            buildStatus === "error"    && "bg-red-400",
           )} />
-          <span className="text-sm font-medium text-white/90 truncate">{projectId}</span>
+          <span className="truncate text-sm font-medium text-white/90">{projectId}</span>
         </div>
-        <span className="text-[10px] uppercase tracking-wider text-white/40">
+        <span className="shrink-0 text-[10px] uppercase tracking-wider text-white/40">
           {isBuilding ? "Running" : "Idle"}
         </span>
       </div>
 
-      {/* messages + thinking card */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        {isBuilding && currentAgent && (
-          <div className="px-4 pt-3">
-            <ThinkingCard label={AGENT_LABELS[currentAgent] ?? "Working…"} />
-          </div>
-        )}
-        <div className="flex-1 min-h-0">
-          <ChatPanel
-            messages={messages}
-            isBuilding={isBuilding}
-            currentAgent={currentAgent}
-            className="h-full !bg-transparent"
-          />
+      {/* thinking card */}
+      {isBuilding && currentAgent && (
+        <div className="px-4 pt-3 shrink-0">
+          <ThinkingCard label={AGENT_LABELS[currentAgent] ?? "Working…"} />
         </div>
+      )}
+
+      {/* messages */}
+      <div className="flex-1 min-h-0">
+        <ChatPanel
+          messages={messages}
+          isBuilding={isBuilding}
+          currentAgent={currentAgent}
+          className="h-full !bg-transparent"
+        />
       </div>
 
-      {/* suggested chips */}
-      <div className="flex flex-wrap gap-1.5 border-t border-white/5 px-3 pt-2">
+      {/* suggestion chips */}
+      <div className="flex flex-wrap gap-1.5 border-t border-white/5 px-3 pt-2 shrink-0">
         {SUGGESTIONS.map(s => (
           <button
             key={s}
@@ -290,7 +354,7 @@ function ChatColumn({
       </div>
 
       {/* composer */}
-      <div className="p-3">
+      <div className="shrink-0 p-3">
         <div className="gradient-border-card p-2">
           <Textarea
             value={draft}
@@ -332,26 +396,25 @@ function ThinkingCard({ label }: { label: string }) {
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-[11px] uppercase tracking-wider text-white/40">Agent</div>
-          <div className="text-sm text-white/90 truncate ws-thinking">{label}</div>
+          <div className="truncate text-sm text-white/90 ws-thinking">{label}</div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ─────────────────────────── MIDDLE: Code column ───────────────────────── */
+/* ─────────────────────────── RIGHT: Code column ────────────────────────── */
 
 function CodeColumn({
-  tab, setTab, files, newFiles, selectedFile, setSelectedFile, isBuilding,
+  files, newFiles, selectedFile, setSelectedFile, isBuilding,
 }: {
-  tab: MidTab;
-  setTab: (t: MidTab) => void;
   files: Record<string, string>;
   newFiles: Set<string>;
   selectedFile: string | null;
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
 }) {
+  const [tab, setTab] = useState<MidTab>("files");
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -365,9 +428,9 @@ function CodeColumn({
   const code = selectedFile ? files[selectedFile] : undefined;
 
   return (
-    <div className="ws-panel flex h-full flex-col">
+    <div className="ws-panel flex h-full w-full flex-col">
       {/* tabs */}
-      <div className="flex items-center gap-1 border-b border-white/5 px-3 py-2">
+      <div className="flex items-center gap-1 border-b border-white/5 px-3 py-2 shrink-0">
         <TabBtn active={tab === "files"} onClick={() => setTab("files")} icon={<FileCode2 className="h-3.5 w-3.5" />} label="Files" />
         <TabBtn active={tab === "code"} onClick={() => setTab("code")} icon={<Code2 className="h-3.5 w-3.5" />} label="Code" />
         <span className="ml-auto text-[10px] text-white/40">
@@ -376,7 +439,7 @@ function CodeColumn({
       </div>
 
       {/* search */}
-      <div className="border-b border-white/5 px-3 py-2">
+      <div className="border-b border-white/5 px-3 py-2 shrink-0">
         <div className="ws-urlbar flex items-center gap-2 rounded-md px-2.5 py-1.5">
           <Search className="h-3.5 w-3.5 text-white/40" />
           <input
@@ -431,10 +494,11 @@ function CodeViewer({
   building: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+
   if (!path || content === undefined) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
-        <div className="space-y-2 w-full">
+        <div className="w-full space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="skeleton-shimmer h-4" style={{ width: `${40 + ((i * 17) % 50)}%` }} />
           ))}
@@ -445,10 +509,11 @@ function CodeViewer({
       </div>
     );
   }
+
   const lines = content.split("\n");
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/5 px-3 py-1.5">
         <span className="truncate font-mono text-[11px] text-white/60">{path}</span>
         <button
           onClick={async () => {
@@ -459,102 +524,20 @@ function CodeViewer({
           className="ws-iconbtn !h-7 !w-7"
           title="Copy"
         >
-          {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied
+            ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+            : <Copy className="h-3.5 w-3.5" />
+          }
         </button>
       </div>
       <div className="flex-1 overflow-auto bg-[#08080d] font-mono text-[12px] leading-[1.55]">
         <div className="flex min-w-full">
           <div className="sticky left-0 select-none border-r border-white/5 bg-[#08080d] px-3 py-3 text-right text-white/25">
-            {lines.map((_, i) => (
-              <div key={i}>{i + 1}</div>
-            ))}
+            {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
           </div>
           <pre className="flex-1 whitespace-pre px-4 py-3 text-white/85">{content}</pre>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────── RIGHT: Preview column ─────────────────────── */
-
-const DEVICE_W: Record<Device, number | string> = {
-  desktop: "100%",
-  tablet:  768,
-  mobile:  390,
-};
-
-function PreviewColumn({
-  files, isBuilding, device, setDevice,
-}: {
-  files: Record<string, string>;
-  isBuilding: boolean;
-  device: Device;
-  setDevice: (d: Device) => void;
-}) {
-  const [reloadKey, setReloadKey] = useState(0);
-  const hasFiles = Object.keys(files).length > 0;
-  return (
-    <div className="ws-panel flex h-full flex-col">
-      {/* top bar */}
-      <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
-        <button className="ws-iconbtn" title="Reload" onClick={() => setReloadKey(k => k + 1)}>
-          <RotateCw className="h-3.5 w-3.5" />
-        </button>
-        <div className="ws-urlbar flex flex-1 items-center gap-2 rounded-md px-2.5 py-1">
-          <Globe className="h-3 w-3 text-white/40" />
-          <span className="truncate font-mono text-[11px] text-white/60">
-            localhost:3000
-          </span>
-        </div>
-        <button className="ws-iconbtn" title="Open in new tab"><ExternalLink className="h-3.5 w-3.5" /></button>
-        <div className="ml-1 flex items-center gap-0.5 rounded-md border border-white/10 bg-white/[0.03] p-0.5">
-          <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")}><Monitor className="h-3.5 w-3.5" /></DeviceBtn>
-          <DeviceBtn active={device === "tablet"} onClick={() => setDevice("tablet")}><Tablet className="h-3.5 w-3.5" /></DeviceBtn>
-          <DeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")}><Smartphone className="h-3.5 w-3.5" /></DeviceBtn>
-        </div>
-      </div>
-
-      {/* preview area */}
-      <div className="flex-1 min-h-0 overflow-auto bg-[#06060a] p-4">
-        <div
-          key={`${device}-${reloadKey}`}
-          className="ws-fade-slide mx-auto h-full overflow-hidden rounded-xl border border-white/10 bg-black shadow-2xl"
-          style={{ width: DEVICE_W[device], maxWidth: "100%" }}
-        >
-          {hasFiles ? (
-            <SandpackPreview files={files} isBuilding={false} className="h-full !rounded-none" />
-          ) : (
-            <PreviewSkeleton building={isBuilding} />
-          )}
-        </div>
-      </div>
-
-      {/* thumbnails */}
-      <div className="grid grid-cols-3 gap-2 border-t border-white/5 p-3">
-        {[0, 1, 2].map(i => (
-          <div key={i} className="gradient-border-card aspect-video overflow-hidden">
-            <div className="h-full w-full skeleton-shimmer" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PreviewSkeleton({ building }: { building: boolean }) {
-  return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <div className="skeleton-shimmer h-8 w-1/3" />
-      <div className="skeleton-shimmer flex-1 w-full rounded-xl" />
-      <div className="grid grid-cols-3 gap-3">
-        <div className="skeleton-shimmer h-16" />
-        <div className="skeleton-shimmer h-16" />
-        <div className="skeleton-shimmer h-16" />
-      </div>
-      <p className="text-center text-[11px] text-white/40">
-        {building ? "Building preview…" : "No preview yet"}
-      </p>
     </div>
   );
 }
@@ -571,6 +554,7 @@ function TabBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition",
@@ -594,6 +578,7 @@ function DeviceBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
         "grid h-6 w-6 place-content-center rounded transition",

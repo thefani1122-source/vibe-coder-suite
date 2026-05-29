@@ -11,9 +11,11 @@ interface SandpackPreviewProps {
   files: Record<string, string>
   isBuilding: boolean
   className?: string
+  /** When provided, suppresses the internal device toolbar and uses this value instead. */
+  externalDevice?: "desktop" | "mobile" | "full"
 }
 
-export function SandpackPreview({ files, isBuilding, className }: SandpackPreviewProps) {
+export function SandpackPreview({ files, isBuilding, className, externalDevice }: SandpackPreviewProps) {
   const fileCount = Object.keys(files).length
 
   const sandpackFiles = useMemo(() => {
@@ -62,6 +64,7 @@ export function SandpackPreview({ files, isBuilding, className }: SandpackPrevie
       files={sandpackFiles}
       entryFile={entryFile}
       className={className}
+      externalDevice={externalDevice}
     />
   )
 }
@@ -70,12 +73,16 @@ function PreviewWithFrame({
   files,
   entryFile,
   className,
+  externalDevice,
 }: {
   files: Record<string, { code: string }>
   entryFile: string
   className?: string
+  externalDevice?: "desktop" | "mobile" | "full"
 }) {
-  const [device, setDevice] = useState<"desktop" | "mobile" | "full">("desktop")
+  const [internalDevice, setInternalDevice] = useState<"desktop" | "mobile" | "full">("desktop")
+  const device = externalDevice ?? internalDevice
+  const setDevice = (d: "desktop" | "mobile" | "full") => { if (!externalDevice) setInternalDevice(d) }
 
   // Sandpack instance — placed inside each conditional branch so React naturally
   // remounts it (and the iframe) when the device frame changes.
@@ -117,18 +124,20 @@ function PreviewWithFrame({
 
   return (
     <div className={cn("flex flex-col h-full w-full bg-background", className)}>
-      {/* Device picker toolbar */}
-      <div className="flex items-center justify-center gap-1 border-b px-3 py-2 shrink-0">
-        <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} label="Desktop">
-          <Monitor className="h-3.5 w-3.5" />
-        </DeviceBtn>
-        <DeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")} label="Mobile">
-          <Smartphone className="h-3.5 w-3.5" />
-        </DeviceBtn>
-        <DeviceBtn active={device === "full"} onClick={() => setDevice("full")} label="Full">
-          <Maximize2 className="h-3.5 w-3.5" />
-        </DeviceBtn>
-      </div>
+      {/* Device picker toolbar — hidden when device is controlled externally */}
+      {!externalDevice && (
+        <div className="flex items-center justify-center gap-1 border-b px-3 py-2 shrink-0">
+          <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} label="Desktop">
+            <Monitor className="h-3.5 w-3.5" />
+          </DeviceBtn>
+          <DeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")} label="Mobile">
+            <Smartphone className="h-3.5 w-3.5" />
+          </DeviceBtn>
+          <DeviceBtn active={device === "full"} onClick={() => setDevice("full")} label="Full">
+            <Maximize2 className="h-3.5 w-3.5" />
+          </DeviceBtn>
+        </div>
+      )}
 
       {/* Preview canvas */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#0d0d0d] p-4">

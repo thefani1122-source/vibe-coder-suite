@@ -54,12 +54,6 @@ const AGENT_LABELS: Record<string, string> = {
   connection: "Working on it…",
 };
 
-const SUGGESTIONS = [
-  "Add build status timeout",
-  "Create debug event panel",
-  "Add dark mode toggle",
-  "Make it responsive",
-];
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Page                                                                       */
@@ -78,9 +72,11 @@ function WorkspacePage() {
   const [activeTab,    setActiveTab]    = useState<ActiveTab>("code");
   const [device,       setDevice]       = useState<Device>("desktop");
   const [reloadKey,    setReloadKey]    = useState(0);
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef  = useRef<Socket | null>(null);
+  const completedRef = useRef(false);
 
   useEffect(() => {
+    completedRef.current = false;
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
@@ -144,6 +140,8 @@ function WorkspacePage() {
     );
 
     socket.on("build:complete", (data?: { files?: Record<string, string> }) => {
+      if (completedRef.current) return;
+      completedRef.current = true;
       const completedFiles = data?.files ?? {};
       const count = Object.keys(completedFiles).length;
       if (data?.files) {
@@ -401,19 +399,6 @@ function ChatColumn({
           </div>
         </div>
       )}
-
-      {/* Suggestion chips — horizontal scroll */}
-      <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto px-3 py-2 [scrollbar-width:none]">
-        {SUGGESTIONS.map(s => (
-          <button
-            key={s}
-            onClick={() => setDraft(s)}
-            className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-white/55 transition hover:border-white/[0.14] hover:text-white/80"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
 
       {/* Input bar */}
       <div className="shrink-0 border-t border-white/[0.07] p-2.5">

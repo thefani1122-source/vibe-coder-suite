@@ -13,40 +13,26 @@ interface SandpackPreviewProps {
   className?: string
 }
 
-const ENTRY_PRIORITIES = [
-  "/src/index.tsx",
-  "/src/index.jsx",
-  "/index.tsx",
-  "/index.jsx",
-  "/src/App.tsx",
-  "/src/App.jsx",
-  "/App.tsx",
-  "/App.jsx",
-  "/index.html",
-]
-
 export function SandpackPreview({ files, isBuilding, className }: SandpackPreviewProps) {
   const fileCount = Object.keys(files).length
 
-  // Convert "src/App.tsx" → "/src/App.tsx" with { code } wrapper
-  const sandpackFiles = useMemo(
-    () =>
-      Object.entries(files).reduce<Record<string, { code: string }>>(
-        (acc, [path, code]) => {
-          acc[path.startsWith("/") ? path : `/${path}`] = { code }
-          return acc
-        },
-        {},
-      ),
-    [files],
-  )
-
-  const entryFile = useMemo(() => {
-    for (const p of ENTRY_PRIORITIES) {
-      if (sandpackFiles[p]) return p
+  const sandpackFiles = useMemo(() => {
+    const result: Record<string, { code: string }> = {}
+    for (const [rawPath, content] of Object.entries(files)) {
+      // Remove any leading slashes, then add exactly one
+      const cleanPath = "/" + rawPath.replace(/^\/+/, "")
+      result[cleanPath] = { code: content }
     }
-    return Object.keys(sandpackFiles)[0] ?? "/App.tsx"
-  }, [sandpackFiles])
+    return result
+  }, [files])
+
+  const entryFile =
+    sandpackFiles["/src/index.tsx"] ? "/src/index.tsx" :
+    sandpackFiles["/src/index.jsx"] ? "/src/index.jsx" :
+    sandpackFiles["/src/main.tsx"]  ? "/src/main.tsx"  :
+    sandpackFiles["/index.tsx"]     ? "/index.tsx"     :
+    sandpackFiles["/App.tsx"]       ? "/App.tsx"       :
+    Object.keys(sandpackFiles)[0]   ?? "/App.tsx"
 
   // Show animated skeleton while files haven't arrived yet
   if (fileCount === 0) {
@@ -71,7 +57,13 @@ export function SandpackPreview({ files, isBuilding, className }: SandpackPrevie
     )
   }
 
-  return <PreviewWithFrame files={sandpackFiles} entryFile={entryFile} className={className} />
+  return (
+    <PreviewWithFrame
+      files={sandpackFiles}
+      entryFile={entryFile}
+      className={className}
+    />
+  )
 }
 
 function PreviewWithFrame({
@@ -88,27 +80,39 @@ function PreviewWithFrame({
   // Sandpack instance — placed inside each conditional branch so React naturally
   // remounts it (and the iframe) when the device frame changes.
   const makeSandpack = () => (
-    <SandpackProvider
-      template="react-ts"
-      files={files}
-      options={{
-        activeFile: entryFile,
-        recompileMode: "delayed",
-        recompileDelay: 800,
-      }}
-      theme="dark"
-      customSetup={{
-        dependencies: { react: "^18.0.0", "react-dom": "^18.0.0" },
-      }}
-    >
-      <SandpackLayout style={{ height: "100%", width: "100%", border: "none", borderRadius: 0 }}>
-        <SP
-          style={{ height: "100%", width: "100%" }}
-          showOpenInCodeSandbox={false}
-          showRefreshButton
-        />
-      </SandpackLayout>
-    </SandpackProvider>
+    <>
+      {process.env.NODE_ENV === "development" && (
+        <div className="absolute left-0 top-0 z-50 bg-black/50 p-2 text-xs text-yellow-400">
+          Files: {Object.keys(files).join(", ") || "none"}
+        </div>
+      )}
+      <SandpackProvider
+        template="react-ts"
+        files={files}
+        options={{
+          activeFile: entryFile,
+          visibleFiles: Object.keys(files).slice(0, 5),
+          recompileMode: "delayed",
+          recompileDelay: 800,
+        }}
+        theme="dark"
+        customSetup={{
+          entry: entryFile,
+          dependencies: {
+            react: "^18.0.0",
+            "react-dom": "^18.0.0",
+          },
+        }}
+      >
+        <SandpackLayout style={{ height: "100%", width: "100%", border: "none", borderRadius: 0 }}>
+          <SP
+            style={{ height: "100%", width: "100%" }}
+            showOpenInCodeSandbox={false}
+            showRefreshButton
+          />
+        </SandpackLayout>
+      </SandpackProvider>
+    </>
   )
 
   return (
@@ -129,7 +133,7 @@ function PreviewWithFrame({
       {/* Preview canvas */}
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#0d0d0d] p-4">
         {device === "full" && (
-          <div className="h-full w-full overflow-hidden rounded-md">
+          <div className="relative h-full w-full overflow-hidden rounded-md">
             {makeSandpack()}
           </div>
         )}
@@ -145,7 +149,7 @@ function PreviewWithFrame({
                 localhost:3000
               </div>
             </div>
-            <div className="h-[480px] overflow-hidden">
+            <div className="relative h-[480px] overflow-hidden">
               {makeSandpack()}
             </div>
           </div>
@@ -158,7 +162,7 @@ function PreviewWithFrame({
           >
             {/* Dynamic island */}
             <div className="absolute left-1/2 top-3 z-10 h-[26px] w-28 -translate-x-1/2 rounded-full bg-black" />
-            <div className="flex-1 overflow-hidden pt-[46px]">
+            <div className="relative flex-1 overflow-hidden pt-[46px]">
               {makeSandpack()}
             </div>
           </div>

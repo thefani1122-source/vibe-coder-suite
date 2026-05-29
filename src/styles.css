@@ -290,3 +290,89 @@
   border-radius: 18px;
   z-index: 10;
 }
+
+/* ── Lovable-style workspace ────────────────────────────────────────────── */
+
+.ws-root {
+  background: #0A0A0F;
+  color: #E6E6F0;
+}
+.ws-panel {
+  background: linear-gradient(180deg, #0E0E15 0%, #0A0A0F 100%);
+}
+.ws-divider {
+  background: rgba(255,255,255,0.06);
+}
+.ws-divider:hover {
+  background: linear-gradient(180deg, #7c3aed, #3b82f6);
+}
+
+/* Gradient border wrapper card */
+.gradient-border-card {
+  position: relative;
+  border-radius: 14px;
+  background: #11111A;
+}
+.gradient-border-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(124,58,237,0.55), rgba(59,130,246,0.45) 60%, rgba(124,58,237,0.2));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Animated agent thinking shimmer band */
+@keyframes ws-thinking-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+.ws-thinking {
+  animation: ws-thinking-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ws-sheen {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+.ws-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(124,58,237,0.18) 50%, transparent 70%);
+  animation: ws-sheen 2.4s linear infinite;
+  pointer-events: none;
+}
+
+/* URL pill */
+.ws-urlbar {
+  background: #16161F;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Subtle interactive button */
+.ws-iconbtn {
+  display: inline-grid;
+  place-content: center;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  color: #9b9bab;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+.ws-iconbtn:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+/* Fade/slide tab transition */
+@keyframes ws-fade-slide {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ws-fade-slide { animation: ws-fade-slide 240ms ease-out; }

@@ -16,13 +16,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useEffect, useState } from "react";
-import { Bell, Copy, Github, Plug, Eye, EyeOff, Lock } from "lucide-react";
+import { Bell, Copy, Github, Plug, Eye, EyeOff, Lock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import * as OTPAuth from "otpauth";
-import QRCode from "qrcode";
 import { useAuth } from "@/lib/auth";
-import { apiPatch } from "@/lib/api";
+import { apiGet, apiPatch } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/settings")({ component: SettingsPage });
@@ -55,6 +53,8 @@ function SettingsPage() {
     </RequireAuth>
   );
 }
+
+/* ─── Profile ─────────────────────────────────────────────────────────────── */
 
 function ProfilePanel() {
   const { user } = useAuth();
@@ -169,87 +169,222 @@ function PasswordPanel() {
   );
 }
 
-const notificationOptions = [
-  { id: "email", label: "Email notifications", desc: "Project updates and weekly digest", on: true },
-  { id: "browser", label: "Browser notifications", desc: "Real-time build status alerts", on: false },
-  { id: "credits", label: "Credit low alerts", desc: "When you have 10% credits remaining", on: true },
-  { id: "build", label: "Build complete", desc: "When an agent finishes building", on: true },
-  { id: "invites", label: "Team invites", desc: "When someone invites you to a project", on: false },
-  { id: "marketing", label: "Marketing", desc: "Product updates and tips", on: false },
-];
+/* ─── Notifications ───────────────────────────────────────────────────────── */
+
+interface NotifSettings {
+  email_notifications: boolean;
+  build_notifications: boolean;
+}
+
+const NOTIF_OPTIONS = [
+  { id: "email",     label: "Email notifications",  desc: "Project updates and weekly digest",      apiKey: "email_notifications" as keyof NotifSettings },
+  { id: "build",     label: "Build complete",        desc: "When an agent finishes building",        apiKey: "build_notifications" as keyof NotifSettings },
+  { id: "browser",   label: "Browser notifications", desc: "Real-time build status alerts",          apiKey: null },
+  { id: "credits",   label: "Credit low alerts",     desc: "When you have 10% credits remaining",    apiKey: null },
+  { id: "invites",   label: "Team invites",          desc: "When someone invites you to a project",  apiKey: null },
+  { id: "marketing", label: "Marketing",             desc: "Product updates and tips",               apiKey: null },
+] as const;
+
+const NOTIF_DEFAULTS: Record<string, boolean> = {
+  email: true, build: true, browser: false, credits: true, invites: false, marketing: false,
+};
 
 function NotificationsPanel() {
-  const [state, setState] = useState<Record<string, boolean>>(
-    Object.fromEntries(notificationOptions.map((o) => [o.id, o.on])),
-  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [state, setState] = useState<Record<string, boolean>>(NOTIF_DEFAULTS);
+
+  useEffect(() => {
+    apiGet<Partial<NotifSettings>>("/api/users/me/settings", { silent: true })
+      .then((data) => {
+        setState((prev) => ({
+          ...prev,
+          ...(data.email_notifications !== undefined ? { email: data.email_notifications } : {}),
+          ...(data.build_notifications  !== undefined ? { build: data.build_notifications  } : {}),
+        }));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = async (id: string, value: boolean) => {
+    setState((s) => ({ ...s, [id]: value }));
+
+    const opt = NOTIF_OPTIONS.find((o) => o.id === id);
+    if (!opt?.apiKey) return; // local-only toggle, no API call needed
+
+    setSaving(true);
+    try {
+      const patch: Partial<NotifSettings> = {};
+      // Always send both mapped fields so state stays consistent
+      const emailOpt = NOTIF_OPTIONS.find((o) => o.apiKey === "email_notifications");
+      const buildOpt = NOTIF_OPTIONS.find((o) => o.apiKey === "build_notifications");
+      patch.email_notifications = id === emailOpt?.id ? value : state[emailOpt?.id ?? "email"];
+      patch.build_notifications  = id === buildOpt?.id  ? value : state[buildOpt?.id  ?? "build"];
+      await apiPatch("/api/users/me/settings", patch);
+      toast.success("Preference saved");
+    } catch {
+      // toast shown by apiPatch — revert optimistic update
+      setState((s) => ({ ...s, [id]: !value }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Card className="border-border/60 bg-card/60 backdrop-blur">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Notifications</CardTitle>
-        <Button variant="outline" size="sm" className="gap-2" onClick={() => toast("Test notification", { description: "This is how it will look.", icon: <Bell className="h-4 w-4" /> })}>
-          <Bell className="h-4 w-4" /> Test
-        </Button>
+        <div className="flex items-center gap-2">
+          {saving && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => toast("Test notification", { description: "This is how it will look.", icon: <Bell className="h-4 w-4" /> })}
+          >
+            <Bell className="h-4 w-4" /> Test
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-1">
-        {notificationOptions.map((o) => (
-          <div key={o.id} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition">
-            <div>
-              <div className="text-sm font-medium">{o.label}</div>
-              <div className="text-xs text-muted-foreground">{o.desc}</div>
-            </div>
-            <Switch checked={state[o.id]} onCheckedChange={(v) => setState((s) => ({ ...s, [o.id]: v }))} />
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ))}
+        ) : (
+          NOTIF_OPTIONS.map((o) => (
+            <div key={o.id} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition">
+              <div>
+                <div className="text-sm font-medium">{o.label}</div>
+                <div className="text-xs text-muted-foreground">{o.desc}</div>
+              </div>
+              <Switch
+                checked={state[o.id]}
+                onCheckedChange={(v) => toggle(o.id, v)}
+                disabled={saving}
+              />
+            </div>
+          ))
+        )}
       </CardContent>
     </Card>
   );
 }
 
-const integrations = [
-  { id: "github", label: "GitHub", desc: "Sync your projects to a repo", icon: Github, connected: true },
-  { id: "vercel", label: "Vercel", desc: "Deploy your apps", icon: Plug, connected: false },
-  { id: "supabase", label: "Supabase", desc: "Managed backend & auth", icon: Plug, connected: true },
-  { id: "stripe", label: "Stripe", desc: "Accept payments", icon: Plug, connected: false },
-];
+/* ─── Integrations ────────────────────────────────────────────────────────── */
+
+interface IntegrationStatus {
+  connected: boolean;
+}
+
+const INTEGRATION_DEFS = [
+  { id: "github",   label: "GitHub",   desc: "Sync your projects to a repo",  Icon: Github },
+  { id: "vercel",   label: "Vercel",   desc: "Deploy your apps",              Icon: Plug   },
+  { id: "supabase", label: "Supabase", desc: "Managed backend & auth",        Icon: Plug   },
+  { id: "stripe",   label: "Stripe",   desc: "Accept payments",               Icon: Plug   },
+] as const;
 
 function IntegrationsPanel() {
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    apiGet<{ integrations?: Record<string, IntegrationStatus> }>("/api/users/me/settings", { silent: true })
+      .then((data) => {
+        if (data.integrations) {
+          const mapped: Record<string, boolean> = {};
+          for (const [key, val] of Object.entries(data.integrations)) {
+            mapped[key] = val.connected ?? false;
+          }
+          setStatus(mapped);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleAction = async (id: string, currentlyConnected: boolean) => {
+    if (currentlyConnected) {
+      try {
+        await apiPatch("/api/users/me/settings", {
+          integrations: { [id]: { connected: false } },
+        });
+        setStatus((s) => ({ ...s, [id]: false }));
+        toast.success(`${id} disconnected`);
+      } catch {
+        // apiPatch shows toast
+      }
+    } else {
+      toast(`${id} OAuth coming soon`);
+    }
+  };
+
   return (
     <Card className="border-border/60 bg-card/60 backdrop-blur">
       <CardHeader><CardTitle>Integrations</CardTitle></CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2">
-        {integrations.map((i) => {
-          const Icon = i.icon;
-          return (
-            <div key={i.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
-              <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-content-center rounded-md bg-secondary"><Icon className="h-5 w-5" /></div>
-                <div>
-                  <div className="text-sm font-medium">{i.label}</div>
-                  <div className="text-xs text-muted-foreground">{i.desc}</div>
+        {loading ? (
+          <div className="col-span-2 flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          INTEGRATION_DEFS.map(({ id, label, desc, Icon }) => {
+            const connected = status[id] ?? false;
+            // Show "Unknown" badge when API returned no data for this integration
+            const hasData = id in status;
+            return (
+              <div key={id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-content-center rounded-md bg-secondary">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{label}</span>
+                      {hasData && (
+                        <span className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                          connected
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : "bg-muted/40 text-muted-foreground",
+                        )}>
+                          {connected ? "Connected" : "Not connected"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{desc}</div>
+                  </div>
                 </div>
+                <Button
+                  size="sm"
+                  variant={connected ? "outline" : "default"}
+                  onClick={() => handleAction(id, connected)}
+                >
+                  {connected ? "Disconnect" : "Connect"}
+                </Button>
               </div>
-              <Button size="sm" variant={i.connected ? "outline" : "default"}>{i.connected ? "Disconnect" : "Connect"}</Button>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );
 }
 
-// ---------------- Security ----------------
+/* ─── Security ────────────────────────────────────────────────────────────── */
 
 type Severity = "Info" | "Warning" | "Error";
 type Category = "Security" | "Billing" | "Project";
 
-const auditLog: { action: string; user: string; ip: string; time: string; severity: Severity; category: Category }[] = [
-  { action: "Project Created", user: "vibe@lampcode.dev", ip: "192.168.1.24", time: "2 hours ago", severity: "Info", category: "Project" },
-  { action: "API Key Used", user: "vibe@lampcode.dev", ip: "192.168.1.24", time: "5 hours ago", severity: "Info", category: "Security" },
-  { action: "Payment Method Updated", user: "vibe@lampcode.dev", ip: "10.0.0.5", time: "1 day ago", severity: "Info", category: "Billing" },
-  { action: "Failed Login Attempt", user: "unknown", ip: "203.0.113.42", time: "2 days ago", severity: "Error", category: "Security" },
-  { action: "Plan Upgraded", user: "vibe@lampcode.dev", ip: "192.168.1.24", time: "3 days ago", severity: "Info", category: "Billing" },
-  { action: "Project Renamed", user: "vibe@lampcode.dev", ip: "192.168.1.24", time: "4 days ago", severity: "Info", category: "Project" },
-];
+interface AuditEntry {
+  action: string;
+  user: string;
+  ip: string;
+  time: string;
+  severity: Severity;
+  category: Category;
+}
 
 const sevColor: Record<Severity, string> = {
   Info: "bg-sky-500",
@@ -259,6 +394,19 @@ const sevColor: Record<Severity, string> = {
 
 function SecurityPanel() {
   const [filter, setFilter] = useState<"All" | Category>("All");
+  const [auditLog, setAuditLog]   = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditError,   setAuditError]   = useState(false);
+
+  useEffect(() => {
+    apiGet<AuditEntry[]>("/api/users/me/audit-log", { silent: true })
+      .then((data) => {
+        setAuditLog(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setAuditError(true))
+      .finally(() => setAuditLoading(false));
+  }, []);
+
   const filtered = auditLog.filter((r) => filter === "All" || r.category === filter);
 
   return (
@@ -274,35 +422,48 @@ function SecurityPanel() {
               <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>{f}</Button>
             ))}
           </div>
-          <div className="rounded-lg border border-border/60">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Action</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Severity</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{r.action}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.user}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{r.ip}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.time}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-2">
-                        <span className={cn("h-2 w-2 rounded-full", sevColor[r.severity])} />
-                        <span className="text-xs">{r.severity}</span>
-                      </span>
-                    </TableCell>
+
+          {auditLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : auditError ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              Could not load audit events. Please try again later.
+            </p>
+          ) : filtered.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No audit events yet.</p>
+          ) : (
+            <div className="rounded-lg border border-border/60">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Action</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>IP Address</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Severity</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-medium">{r.action}</TableCell>
+                      <TableCell className="text-muted-foreground">{r.user}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{r.ip}</TableCell>
+                      <TableCell className="text-muted-foreground">{r.time}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center gap-2">
+                          <span className={cn("h-2 w-2 rounded-full", sevColor[r.severity])} />
+                          <span className="text-xs">{r.severity}</span>
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -311,71 +472,70 @@ function SecurityPanel() {
   );
 }
 
+/* ─── 2FA ─────────────────────────────────────────────────────────────────── */
+
 function TwoFactorCard() {
-  const [enabled, setEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return !!localStorage.getItem("lampcode_2fa_secret");
-  });
-  const [secret, setSecret] = useState<string | null>(null);
-  const [qrUrl, setQrUrl] = useState<string | null>(null);
-  const [otpauthUrl, setOtpauthUrl] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [loading,   setLoading]   = useState(true);
+  const [factorId,  setFactorId]  = useState<string | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [enrollData, setEnrollData] = useState<{
+    id: string;
+    qrCode: string;
+    secret: string;
+  } | null>(null);
   const [code, setCode] = useState("");
 
-  // Start setup flow
-  const startSetup = async () => {
-    const s = new OTPAuth.Secret({ size: 20 });
-    const totp = new OTPAuth.TOTP({
-      issuer: "Lampcode",
-      label: "vibe@lampcode.dev",
-      algorithm: "SHA1",
-      digits: 6,
-      period: 30,
-      secret: s,
-    });
-    const url = totp.toString();
-    setSecret(s.base32);
-    setOtpauthUrl(url);
-    setQrUrl(await QRCode.toDataURL(url, { margin: 1, width: 220 }));
-  };
-
+  // Check current MFA status on mount
   useEffect(() => {
-    // If toggled on and we don't have a stored secret yet, kick off setup
-    if (enabled && !secret && !localStorage.getItem("lampcode_2fa_secret")) {
-      startSetup();
-    }
-  }, [enabled, secret]);
-
-  const verify = () => {
-    if (!secret) return;
-    const totp = new OTPAuth.TOTP({
-      issuer: "Lampcode",
-      label: "vibe@lampcode.dev",
-      secret: OTPAuth.Secret.fromBase32(secret),
+    supabase.auth.mfa.listFactors().then(({ data, error }) => {
+      if (!error && data) {
+        const verified = data.totp?.find((f) => f.status === "verified");
+        if (verified) setFactorId(verified.id);
+      }
+      setLoading(false);
     });
-    const delta = totp.validate({ token: code.replace(/\s/g, ""), window: 1 });
-    if (delta === null) {
-      toast.error("Invalid code. Try the next one from your app.");
-      return;
-    }
-    localStorage.setItem("lampcode_2fa_secret", secret);
-    toast.success("Two-factor authentication enabled");
-    setSecret(null);
-    setQrUrl(null);
-    setOtpauthUrl(null);
-    setCode("");
+  }, []);
+
+  const startSetup = async () => {
+    setEnrolling(true);
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      issuer: "Lampcode",
+      friendlyName: user?.email ?? "account",
+    });
+    setEnrolling(false);
+    if (error) { toast.error(error.message); return; }
+    setEnrollData({ id: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
   };
 
-  const disable = () => {
-    localStorage.removeItem("lampcode_2fa_secret");
-    setEnabled(false);
-    setSecret(null);
-    setQrUrl(null);
-    setOtpauthUrl(null);
+  const verify = async () => {
+    if (!enrollData) return;
+    setVerifying(true);
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: enrollData.id,
+      code: code.replace(/\s/g, ""),
+    });
+    setVerifying(false);
+    if (error) { toast.error(error.message); return; }
+    await supabase.auth.refreshSession();
+    setFactorId(enrollData.id);
+    setEnrollData(null);
+    setCode("");
+    toast.success("Two-factor authentication enabled");
+  };
+
+  const disable = async () => {
+    if (!factorId) return;
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    if (error) { toast.error(error.message); return; }
+    setFactorId(null);
+    setEnrollData(null);
     toast.success("Two-factor authentication disabled");
   };
 
-  const stored = typeof window !== "undefined" ? localStorage.getItem("lampcode_2fa_secret") : null;
-  const isFullyEnabled = enabled && !!stored && !secret;
+  const isFullyEnabled = !!factorId && !enrollData;
 
   return (
     <Card className="border-border/60 bg-card/60 backdrop-blur">
@@ -384,61 +544,77 @@ function TwoFactorCard() {
         <p className="text-xs text-muted-foreground">TOTP via authenticator app (Google Authenticator, 1Password, Authy).</p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
-          <div>
-            <div className="text-sm font-medium">Enable 2FA</div>
-            <div className="text-xs text-muted-foreground">
-              {isFullyEnabled ? "Active — required at sign-in." : "Off — your account uses password only."}
-            </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={(v) => {
-              if (!v) { disable(); return; }
-              setEnabled(true);
-            }}
-          />
-        </div>
-
-        {enabled && !isFullyEnabled ? (
-          <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-            <div className="grid place-content-center aspect-square rounded-lg border border-border/60 bg-white p-2">
-              {qrUrl ? <img src={qrUrl} alt="2FA QR code" className="h-full w-full" /> : <span className="text-xs text-muted-foreground">Generating…</span>}
-            </div>
-            <div className="space-y-3">
-              <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                <li>Scan the QR code with your authenticator app.</li>
-                <li>Or enter the secret manually.</li>
-                <li>Enter the 6-digit code below to confirm.</li>
-              </ol>
-              {secret ? (
-                <div className="flex items-center gap-2">
-                  <Input value={secret} readOnly className="font-mono text-xs" />
-                  <Button size="sm" variant="outline" onClick={() => { navigator.clipboard?.writeText(secret); toast("Secret copied"); }}>
-                    <Copy className="h-3.5 w-3.5" />
-                  </Button>
+        ) : (
+          <>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
+              <div>
+                <div className="text-sm font-medium">Enable 2FA</div>
+                <div className="text-xs text-muted-foreground">
+                  {isFullyEnabled ? "Active — required at sign-in." : "Off — your account uses password only."}
                 </div>
-              ) : null}
-              <div className="flex gap-2">
-                <Input
-                  inputMode="numeric"
-                  placeholder="123 456"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="max-w-[160px] tracking-widest font-mono"
-                />
-                <Button onClick={verify} disabled={code.replace(/\s/g, "").length !== 6}>Verify & enable</Button>
               </div>
-              {otpauthUrl ? <p className="break-all text-[10px] text-muted-foreground">{otpauthUrl}</p> : null}
+              <Switch
+                checked={isFullyEnabled}
+                onCheckedChange={(v) => {
+                  if (!v) { disable(); return; }
+                  if (!enrollData) startSetup();
+                }}
+                disabled={enrolling}
+              />
             </div>
-          </div>
-        ) : null}
 
-        {isFullyEnabled ? (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
-            2FA is active on your account.
-          </div>
-        ) : null}
+            {/* Setup flow: show QR + verify step */}
+            {enrollData && (
+              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                <div className="grid aspect-square place-content-center rounded-lg border border-border/60 bg-white p-2">
+                  <img src={enrollData.qrCode} alt="2FA QR code" className="h-full w-full" />
+                </div>
+                <div className="space-y-3">
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+                    <li>Scan the QR code with your authenticator app.</li>
+                    <li>Or enter the secret key manually.</li>
+                    <li>Enter the 6-digit code below to confirm.</li>
+                  </ol>
+                  <div className="flex items-center gap-2">
+                    <Input value={enrollData.secret} readOnly className="font-mono text-xs" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { navigator.clipboard?.writeText(enrollData.secret); toast("Secret copied"); }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      inputMode="numeric"
+                      placeholder="123 456"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      className="max-w-[160px] tracking-widest font-mono"
+                    />
+                    <Button
+                      onClick={verify}
+                      disabled={verifying || code.replace(/\s/g, "").length !== 6}
+                    >
+                      {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & enable"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {isFullyEnabled && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+                2FA is active on your account.
+              </div>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );

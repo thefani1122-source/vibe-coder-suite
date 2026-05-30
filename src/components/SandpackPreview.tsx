@@ -18,8 +18,23 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   const fileCount = Object.keys(files).length
 
   const sandpackFiles = useMemo(() => {
+    // Sandpack's browser bundler cannot use these — skip them entirely so they
+    // don't override the template's package.json or cause null-path errors.
+    const SKIP = new Set([
+      "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+      "tailwind.config.js", "tailwind.config.ts",
+      "postcss.config.js", "postcss.config.ts", "postcss.config.cjs",
+      "vite.config.ts", "vite.config.js",
+      "next.config.js", "next.config.ts",
+      "tsconfig.json", "tsconfig.node.json",
+      ".env", ".gitignore", ".eslintrc.js", ".eslintrc.json",
+    ])
+
     const result: Record<string, { code: string }> = {}
     for (const [rawPath, content] of Object.entries(files)) {
+      const basename = rawPath.split("/").pop() ?? ""
+      if (SKIP.has(basename)) continue
+
       const normalized = "/" + rawPath.replace(/^\/+/, "")
       // The react-ts template expects all source files under /src/.
       // If the backend sends root-level files ("App.tsx", "index.tsx"),
@@ -31,7 +46,14 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
         /\.(tsx?|jsx?|css|svg)$/.test(normalized)
           ? "/src" + normalized
           : normalized
-      result[cleanPath] = { code: content }
+
+      // Strip @tailwind / @layer / @apply directives — Sandpack has no PostCSS,
+      // so these cause "Path must be a string. Received null" in the bundler.
+      const code = cleanPath.endsWith(".css")
+        ? content.replace(/^@(tailwind|layer|apply)\b.*$/gm, "").trim()
+        : content
+
+      result[cleanPath] = { code }
     }
 
     // If there's no entry/bootstrap file, inject one so the App component renders

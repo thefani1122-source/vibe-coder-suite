@@ -518,7 +518,6 @@ function CodePanel({
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
 }) {
-  const [showCode, setShowCode] = useState(false);
   const [query,    setQuery]    = useState("");
 
   const filteredFiles = useMemo(() => {
@@ -528,11 +527,6 @@ function CodePanel({
   }, [files, query]);
 
   const code = selectedFile ? files[selectedFile] : undefined;
-
-  const handleFileSelect = (path: string) => {
-    setSelectedFile(path);
-    setShowCode(true);
-  };
 
   const handleDownload = () => {
     const entries = Object.entries(files);
@@ -551,19 +545,11 @@ function CodePanel({
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0d0d0d]">
+    <div className="flex h-full w-full bg-[#0d0d0d]">
 
-      {/* Header: search bar or back-to-files link */}
-      <div className="shrink-0 border-b border-white/[0.06] p-2">
-        {showCode && selectedFile ? (
-          <button
-            onClick={() => setShowCode(false)}
-            className="flex items-center gap-1.5 text-xs text-white/50 transition hover:text-white/80"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Files
-          </button>
-        ) : (
+      {/* Left: file tree column */}
+      <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
+        <div className="shrink-0 border-b border-white/[0.06] p-2">
           <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
             <input
@@ -573,29 +559,23 @@ function CodePanel({
               className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
             />
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Body */}
-      <div className="flex-1 min-h-0">
-        {showCode && selectedFile && code !== undefined ? (
-          <CodeViewer path={selectedFile} content={code} building={isBuilding} />
-        ) : Object.keys(files).length === 0 ? (
-          <EmptyCodeSkeleton building={isBuilding} />
-        ) : (
-          <FileTree
-            files={filteredFiles}
-            selectedFile={selectedFile}
-            onFileSelect={handleFileSelect}
-            newFiles={newFiles}
-            className="h-full"
-          />
-        )}
-      </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          {Object.keys(files).length === 0 ? (
+            <EmptyCodeSkeleton building={isBuilding} />
+          ) : (
+            <FileTree
+              files={filteredFiles}
+              selectedFile={selectedFile}
+              onFileSelect={setSelectedFile}
+              newFiles={newFiles}
+              className="h-full"
+            />
+          )}
+        </div>
 
-      {/* Download codebase button — file tree view only */}
-      {!showCode && (
-        <div className="shrink-0 border-t border-white/[0.06] p-3">
+        <div className="shrink-0 border-t border-white/[0.06] p-2">
           <button
             onClick={handleDownload}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
@@ -604,7 +584,23 @@ function CodePanel({
             Download codebase
           </button>
         </div>
-      )}
+      </div>
+
+      {/* Right: code viewer */}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        {selectedFile && code !== undefined ? (
+          <CodeViewer path={selectedFile} content={code} building={isBuilding} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <Code2 className="h-6 w-6 text-white/20" />
+            <p className="text-xs text-white/40">
+              {Object.keys(files).length === 0
+                ? (isBuilding ? "Waiting for files…" : "No files yet")
+                : "Select a file to view its code"}
+            </p>
+          </div>
+        )}
+      </div>
 
     </div>
   );

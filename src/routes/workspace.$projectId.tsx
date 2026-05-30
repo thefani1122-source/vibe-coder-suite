@@ -80,27 +80,68 @@ function WorkspacePage() {
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    setMessages([newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." })]);
+    // Preserve the user's ORIGINAL prompt as the first message.
+    // We read it from sessionStorage (set by whoever initiated the build),
+    // falling back to a neutral placeholder.
+    const storedPrompt =
+      (typeof window !== "undefined" && sessionId
+        ? window.sessionStorage.getItem(`prompt:${sessionId}`)
+        : null) ?? "";
+    const initial: BuildMessage[] = [];
+    if (storedPrompt.trim()) {
+      initial.push(newMsg({ type: "text", text: storedPrompt }));
+    }
+    initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
+    setMessages(initial);
+
+    // Backend may also broadcast the prompt explicitly.
+    socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
+      const t = (data.text ?? data.prompt ?? "").trim();
+      if (!t) return;
+      setMessages(prev =>
+        prev.some(m => m.type === "text" && m.text === t)
+          ? prev
+          : [newMsg({ type: "text", text: t }), ...prev],
+      );
+    });
 
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
       setCurrentAgent("planning");
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({ type: "thinking", text: data.text ?? data.content ?? "" }),
-      ]);
-    });
-
-    // Only append tokens into a short, single-line status bubble.
-    // Raw file content tokens are silently dropped.
-    socket.on("build:token", (data: { text?: string; token?: string }) => {
-      const text = data.text ?? data.token ?? "";
+      const chunk = data.text ?? data.content ?? "";
       setMessages(prev => {
         const last = prev[prev.length - 1];
-        if (last?.type === "text" && !last.text.includes("\n") && last.text.length < 200) {
-          return prev.map((m, i) => i === prev.length - 1 ? { ...m, text: m.text + text } : m);
+        // Append into the currently-streaming thinking bubble.
+        if (last?.type === "thinking" && last.streaming) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
+          );
         }
-        return prev;
+        return [
+          ...closeStreaming(prev),
+          newMsg({ type: "thinking", text: chunk, streaming: true }),
+        ];
       });
+    });
+
+    // Stream raw LLM tokens INTO the active thinking bubble — this is the
+    // "real thinking" feed users see in Lovable. If no thinking bubble is open
+    // yet, start one.
+    socket.on("build:token", (data: { text?: string; token?: string }) => {
+      const text = data.text ?? data.token ?? "";
+      if (!text) return;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.type === "thinking" && last.streaming) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + text } : m,
+          );
+        }
+        return [
+          ...prev,
+          newMsg({ type: "thinking", text, streaming: true }),
+        ];
+      });
+      setCurrentAgent(a => a ?? "planning");
     });
 
     socket.on("build:tool_call", (data: { tool?: string; name?: string }) => {

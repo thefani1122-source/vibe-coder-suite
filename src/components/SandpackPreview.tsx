@@ -20,10 +20,38 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   const sandpackFiles = useMemo(() => {
     const result: Record<string, { code: string }> = {}
     for (const [rawPath, content] of Object.entries(files)) {
-      // Normalise to exactly one leading slash: "src/App.tsx" → "/src/App.tsx"
-      const cleanPath = "/" + rawPath.replace(/^\/+/, "")
+      const normalized = "/" + rawPath.replace(/^\/+/, "")
+      // The react-ts template expects all source files under /src/.
+      // If the backend sends root-level files ("App.tsx", "index.tsx"),
+      // remap them into /src/ so they override the template's defaults —
+      // otherwise the template's own /src/App.tsx ("Hello World") loads instead.
+      const cleanPath =
+        !normalized.startsWith("/src/") &&
+        !normalized.startsWith("/public/") &&
+        /\.(tsx?|jsx?|css|svg)$/.test(normalized)
+          ? "/src" + normalized
+          : normalized
       result[cleanPath] = { code: content }
     }
+
+    // If there's no entry/bootstrap file, inject one so the App component renders
+    const hasEntry =
+      result["/src/index.tsx"] ||
+      result["/src/index.jsx"] ||
+      result["/src/main.tsx"]
+    if (!hasEntry && (result["/src/App.tsx"] || result["/src/App.jsx"])) {
+      result["/src/index.tsx"] = {
+        code:
+          "import React from 'react';\n" +
+          "import ReactDOM from 'react-dom/client';\n" +
+          "import App from './App';\n" +
+          "\n" +
+          "ReactDOM.createRoot(document.getElementById('root')!).render(\n" +
+          "  <React.StrictMode><App /></React.StrictMode>\n" +
+          ");",
+      }
+    }
+
     return result
   }, [files])
 
@@ -33,6 +61,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
     sandpackFiles["/src/index.jsx"] ? "/src/index.jsx" :
     sandpackFiles["/src/main.tsx"]  ? "/src/main.tsx"  :
     sandpackFiles["/index.tsx"]     ? "/index.tsx"     :
+    sandpackFiles["/src/App.tsx"]   ? "/src/App.tsx"   :
     sandpackFiles["/App.tsx"]       ? "/App.tsx"       :
     Object.keys(sandpackFiles)[0]   ?? "/src/index.tsx"
 

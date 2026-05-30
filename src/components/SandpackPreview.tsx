@@ -140,7 +140,10 @@ function PreviewWithFrame({
       )}
 
       {/* Preview canvas */}
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-[#0d0d0d] p-4">
+      <div className={cn(
+        "flex min-h-0 flex-1 overflow-auto bg-[#0d0d0d]",
+        device === "mobile" ? "items-center justify-center p-4" : "items-stretch justify-stretch",
+      )}>
         {device === "full" && (
           <div className="relative h-full w-full overflow-hidden rounded-md">
             {makeSandpack()}
@@ -148,19 +151,8 @@ function PreviewWithFrame({
         )}
 
         {device === "desktop" && (
-          <div className="flex w-full max-w-[800px] flex-col overflow-hidden rounded-lg border border-border/30 shadow-2xl">
-            {/* Browser chrome */}
-            <div className="flex h-8 shrink-0 items-center gap-1.5 bg-[#1e1e1e] px-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-              <div className="mx-2 flex-1 rounded bg-[#2d2d2d] px-3 py-0.5 text-[10px] text-muted-foreground">
-                localhost:3000
-              </div>
-            </div>
-            <div className="relative h-[480px] overflow-hidden">
-              {makeSandpack()}
-            </div>
+          <div className="relative h-full w-full overflow-hidden">
+            {makeSandpack()}
           </div>
         )}
 

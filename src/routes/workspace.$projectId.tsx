@@ -10,7 +10,7 @@ import { createBuildSocket } from "@/lib/websocket";
 import {
   Mic, ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Maximize2,
-  Search, Copy, Check, Globe, Code2, ChevronLeft,
+  Search, Copy, Check, Globe, Code2,
   History, PanelLeft, FileText, Settings, Github, Download,
   Square, Plus,
 } from "lucide-react";

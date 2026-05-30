@@ -2,7 +2,6 @@ import { useMemo, useState } from "react"
 import {
   SandpackProvider,
   SandpackPreview as SP,
-  SandpackLayout,
 } from "@codesandbox/sandpack-react"
 import { cn } from "@/lib/utils"
 import { Monitor, Smartphone, Maximize2 } from "lucide-react"
@@ -100,15 +99,13 @@ function PreviewWithFrame({
           "react-dom": "^18.2.0",
         },
       }}
-      style={{ height: "100%", width: "100%" }}
+      style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}
     >
-      <SandpackLayout style={{ height: "100%", width: "100%", border: "none", borderRadius: 0 }}>
-        <SP
-          style={{ height: "100%", width: "100%" }}
-          showOpenInCodeSandbox={false}
-          showRefreshButton
-        />
-      </SandpackLayout>
+      <SP
+        style={{ flex: 1, width: "100%" }}
+        showNavigator={false}
+        showOpenInCodeSandbox={false}
+      />
     </SandpackProvider>
   )
 
@@ -130,7 +127,7 @@ function PreviewWithFrame({
       )}
 
       {/* Preview canvas — fills all remaining space, no device frames */}
-      <div className="h-full w-full flex-1 min-h-0 overflow-hidden">
+      <div className="h-full w-full overflow-hidden flex flex-col">
         {makeSandpack()}
       </div>
     </div>

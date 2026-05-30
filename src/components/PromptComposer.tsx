@@ -102,6 +102,13 @@ export function PromptComposer() {
           search: { projectId: pid },
         });
       } else {
+        // Preserve the user's original prompt so the workspace can render it
+        // as the first chat bubble (Lovable parity).
+        if (sessionId && typeof window !== "undefined") {
+          try {
+            window.sessionStorage.setItem(`prompt:${sessionId}`, value.trim());
+          } catch { /* ignore quota / privacy mode */ }
+        }
         navigate({
           to: "/workspace/$projectId",
           params: { projectId: pid },

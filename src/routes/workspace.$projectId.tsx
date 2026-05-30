@@ -10,7 +10,7 @@ import { createBuildSocket } from "@/lib/websocket";
 import {
   Mic, ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Maximize2,
-  Search, Copy, Check, Globe, Code2, ChevronLeft,
+  Search, Copy, Check, Globe, Code2,
   History, PanelLeft, FileText, Settings, Github, Download,
   Square, Plus,
 } from "lucide-react";
@@ -80,27 +80,68 @@ function WorkspacePage() {
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    setMessages([newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." })]);
+    // Preserve the user's ORIGINAL prompt as the first message.
+    // We read it from sessionStorage (set by whoever initiated the build),
+    // falling back to a neutral placeholder.
+    const storedPrompt =
+      (typeof window !== "undefined" && sessionId
+        ? window.sessionStorage.getItem(`prompt:${sessionId}`)
+        : null) ?? "";
+    const initial: BuildMessage[] = [];
+    if (storedPrompt.trim()) {
+      initial.push(newMsg({ type: "text", text: storedPrompt }));
+    }
+    initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
+    setMessages(initial);
+
+    // Backend may also broadcast the prompt explicitly.
+    socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
+      const t = (data.text ?? data.prompt ?? "").trim();
+      if (!t) return;
+      setMessages(prev =>
+        prev.some(m => m.type === "text" && m.text === t)
+          ? prev
+          : [newMsg({ type: "text", text: t }), ...prev],
+      );
+    });
 
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
       setCurrentAgent("planning");
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({ type: "thinking", text: data.text ?? data.content ?? "" }),
-      ]);
-    });
-
-    // Only append tokens into a short, single-line status bubble.
-    // Raw file content tokens are silently dropped.
-    socket.on("build:token", (data: { text?: string; token?: string }) => {
-      const text = data.text ?? data.token ?? "";
+      const chunk = data.text ?? data.content ?? "";
       setMessages(prev => {
         const last = prev[prev.length - 1];
-        if (last?.type === "text" && !last.text.includes("\n") && last.text.length < 200) {
-          return prev.map((m, i) => i === prev.length - 1 ? { ...m, text: m.text + text } : m);
+        // Append into the currently-streaming thinking bubble.
+        if (last?.type === "thinking" && last.streaming) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
+          );
         }
-        return prev;
+        return [
+          ...closeStreaming(prev),
+          newMsg({ type: "thinking", text: chunk, streaming: true }),
+        ];
       });
+    });
+
+    // Stream raw LLM tokens INTO the active thinking bubble — this is the
+    // "real thinking" feed users see in Lovable. If no thinking bubble is open
+    // yet, start one.
+    socket.on("build:token", (data: { text?: string; token?: string }) => {
+      const text = data.text ?? data.token ?? "";
+      if (!text) return;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.type === "thinking" && last.streaming) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + text } : m,
+          );
+        }
+        return [
+          ...prev,
+          newMsg({ type: "thinking", text, streaming: true }),
+        ];
+      });
+      setCurrentAgent(a => a ?? "planning");
     });
 
     socket.on("build:tool_call", (data: { tool?: string; name?: string }) => {
@@ -209,13 +250,15 @@ function WorkspacePage() {
               />
             )}
             {activeTab === "preview" && (
-              <div key={reloadKey} className="h-full w-full">
-                <SandpackPreview
-                  files={buildStatus === "complete" ? files : {}}
-                  isBuilding={isBuilding}
-                  externalDevice={device}
-                  className="h-full w-full"
-                />
+              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a] p-4">
+                <div className="relative mx-auto h-full w-full max-w-[1100px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f0f] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
+                  <SandpackPreview
+                    files={buildStatus === "complete" ? files : {}}
+                    isBuilding={isBuilding}
+                    externalDevice={device}
+                    className="h-full w-full"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -475,7 +518,6 @@ function CodePanel({
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
 }) {
-  const [showCode, setShowCode] = useState(false);
   const [query,    setQuery]    = useState("");
 
   const filteredFiles = useMemo(() => {
@@ -485,11 +527,6 @@ function CodePanel({
   }, [files, query]);
 
   const code = selectedFile ? files[selectedFile] : undefined;
-
-  const handleFileSelect = (path: string) => {
-    setSelectedFile(path);
-    setShowCode(true);
-  };
 
   const handleDownload = () => {
     const entries = Object.entries(files);
@@ -508,19 +545,11 @@ function CodePanel({
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-[#0d0d0d]">
+    <div className="flex h-full w-full bg-[#0d0d0d]">
 
-      {/* Header: search bar or back-to-files link */}
-      <div className="shrink-0 border-b border-white/[0.06] p-2">
-        {showCode && selectedFile ? (
-          <button
-            onClick={() => setShowCode(false)}
-            className="flex items-center gap-1.5 text-xs text-white/50 transition hover:text-white/80"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-            Files
-          </button>
-        ) : (
+      {/* Left: file tree column */}
+      <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
+        <div className="shrink-0 border-b border-white/[0.06] p-2">
           <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
             <input
@@ -530,29 +559,23 @@ function CodePanel({
               className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
             />
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Body */}
-      <div className="flex-1 min-h-0">
-        {showCode && selectedFile && code !== undefined ? (
-          <CodeViewer path={selectedFile} content={code} building={isBuilding} />
-        ) : Object.keys(files).length === 0 ? (
-          <EmptyCodeSkeleton building={isBuilding} />
-        ) : (
-          <FileTree
-            files={filteredFiles}
-            selectedFile={selectedFile}
-            onFileSelect={handleFileSelect}
-            newFiles={newFiles}
-            className="h-full"
-          />
-        )}
-      </div>
+        <div className="min-h-0 flex-1 overflow-auto">
+          {Object.keys(files).length === 0 ? (
+            <EmptyCodeSkeleton building={isBuilding} />
+          ) : (
+            <FileTree
+              files={filteredFiles}
+              selectedFile={selectedFile}
+              onFileSelect={setSelectedFile}
+              newFiles={newFiles}
+              className="h-full"
+            />
+          )}
+        </div>
 
-      {/* Download codebase button — file tree view only */}
-      {!showCode && (
-        <div className="shrink-0 border-t border-white/[0.06] p-3">
+        <div className="shrink-0 border-t border-white/[0.06] p-2">
           <button
             onClick={handleDownload}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
@@ -561,7 +584,23 @@ function CodePanel({
             Download codebase
           </button>
         </div>
-      )}
+      </div>
+
+      {/* Right: code viewer */}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        {selectedFile && code !== undefined ? (
+          <CodeViewer path={selectedFile} content={code} building={isBuilding} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <Code2 className="h-6 w-6 text-white/20" />
+            <p className="text-xs text-white/40">
+              {Object.keys(files).length === 0
+                ? (isBuilding ? "Waiting for files…" : "No files yet")
+                : "Select a file to view its code"}
+            </p>
+          </div>
+        )}
+      </div>
 
     </div>
   );

@@ -11,8 +11,8 @@ import {
   Mic, ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Maximize2,
   Search, Copy, Check, Globe, Code2,
-  History, PanelLeft, FileText, Settings, Github, Download,
-  Square, Plus,
+  History, PanelLeft, FileText, Github, Download,
+  Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma,
 } from "lucide-react";
 import { toast } from "sonner";
 

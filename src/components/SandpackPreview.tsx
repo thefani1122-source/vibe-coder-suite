@@ -74,6 +74,23 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       }
     }
 
+    // Always inject a custom index.html that loads Tailwind CDN so plain
+    // Tailwind class names work even when the LLM omits a PostCSS build step.
+    result["/public/index.html"] = {
+      code: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <title>App</title>
+</head>
+<body style="margin:0;padding:0">
+  <div id="root"></div>
+</body>
+</html>`,
+    }
+
     return result
   }, [files])
 
@@ -134,7 +151,7 @@ function PreviewWithFrame({
 
   const makeSandpack = () => (
     <SandpackProvider
-      template="react-ts"
+      template="react"
       files={files}
       options={{
         activeFile: entryFile,
@@ -178,7 +195,7 @@ function PreviewWithFrame({
       )}
 
       {/* Preview canvas — fills all remaining space, no device frames */}
-      <div className="h-full w-full overflow-hidden flex flex-col">
+      <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column" }}>
         {makeSandpack()}
       </div>
     </div>

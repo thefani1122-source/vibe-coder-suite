@@ -10,7 +10,7 @@ interface SandpackPreviewProps {
   isBuilding: boolean
   className?: string
   /** When provided, suppresses the internal device toolbar and uses this value instead. */
-  externalDevice?: "desktop" | "mobile" | "full"
+  externalDevice?: "desktop" | "mobile" | "tablet"
 }
 
 export function SandpackPreview({ files, isBuilding, className, externalDevice }: SandpackPreviewProps) {
@@ -142,12 +142,13 @@ function PreviewWithFrame({
   files: Record<string, { code: string }>
   entryFile: string
   className?: string
-  externalDevice?: "desktop" | "mobile" | "full"
+  externalDevice?: "desktop" | "mobile" | "tablet"
 }) {
-  // Device is driven entirely by the workspace top bar. "mobile" simply
-  // constrains the iframe width (centered); desktop/full are edge-to-edge.
+  // Device is driven entirely by the workspace top bar. "mobile" constrains
+  // to 420px, "tablet" to 768px, "desktop" is edge-to-edge.
   const device = externalDevice ?? "desktop"
   const mobile = device === "mobile"
+  const tablet = device === "tablet"
 
   const makeSandpack = () => (
     <SandpackProvider
@@ -186,7 +187,7 @@ function PreviewWithFrame({
         style={{
           height: "100%",
           width: "100%",
-          maxWidth: mobile ? 420 : "none",
+          maxWidth: mobile ? 420 : tablet ? 768 : "none",
           display: "flex",
           flexDirection: "column",
         }}

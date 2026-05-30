@@ -132,21 +132,29 @@ function MessageRow({
   switch (msg.type) {
     case "thinking":
       return (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <button
             type="button"
             onClick={onToggle}
-            className="flex w-fit items-center gap-1 text-xs italic text-white/35 transition-colors hover:text-white/55"
+            className="flex w-full items-center gap-2 text-xs text-white/60 transition-colors hover:text-white/80"
           >
+            {!isCollapsed ? (
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-400" />
+              </span>
+            ) : (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-violet-400/50" />
+            )}
+            <span className="font-medium">Thinking...</span>
             {isCollapsed
-              ? <ChevronRight className="h-3 w-3" />
-              : <ChevronDown className="h-3 w-3" />
+              ? <ChevronRight className="ml-auto h-3 w-3 shrink-0" />
+              : <ChevronDown className="ml-auto h-3 w-3 shrink-0" />
             }
-            Thinking...
           </button>
           {!isCollapsed && (
-            <div className="rounded-xl bg-white/[0.03] px-3 py-2">
-              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/40">
+            <div className="rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.05] px-3 py-2.5">
+              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/45">
                 {msg.text}
                 {showCursor && <BlinkCursor />}
               </p>

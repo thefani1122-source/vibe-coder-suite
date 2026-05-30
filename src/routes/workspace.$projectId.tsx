@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
+import { Group, Panel, Separator, usePanelRef, type PanelImperativeHandle } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
+import { apiGet, apiPost } from "@/lib/api";
 import {
   ArrowUp, ChevronDown, Sparkles, Zap,
-  RotateCw, Monitor, Smartphone, Maximize2,
+  RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
-  History, PanelLeft, FileText, Github, Download,
+  History, PanelLeft, PanelLeftClose, FileText, Github, Download,
   Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -26,7 +28,9 @@ export const Route = createFileRoute("/workspace/$projectId")({
 
 type BuildStatus = "running" | "complete" | "error";
 type ActiveTab  = "preview" | "code";
-type Device     = "desktop" | "mobile" | "full";
+type Device     = "desktop" | "mobile" | "tablet";
+
+const DEVICE_CYCLE: Device[] = ["desktop", "mobile", "tablet"];
 
 function toolToAgent(tool: string): string {
   if (/file|write|create/i.test(tool)) return "frontend";
@@ -72,29 +76,25 @@ function WorkspacePage() {
   const [activeTab,    setActiveTab]    = useState<ActiveTab>("code");
   const [device,       setDevice]       = useState<Device>("desktop");
   const [reloadKey,    setReloadKey]    = useState(0);
-  const socketRef  = useRef<Socket | null>(null);
+  const [projectName,  setProjectName]  = useState<string>("");
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+
+  const socketRef    = useRef<Socket | null>(null);
   const completedRef = useRef(false);
+  const chatPanelRef = usePanelRef();
 
+  // Fetch project name with auth via apiGet (handles token automatically).
   useEffect(() => {
-    completedRef.current = false;
-    const socket = createBuildSocket(sessionId);
-    socketRef.current = socket;
+    apiGet<{ name?: string; title?: string }>(`/api/projects/${projectId}`, { silent: true })
+      .then(data => {
+        const name = data.name ?? data.title;
+        if (name) setProjectName(name);
+      })
+      .catch(() => {});
+  }, [projectId]);
 
-    // Preserve the user's ORIGINAL prompt as the first message.
-    // We read it from sessionStorage (set by whoever initiated the build),
-    // falling back to a neutral placeholder.
-    const storedPrompt =
-      (typeof window !== "undefined" && sessionId
-        ? window.sessionStorage.getItem(`prompt:${sessionId}`)
-        : null) ?? "";
-    const initial: BuildMessage[] = [];
-    if (storedPrompt.trim()) {
-      initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
-    }
-    initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
-    setMessages(initial);
-
-    // Backend may also broadcast the prompt explicitly.
+  // Stable handler registration — state setters are stable refs, so empty deps is safe.
+  const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;
@@ -110,7 +110,6 @@ function WorkspacePage() {
       const chunk = data.text ?? data.content ?? "";
       setMessages(prev => {
         const last = prev[prev.length - 1];
-        // Append into the currently-streaming thinking bubble.
         if (last?.type === "thinking" && last.streaming) {
           return prev.map((m, i) =>
             i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
@@ -123,9 +122,6 @@ function WorkspacePage() {
       });
     });
 
-    // Stream raw LLM tokens INTO the active thinking bubble — this is the
-    // "real thinking" feed users see in Lovable. If no thinking bubble is open
-    // yet, start one.
     socket.on("build:token", (data: { text?: string; token?: string }) => {
       const text = data.text ?? data.token ?? "";
       if (!text) return;
@@ -136,10 +132,7 @@ function WorkspacePage() {
             i === prev.length - 1 ? { ...m, text: m.text + text } : m,
           );
         }
-        return [
-          ...prev,
-          newMsg({ type: "thinking", text, streaming: true }),
-        ];
+        return [...prev, newMsg({ type: "thinking", text, streaming: true })];
       });
       setCurrentAgent(a => a ?? "planning");
     });
@@ -195,7 +188,10 @@ function WorkspacePage() {
       setActiveTab("preview");
       setMessages(prev => [
         ...closeStreaming(prev),
-        newMsg({ type: "text", text: `✅ Build complete! ${count > 0 ? count : "All"} files generated.` }),
+        newMsg({
+          type: "text",
+          text: `Here's your app! I generated ${count > 0 ? count : "your"} files. You can see the preview on the right, or click Code to explore the files.`,
+        }),
       ]);
     });
 
@@ -207,9 +203,74 @@ function WorkspacePage() {
         newMsg({ type: "error", text: data?.message ?? data?.error ?? "Build failed" }),
       ]);
     });
+  }, []);
+
+  // Initial socket setup
+  useEffect(() => {
+    completedRef.current = false;
+    const socket = createBuildSocket(sessionId);
+    socketRef.current = socket;
+
+    const storedPrompt =
+      (typeof window !== "undefined" && sessionId
+        ? window.sessionStorage.getItem(`prompt:${sessionId}`)
+        : null) ?? "";
+    const initial: BuildMessage[] = [];
+    if (storedPrompt.trim()) {
+      initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
+    }
+    initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
+    setMessages(initial);
+
+    registerHandlers(socket);
 
     return () => { socket.disconnect(); socketRef.current = null; };
-  }, [sessionId]);
+  }, [sessionId, registerHandlers]);
+
+  // Follow-up build: POST new prompt, reconnect socket with fresh sessionId.
+  const handleFollowUp = useCallback(async (prompt: string) => {
+    if (!prompt.trim()) return;
+
+    setMessages(prev => [
+      ...closeStreaming(prev),
+      newMsg({ type: "text", text: prompt, role: "user" }),
+    ]);
+    setBuildStatus("running");
+    setCurrentAgent(undefined);
+    completedRef.current = false;
+
+    let newSessionId: string;
+    try {
+      const res = await apiPost<{ sessionId?: string; session_id?: string }>("/api/build/fast", {
+        prompt,
+        projectId,
+      });
+      newSessionId = res.sessionId ?? res.session_id ?? "";
+      if (!newSessionId) throw new Error("No sessionId in response");
+    } catch {
+      setBuildStatus("error");
+      setMessages(prev => [
+        ...prev,
+        newMsg({ type: "error", text: "Failed to start follow-up build" }),
+      ]);
+      return;
+    }
+
+    socketRef.current?.disconnect();
+    const newSocket = createBuildSocket(newSessionId);
+    socketRef.current = newSocket;
+    registerHandlers(newSocket);
+  }, [projectId, registerHandlers]);
+
+  const toggleChat = useCallback(() => {
+    if (chatPanelRef.current?.isCollapsed()) {
+      chatPanelRef.current.expand();
+      setChatCollapsed(false);
+    } else {
+      chatPanelRef.current?.collapse();
+      setChatCollapsed(true);
+    }
+  }, [chatPanelRef]);
 
   const isBuilding = buildStatus === "running";
 
@@ -219,6 +280,7 @@ function WorkspacePage() {
 
         <WorkspaceTopBar
           projectId={projectId}
+          projectName={projectName}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           device={device}
@@ -226,41 +288,61 @@ function WorkspacePage() {
           buildStatus={buildStatus}
           onReload={() => setReloadKey(k => k + 1)}
           files={files}
+          chatCollapsed={chatCollapsed}
+          onToggleChat={toggleChat}
         />
 
-        <div className="flex min-h-0 flex-1">
-          {/* Left: Chat — fixed 360 px, slightly elevated bg + right border */}
-          <div className="w-[360px] shrink-0 border-r border-white/[0.06] bg-[#0d0d12]">
-            <ChatColumn
-              messages={messages}
-              isBuilding={isBuilding}
-              currentAgent={currentAgent}
-            />
-          </div>
-
-          {/* Right: tab-switched panel — pure dark, "window into the app" */}
-          <div className="flex min-h-0 flex-1 bg-[#080808]">
-            {activeTab === "code" && (
-              <CodePanel
-                files={files}
-                newFiles={newFiles}
-                selectedFile={selectedFile}
-                setSelectedFile={setSelectedFile}
+        <Group
+          orientation="horizontal"
+          className="flex-1 min-h-0"
+          style={{ overflow: "hidden" }}
+        >
+          {/* Left: Chat panel — resizable, collapsible */}
+          <Panel
+            panelRef={chatPanelRef}
+            defaultSize={25}
+            minSize={15}
+            collapsible={true}
+            collapsedSize={0}
+            onResize={(size) => setChatCollapsed(size.asPercentage < 1)}
+          >
+            <div className="h-full border-r border-white/[0.06] bg-[#0d0d12]">
+              <ChatColumn
+                messages={messages}
                 isBuilding={isBuilding}
+                currentAgent={currentAgent}
+                onSend={handleFollowUp}
               />
-            )}
-            {activeTab === "preview" && (
-              <div key={reloadKey} className="h-full w-full bg-[#080808]">
-                <SandpackPreview
-                  files={buildStatus === "complete" ? files : {}}
+            </div>
+          </Panel>
+
+          <Separator className="w-[3px] bg-white/[0.08] hover:bg-white/[0.25] active:bg-blue-500/50 cursor-col-resize transition-colors" />
+
+          {/* Right: preview / code — takes remaining space */}
+          <Panel defaultSize={75} minSize={30}>
+            <div className="flex min-h-0 h-full bg-[#080808]">
+              {activeTab === "code" && (
+                <CodePanel
+                  files={files}
+                  newFiles={newFiles}
+                  selectedFile={selectedFile}
+                  setSelectedFile={setSelectedFile}
                   isBuilding={isBuilding}
-                  externalDevice={device}
-                  className="h-full w-full"
                 />
-              </div>
-            )}
-          </div>
-        </div>
+              )}
+              {activeTab === "preview" && (
+                <div key={reloadKey} className="h-full w-full bg-[#080808]">
+                  <SandpackPreview
+                    files={buildStatus === "complete" ? files : {}}
+                    isBuilding={isBuilding}
+                    externalDevice={device}
+                    className="h-full w-full"
+                  />
+                </div>
+              )}
+            </div>
+          </Panel>
+        </Group>
 
       </div>
     </RequireAuth>
@@ -268,14 +350,15 @@ function WorkspacePage() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Top Bar  (Lovable-style icon tabs + device controls + publish)            */
+/*  Top Bar                                                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  projectId, activeTab, setActiveTab, device, setDevice,
-  buildStatus, onReload, files,
+  projectId, projectName, activeTab, setActiveTab, device, setDevice,
+  buildStatus, onReload, files, chatCollapsed, onToggleChat,
 }: {
   projectId: string;
+  projectName: string;
   activeTab: ActiveTab;
   setActiveTab: (t: ActiveTab) => void;
   device: Device;
@@ -283,10 +366,19 @@ function WorkspaceTopBar({
   buildStatus: BuildStatus;
   onReload: () => void;
   files: Record<string, string>;
+  chatCollapsed: boolean;
+  onToggleChat: () => void;
 }) {
+  const navigate = useNavigate();
   const isBuilding = buildStatus === "running";
-  const shortId = projectId.slice(0, 8);
-  const [showHistory, setShowHistory] = useState(false);
+  const displayName = projectName || projectId.slice(0, 8);
+
+  const cycleDevice = () => {
+    const idx = DEVICE_CYCLE.indexOf(device);
+    setDevice(DEVICE_CYCLE[(idx + 1) % DEVICE_CYCLE.length]);
+  };
+
+  const DeviceIcon = device === "mobile" ? Smartphone : device === "tablet" ? Tablet : Monitor;
 
   const handleDownload = () => {
     const entries = Object.entries(files);
@@ -313,25 +405,37 @@ function WorkspaceTopBar({
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
         <button className="flex items-center gap-0.5 font-mono text-sm font-semibold text-white/90 transition hover:text-white">
-          {shortId}
+          {displayName}
           <ChevronDown className="h-3 w-3 text-white/40" />
         </button>
       </div>
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
+
+      {/* History → /projects */}
       <button
-        onClick={() => setShowHistory(!showHistory)}
+        onClick={() => navigate({ to: "/projects" })}
         className="p-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-        title="Version history"
+        title="Project history"
       >
         <History size={14} />
       </button>
-      <button className="ws-iconbtn" title="Toggle panel"><PanelLeft className="h-4 w-4" /></button>
+
+      {/* Collapse/expand chat panel */}
+      <button
+        onClick={onToggleChat}
+        className="ws-iconbtn"
+        title={chatCollapsed ? "Show chat" : "Hide chat"}
+      >
+        {chatCollapsed
+          ? <PanelLeft className="h-4 w-4" />
+          : <PanelLeftClose className="h-4 w-4" />
+        }
+      </button>
 
       {/* ── Center: tab pills + build status ──────────────────────────── */}
       <div className="flex flex-1 items-center justify-center gap-2">
 
-        {/* Tab pill group */}
         <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
             <Globe className="h-4 w-4" />
@@ -344,7 +448,6 @@ function WorkspaceTopBar({
           </IconTab>
         </div>
 
-        {/* Build status — only while running */}
         {isBuilding && (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
@@ -353,22 +456,22 @@ function WorkspaceTopBar({
         )}
       </div>
 
-      {/* ── Right: device controls (preview) + actions ─────────────────── */}
+      {/* ── Right: device cycle + actions ─────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-1.5">
-        {/* Device toggle — icon only, preview tab only */}
+        {/* Single cycling device button — always visible */}
+        <button
+          className={cn(
+            "ws-iconbtn",
+            activeTab === "preview" ? "text-white/70" : "text-white/30",
+          )}
+          title={`Device: ${device} — click to cycle`}
+          onClick={cycleDevice}
+        >
+          <DeviceIcon className="h-3.5 w-3.5" />
+        </button>
+
         {activeTab === "preview" && (
           <>
-            <div className="flex items-center gap-0.5 rounded-md bg-white/5 p-0.5">
-              <SmDeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} title="Desktop">
-                <Monitor className="h-3.5 w-3.5" />
-              </SmDeviceBtn>
-              <SmDeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")} title="Mobile">
-                <Smartphone className="h-3.5 w-3.5" />
-              </SmDeviceBtn>
-              <SmDeviceBtn active={device === "full"} onClick={() => setDevice("full")} title="Fullscreen">
-                <Maximize2 className="h-3.5 w-3.5" />
-              </SmDeviceBtn>
-            </div>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
               <RotateCw className="h-3.5 w-3.5" />
             </button>
@@ -387,6 +490,7 @@ function WorkspaceTopBar({
             <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
           </>
         )}
+
         <button className="ws-iconbtn" title="GitHub" onClick={() => toast("GitHub integration coming soon")}>
           <Github className="h-4 w-4" />
         </button>
@@ -413,19 +517,27 @@ function WorkspaceTopBar({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Left: Chat Column                                                          */
+/*  Left: Chat Column                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent,
+  messages, isBuilding, currentAgent, onSend,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
+  onSend?: (prompt: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const screenshotRef = useRef<HTMLInputElement>(null);
+
+  const handleSend = () => {
+    const text = draft.trim();
+    if (!text || !onSend) return;
+    onSend(text);
+    setDraft("");
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -467,8 +579,7 @@ function ChatColumn({
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
                 e.preventDefault();
-                toast("Follow-up queued (not yet connected)");
-                setDraft("");
+                handleSend();
               }
             }}
             placeholder="Ask Lampcode…"
@@ -509,7 +620,7 @@ function ChatColumn({
               ) : (
                 <button
                   disabled={!draft.trim()}
-                  onClick={() => { if (draft.trim()) { toast("Follow-up sent"); setDraft(""); } }}
+                  onClick={handleSend}
                   className="grid h-8 w-8 place-content-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
                 >
                   <ArrowUp className="h-4 w-4" />
@@ -525,7 +636,7 @@ function ChatColumn({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Right: Code Panel                                                          */
+/*  Right: Code Panel                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function CodePanel({
@@ -537,7 +648,7 @@ function CodePanel({
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
 }) {
-  const [query,    setQuery]    = useState("");
+  const [query, setQuery] = useState("");
 
   const filteredFiles = useMemo(() => {
     if (!query.trim()) return files;
@@ -626,7 +737,7 @@ function CodePanel({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Code Viewer                                                                */
+/*  Code Viewer                                                                 */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function EmptyCodeSkeleton({ building }: { building: boolean }) {
@@ -703,7 +814,7 @@ function CodeViewer({
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Shared primitives                                                          */
+/*  Shared primitives                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function IconTab({
@@ -724,29 +835,6 @@ function IconTab({
         active
           ? "bg-white/10 text-white"
           : "text-white/35 hover:bg-white/[0.05] hover:text-white/70",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SmDeviceBtn({
-  active, onClick, title, children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={cn(
-        "grid h-7 w-7 place-content-center rounded transition",
-        active ? "bg-white/[0.10] text-white" : "text-white/45 hover:text-white/80",
       )}
     >
       {children}

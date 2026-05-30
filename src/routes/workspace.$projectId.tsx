@@ -285,6 +285,8 @@ function WorkspaceTopBar({
   files: Record<string, string>;
 }) {
   const isBuilding = buildStatus === "running";
+  const shortId = projectId.slice(0, 8);
+  const [showHistory, setShowHistory] = useState(false);
 
   const handleDownload = () => {
     const entries = Object.entries(files);
@@ -311,13 +313,19 @@ function WorkspaceTopBar({
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
         <button className="flex items-center gap-0.5 text-sm font-semibold text-white/90 transition hover:text-white">
-          Lampcode
+          Project {shortId}
           <ChevronDown className="h-3 w-3 text-white/40" />
         </button>
       </div>
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
-      <button className="ws-iconbtn" title="History"><History className="h-4 w-4" /></button>
+      <button
+        onClick={() => setShowHistory(!showHistory)}
+        className="p-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+        title="Version history"
+      >
+        <History size={14} />
+      </button>
       <button className="ws-iconbtn" title="Toggle panel"><PanelLeft className="h-4 w-4" /></button>
 
       {/* ── Center: icon tabs + device controls ──────────────────────── */}

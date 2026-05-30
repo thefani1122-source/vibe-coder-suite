@@ -11,8 +11,8 @@ import {
   Mic, ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Maximize2,
   Search, Copy, Check, Globe, Code2,
-  History, PanelLeft, FileText, Settings, Github, Download,
-  Square, Plus,
+  History, PanelLeft, FileText, Github, Download,
+  Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -250,15 +250,13 @@ function WorkspacePage() {
               />
             )}
             {activeTab === "preview" && (
-              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a] p-4">
-                <div className="relative mx-auto h-full w-full max-w-[1100px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f0f] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
-                  <SandpackPreview
-                    files={buildStatus === "complete" ? files : {}}
-                    isBuilding={isBuilding}
-                    externalDevice={device}
-                    className="h-full w-full"
-                  />
-                </div>
+              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a]">
+                <SandpackPreview
+                  files={buildStatus === "complete" ? files : {}}
+                  isBuilding={isBuilding}
+                  externalDevice={device}
+                  className="h-full w-full"
+                />
               </div>
             )}
           </div>
@@ -336,9 +334,6 @@ function WorkspaceTopBar({
           <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
             <Code2 className="h-4 w-4" />
           </IconTab>
-          <IconTab active={false} onClick={() => {}} title="Settings">
-            <Settings className="h-4 w-4" />
-          </IconTab>
         </div>
 
         {/* Device controls — preview tab only */}
@@ -359,6 +354,18 @@ function WorkspaceTopBar({
             </div>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
               <RotateCw className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="ws-iconbtn"
+              title="Open preview in new tab"
+              onClick={() => {
+                const iframe = document.querySelector<HTMLIFrameElement>(".sp-preview-iframe");
+                const src = iframe?.src;
+                if (src) window.open(src, "_blank", "noopener,noreferrer");
+                else toast("Preview not ready yet");
+              }}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
             </button>
           </>
         )}
@@ -411,6 +418,8 @@ function ChatColumn({
   currentAgent?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const screenshotRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex h-full flex-col bg-[#0a0a0a]">
@@ -444,59 +453,70 @@ function ChatColumn({
       )}
 
       {/* Input bar */}
-      <div className="shrink-0 border-t border-white/[0.07] p-2.5">
-        <div className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-2">
-          <button
-            className="shrink-0 grid h-6 w-6 place-content-center rounded-md text-white/40 transition hover:bg-white/[0.06] hover:text-white/70"
-            title="Attach"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            className="shrink-0 flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-0.5 text-[11px] text-white/50 transition hover:bg-white/[0.06]"
-            onClick={() => toast("Visual editing coming soon")}
-          >
-            <Sparkles className="h-3 w-3" />
-            Visual edits
-          </button>
-          <input
+      <div className="shrink-0 p-3">
+        <div className="group relative w-full rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50">
+          <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+                e.preventDefault();
                 toast("Follow-up queued (not yet connected)");
                 setDraft("");
               }
             }}
-            placeholder={isBuilding ? "Queue follow-up…" : "Ask a follow-up…"}
-            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/30 outline-none"
+            placeholder="Ask Lampcode…"
+            rows={3}
+            className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
-          <div className="flex shrink-0 items-center gap-1">
-            <button className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/70 transition hover:bg-white/[0.07]">
-              <Zap className="h-3 w-3 text-orange-400" />
-              Build
-              <ChevronDown className="h-2.5 w-2.5 opacity-50" />
-            </button>
-            <button className="ws-iconbtn" title="Voice input">
-              <Mic className="h-3.5 w-3.5" />
-            </button>
-            {isBuilding ? (
-              <button
-                className="grid h-7 w-7 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13]"
-                title="Stop build"
-                onClick={() => toast("Stop not yet implemented")}
-              >
-                <Square className="h-3 w-3" />
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => fileRef.current?.click()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Attach">
+                <Plus className="h-4 w-4" />
               </button>
-            ) : (
-              <button
-                disabled={!draft.trim()}
-                onClick={() => { if (draft.trim()) { toast("Follow-up sent"); setDraft(""); } }}
-                className="grid h-7 w-7 place-content-center rounded-lg bg-gradient-to-br from-violet-500 to-blue-500 text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
-              >
-                <ArrowUp className="h-3.5 w-3.5" />
+              <button onClick={() => screenshotRef.current?.click()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Screenshot">
+                <ImageIcon className="h-4 w-4" />
               </button>
-            )}
+              <button onClick={() => toast("URL attach coming soon")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="URL">
+                <Link2 className="h-4 w-4" />
+              </button>
+              <button onClick={() => toast("Figma import coming soon")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
+                <Figma className="h-4 w-4" />
+              </button>
+              <input ref={fileRef} type="file" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+              <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => toast("Visual editing coming soon")} className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/65 transition hover:bg-white/[0.07] hover:text-white">
+                <Sparkles className="h-3 w-3" />
+                Visual edits
+              </button>
+              <button className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75 transition hover:bg-white/[0.07]">
+                <Zap className="h-3 w-3 text-orange-400" />
+                Build
+                <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+              </button>
+              <button className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Voice input">
+                <Mic className="h-4 w-4" />
+              </button>
+              {isBuilding ? (
+                <button
+                  className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13]"
+                  title="Stop build"
+                  onClick={() => toast("Stop not yet implemented")}
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <button
+                  disabled={!draft.trim()}
+                  onClick={() => { if (draft.trim()) { toast("Follow-up sent"); setDraft(""); } }}
+                  className="grid h-8 w-8 place-content-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

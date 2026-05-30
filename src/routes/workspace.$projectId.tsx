@@ -336,9 +336,6 @@ function WorkspaceTopBar({
           <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
             <Code2 className="h-4 w-4" />
           </IconTab>
-          <IconTab active={false} onClick={() => {}} title="Settings">
-            <Settings className="h-4 w-4" />
-          </IconTab>
         </div>
 
         {/* Device controls — preview tab only */}
@@ -359,6 +356,18 @@ function WorkspaceTopBar({
             </div>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
               <RotateCw className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className="ws-iconbtn"
+              title="Open preview in new tab"
+              onClick={() => {
+                const iframe = document.querySelector<HTMLIFrameElement>(".sp-preview-iframe");
+                const src = iframe?.src;
+                if (src) window.open(src, "_blank", "noopener,noreferrer");
+                else toast("Preview not ready yet");
+              }}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
             </button>
           </>
         )}

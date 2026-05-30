@@ -250,15 +250,13 @@ function WorkspacePage() {
               />
             )}
             {activeTab === "preview" && (
-              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a] p-4">
-                <div className="relative mx-auto h-full w-full max-w-[1100px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0f0f0f] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6)]">
-                  <SandpackPreview
-                    files={buildStatus === "complete" ? files : {}}
-                    isBuilding={isBuilding}
-                    externalDevice={device}
-                    className="h-full w-full"
-                  />
-                </div>
+              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a]">
+                <SandpackPreview
+                  files={buildStatus === "complete" ? files : {}}
+                  isBuilding={isBuilding}
+                  externalDevice={device}
+                  className="h-full w-full"
+                />
               </div>
             )}
           </div>

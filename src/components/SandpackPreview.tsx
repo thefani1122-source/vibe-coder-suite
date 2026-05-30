@@ -21,37 +21,35 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   const sandpackFiles = useMemo(() => {
     const result: Record<string, { code: string }> = {}
     for (const [rawPath, content] of Object.entries(files)) {
-      // Remove any leading slashes, then add exactly one
+      // Normalise to exactly one leading slash: "src/App.tsx" → "/src/App.tsx"
       const cleanPath = "/" + rawPath.replace(/^\/+/, "")
       result[cleanPath] = { code: content }
     }
     return result
   }, [files])
 
+  // Prefer the most common entry points in order
   const entryFile =
     sandpackFiles["/src/index.tsx"] ? "/src/index.tsx" :
     sandpackFiles["/src/index.jsx"] ? "/src/index.jsx" :
     sandpackFiles["/src/main.tsx"]  ? "/src/main.tsx"  :
     sandpackFiles["/index.tsx"]     ? "/index.tsx"     :
     sandpackFiles["/App.tsx"]       ? "/App.tsx"       :
-    Object.keys(sandpackFiles)[0]   ?? "/App.tsx"
+    Object.keys(sandpackFiles)[0]   ?? "/src/index.tsx"
 
-  // Show animated skeleton while files haven't arrived yet
+  // Skeleton while files haven't arrived yet
   if (fileCount === 0) {
     return (
-      <div className={cn("flex flex-col h-full bg-background", className)}>
-        <div className="flex items-center justify-center gap-1 border-b px-3 py-2 shrink-0">
-          <div className="h-6 w-44 animate-pulse rounded-md bg-muted" />
-        </div>
+      <div className={cn("flex flex-col h-full bg-[#0a0a0a]", className)}>
         <div className="flex flex-1 flex-col gap-4 p-6">
-          <div className="h-7 w-2/5 animate-pulse rounded-md bg-muted" />
-          <div className="flex-1 animate-pulse rounded-xl bg-muted" />
+          <div className="h-7 w-2/5 animate-pulse rounded-md bg-white/[0.06]" />
+          <div className="flex-1 animate-pulse rounded-xl bg-white/[0.04]" />
           <div className="grid grid-cols-3 gap-3">
-            <div className="h-16 animate-pulse rounded-md bg-muted" />
-            <div className="h-16 animate-pulse rounded-md bg-muted" />
-            <div className="h-16 animate-pulse rounded-md bg-muted" />
+            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
+            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
+            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
           </div>
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-center text-xs text-white/40">
             {isBuilding ? "Preview appears as files generate…" : "No files generated yet"}
           </p>
         </div>
@@ -84,49 +82,41 @@ function PreviewWithFrame({
   const device = externalDevice ?? internalDevice
   const setDevice = (d: "desktop" | "mobile" | "full") => { if (!externalDevice) setInternalDevice(d) }
 
-  // Sandpack instance — placed inside each conditional branch so React naturally
-  // remounts it (and the iframe) when the device frame changes.
   const makeSandpack = () => (
-    <>
-      {process.env.NODE_ENV === "development" && (
-        <div className="absolute left-0 top-0 z-50 bg-black/50 p-2 text-xs text-yellow-400">
-          Files: {Object.keys(files).join(", ") || "none"}
-        </div>
-      )}
-      <SandpackProvider
-        template="react-ts"
-        files={files}
-        options={{
-          activeFile: entryFile,
-          visibleFiles: Object.keys(files).slice(0, 5),
-          recompileMode: "delayed",
-          recompileDelay: 800,
-        }}
-        theme="dark"
-        customSetup={{
-          entry: entryFile,
-          dependencies: {
-            react: "^18.0.0",
-            "react-dom": "^18.0.0",
-          },
-        }}
-      >
-        <SandpackLayout style={{ height: "100%", width: "100%", border: "none", borderRadius: 0 }}>
-          <SP
-            style={{ height: "100%", width: "100%" }}
-            showOpenInCodeSandbox={false}
-            showRefreshButton
-          />
-        </SandpackLayout>
-      </SandpackProvider>
-    </>
+    <SandpackProvider
+      template="react-ts"
+      files={files}
+      options={{
+        activeFile: entryFile,
+        visibleFiles: Object.keys(files).slice(0, 5),
+        recompileMode: "delayed",
+        recompileDelay: 800,
+      }}
+      theme="dark"
+      customSetup={{
+        entry: entryFile,
+        dependencies: {
+          react: "^18.2.0",
+          "react-dom": "^18.2.0",
+        },
+      }}
+      style={{ height: "100%", width: "100%" }}
+    >
+      <SandpackLayout style={{ height: "100%", width: "100%", border: "none", borderRadius: 0 }}>
+        <SP
+          style={{ height: "100%", width: "100%" }}
+          showOpenInCodeSandbox={false}
+          showRefreshButton
+        />
+      </SandpackLayout>
+    </SandpackProvider>
   )
 
   return (
-    <div className={cn("flex flex-col h-full w-full bg-background", className)}>
-      {/* Device picker toolbar — hidden when device is controlled externally */}
+    <div className={cn("flex flex-col h-full w-full bg-[#0a0a0a]", className)}>
+      {/* Internal device picker — only when not driven by top bar */}
       {!externalDevice && (
-        <div className="flex items-center justify-center gap-1 border-b px-3 py-2 shrink-0">
+        <div className="flex items-center justify-center gap-1 border-b border-white/[0.06] px-3 py-2 shrink-0">
           <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} label="Desktop">
             <Monitor className="h-3.5 w-3.5" />
           </DeviceBtn>
@@ -139,35 +129,9 @@ function PreviewWithFrame({
         </div>
       )}
 
-      {/* Preview canvas */}
-      <div className={cn(
-        "flex min-h-0 flex-1 overflow-auto bg-[#0d0d0d]",
-        device === "mobile" ? "items-center justify-center p-4" : "items-stretch justify-stretch",
-      )}>
-        {device === "full" && (
-          <div className="relative h-full w-full overflow-hidden rounded-md">
-            {makeSandpack()}
-          </div>
-        )}
-
-        {device === "desktop" && (
-          <div className="relative h-full w-full overflow-hidden">
-            {makeSandpack()}
-          </div>
-        )}
-
-        {device === "mobile" && (
-          <div
-            className="relative flex flex-col overflow-hidden rounded-[2.5rem] border-[5px] border-border/40 bg-black shadow-2xl"
-            style={{ width: 375, height: 680 }}
-          >
-            {/* Dynamic island */}
-            <div className="absolute left-1/2 top-3 z-10 h-[26px] w-28 -translate-x-1/2 rounded-full bg-black" />
-            <div className="relative flex-1 overflow-hidden pt-[46px]">
-              {makeSandpack()}
-            </div>
-          </div>
-        )}
+      {/* Preview canvas — fills all remaining space, no device frames */}
+      <div className="h-full w-full flex-1 min-h-0 overflow-hidden">
+        {makeSandpack()}
       </div>
     </div>
   )
@@ -192,8 +156,8 @@ function DeviceBtn({
       className={cn(
         "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
         active
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          ? "bg-white/[0.10] text-white"
+          : "text-white/50 hover:bg-white/[0.06] hover:text-white",
       )}
     >
       {children}

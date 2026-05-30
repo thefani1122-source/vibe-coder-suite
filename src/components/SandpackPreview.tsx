@@ -1,10 +1,9 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import {
   SandpackProvider,
   SandpackPreview as SP,
 } from "@codesandbox/sandpack-react"
 import { cn } from "@/lib/utils"
-import { Monitor, Smartphone, Maximize2 } from "lucide-react"
 
 interface SandpackPreviewProps {
   files: Record<string, string>
@@ -107,7 +106,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   // Skeleton while files haven't arrived yet
   if (fileCount === 0) {
     return (
-      <div className={cn("flex flex-col h-full bg-[#0a0a0a]", className)}>
+      <div className={cn("flex flex-col h-full bg-[#080808]", className)}>
         <div className="flex flex-1 flex-col gap-4 p-6">
           <div className="h-7 w-2/5 animate-pulse rounded-md bg-white/[0.06]" />
           <div className="flex-1 animate-pulse rounded-xl bg-white/[0.04]" />
@@ -145,9 +144,10 @@ function PreviewWithFrame({
   className?: string
   externalDevice?: "desktop" | "mobile" | "full"
 }) {
-  const [internalDevice, setInternalDevice] = useState<"desktop" | "mobile" | "full">("desktop")
-  const device = externalDevice ?? internalDevice
-  const setDevice = (d: "desktop" | "mobile" | "full") => { if (!externalDevice) setInternalDevice(d) }
+  // Device is driven entirely by the workspace top bar. "mobile" simply
+  // constrains the iframe width (centered); desktop/full are edge-to-edge.
+  const device = externalDevice ?? "desktop"
+  const mobile = device === "mobile"
 
   const makeSandpack = () => (
     <SandpackProvider
@@ -178,55 +178,21 @@ function PreviewWithFrame({
   )
 
   return (
-    <div className={cn("flex flex-col h-full w-full bg-[#0a0a0a]", className)}>
-      {/* Internal device picker — only when not driven by top bar */}
-      {!externalDevice && (
-        <div className="flex items-center justify-center gap-1 border-b border-white/[0.06] px-3 py-2 shrink-0">
-          <DeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} label="Desktop">
-            <Monitor className="h-3.5 w-3.5" />
-          </DeviceBtn>
-          <DeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")} label="Mobile">
-            <Smartphone className="h-3.5 w-3.5" />
-          </DeviceBtn>
-          <DeviceBtn active={device === "full"} onClick={() => setDevice("full")} label="Full">
-            <Maximize2 className="h-3.5 w-3.5" />
-          </DeviceBtn>
-        </div>
-      )}
-
-      {/* Preview canvas — fills all remaining space, no device frames */}
-      <div style={{ height: "100%", width: "100%", display: "flex", flexDirection: "column" }}>
+    <div
+      className={cn("flex h-full w-full justify-center bg-[#080808]", className)}
+      style={{ overflow: "hidden" }}
+    >
+      <div
+        style={{
+          height: "100%",
+          width: "100%",
+          maxWidth: mobile ? 420 : "none",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         {makeSandpack()}
       </div>
     </div>
-  )
-}
-
-function DeviceBtn({
-  active,
-  onClick,
-  label,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-        active
-          ? "bg-white/[0.10] text-white"
-          : "text-white/50 hover:bg-white/[0.06] hover:text-white",
-      )}
-    >
-      {children}
-      <span>{label}</span>
-    </button>
   )
 }

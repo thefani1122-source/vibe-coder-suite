@@ -6,6 +6,8 @@ export interface BuildMessage {
   id: string
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "error"
   text: string
+  /** "user" → right-aligned bubble; anything else (default) → left-aligned agent output */
+  role?: "user" | "agent"
   tool?: string
   path?: string
   done?: boolean
@@ -66,7 +68,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-2"
+        className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"
       >
         {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
@@ -130,11 +132,11 @@ function MessageRow({
   switch (msg.type) {
     case "thinking":
       return (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-1">
           <button
             type="button"
             onClick={onToggle}
-            className="flex w-fit items-center gap-1 text-xs italic text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+            className="flex w-fit items-center gap-1 text-xs italic text-white/35 transition-colors hover:text-white/55"
           >
             {isCollapsed
               ? <ChevronRight className="h-3 w-3" />
@@ -143,8 +145,8 @@ function MessageRow({
             Thinking...
           </button>
           {!isCollapsed && (
-            <div className="ml-4 rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
-              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-muted-foreground/80">
+            <div className="rounded-xl bg-white/[0.03] px-3 py-2">
+              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/40">
                 {msg.text}
                 {showCursor && <BlinkCursor />}
               </p>
@@ -153,15 +155,28 @@ function MessageRow({
         </div>
       )
 
-    case "text":
+    case "text": {
+      // User prompt → right-aligned bubble. Agent text → plain left-aligned text.
+      if (msg.role === "user") {
+        return (
+          <div className="flex justify-end">
+            <div className="max-w-[85%] rounded-2xl bg-white/[0.08] px-4 py-2.5">
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/90">
+                {msg.text}
+              </p>
+            </div>
+          </div>
+        )
+      }
       return (
-        <div className="rounded-2xl border border-border/40 bg-card/80 px-3.5 py-2.5">
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+        <div className="px-1">
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
             {msg.text}
             {showCursor && <BlinkCursor />}
           </p>
         </div>
       )
+    }
 
     case "tool_call":
     case "tool_result": {

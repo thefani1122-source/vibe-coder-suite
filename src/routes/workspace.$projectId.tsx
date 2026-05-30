@@ -8,7 +8,7 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { createBuildSocket } from "@/lib/websocket";
 import {
-  Mic, ArrowUp, ChevronDown, Sparkles, Zap,
+  ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Maximize2,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, FileText, Github, Download,
@@ -89,7 +89,7 @@ function WorkspacePage() {
         : null) ?? "";
     const initial: BuildMessage[] = [];
     if (storedPrompt.trim()) {
-      initial.push(newMsg({ type: "text", text: storedPrompt }));
+      initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
     }
     initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
     setMessages(initial);
@@ -101,7 +101,7 @@ function WorkspacePage() {
       setMessages(prev =>
         prev.some(m => m.type === "text" && m.text === t)
           ? prev
-          : [newMsg({ type: "text", text: t }), ...prev],
+          : [newMsg({ type: "text", text: t, role: "user" }), ...prev],
       );
     });
 
@@ -229,8 +229,8 @@ function WorkspacePage() {
         />
 
         <div className="flex min-h-0 flex-1">
-          {/* Left: Chat — fixed 360 px */}
-          <div className="w-[360px] shrink-0 border-r border-white/[0.06]">
+          {/* Left: Chat — fixed 360 px, slightly elevated bg + right border */}
+          <div className="w-[360px] shrink-0 border-r border-white/[0.06] bg-[#0d0d12]">
             <ChatColumn
               messages={messages}
               isBuilding={isBuilding}
@@ -238,8 +238,8 @@ function WorkspacePage() {
             />
           </div>
 
-          {/* Right: tab-switched panel */}
-          <div className="flex min-h-0 flex-1">
+          {/* Right: tab-switched panel — pure dark, "window into the app" */}
+          <div className="flex min-h-0 flex-1 bg-[#080808]">
             {activeTab === "code" && (
               <CodePanel
                 files={files}
@@ -250,7 +250,7 @@ function WorkspacePage() {
               />
             )}
             {activeTab === "preview" && (
-              <div key={reloadKey} className="h-full w-full bg-[#0a0a0a]">
+              <div key={reloadKey} className="h-full w-full bg-[#080808]">
                 <SandpackPreview
                   files={buildStatus === "complete" ? files : {}}
                   isBuilding={isBuilding}
@@ -312,8 +312,8 @@ function WorkspaceTopBar({
         <div className="grid h-7 w-7 place-content-center rounded-full bg-gradient-to-br from-orange-400 to-amber-500 shadow-lg shadow-orange-500/20">
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
-        <button className="flex items-center gap-0.5 text-sm font-semibold text-white/90 transition hover:text-white">
-          Project {shortId}
+        <button className="flex items-center gap-0.5 font-mono text-sm font-semibold text-white/90 transition hover:text-white">
+          {shortId}
           <ChevronDown className="h-3 w-3 text-white/40" />
         </button>
       </div>
@@ -328,11 +328,11 @@ function WorkspaceTopBar({
       </button>
       <button className="ws-iconbtn" title="Toggle panel"><PanelLeft className="h-4 w-4" /></button>
 
-      {/* ── Center: icon tabs + device controls ──────────────────────── */}
+      {/* ── Center: tab pills + build status ──────────────────────────── */}
       <div className="flex flex-1 items-center justify-center gap-2">
 
-        {/* Tab icon group */}
-        <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.07] bg-white/[0.03] p-0.5">
+        {/* Tab pill group */}
+        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
             <Globe className="h-4 w-4" />
           </IconTab>
@@ -344,15 +344,24 @@ function WorkspaceTopBar({
           </IconTab>
         </div>
 
-        {/* Device controls — preview tab only */}
+        {/* Build status — only while running */}
+        {isBuilding && (
+          <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            Building…
+          </span>
+        )}
+      </div>
+
+      {/* ── Right: device controls (preview) + actions ─────────────────── */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {/* Device toggle — icon only, preview tab only */}
         {activeTab === "preview" && (
           <>
-            <div className="h-4 w-px bg-white/[0.07]" />
-            <div className="flex items-center gap-0.5 rounded-md border border-white/[0.07] bg-white/[0.03] p-0.5">
+            <div className="flex items-center gap-0.5 rounded-md bg-white/5 p-0.5">
               <SmDeviceBtn active={device === "desktop"} onClick={() => setDevice("desktop")} title="Desktop">
                 <Monitor className="h-3.5 w-3.5" />
               </SmDeviceBtn>
-              <span className="px-0.5 text-[10px] text-white/20">/</span>
               <SmDeviceBtn active={device === "mobile"} onClick={() => setDevice("mobile")} title="Mobile">
                 <Smartphone className="h-3.5 w-3.5" />
               </SmDeviceBtn>
@@ -375,20 +384,9 @@ function WorkspaceTopBar({
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </button>
+            <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
           </>
         )}
-
-        {/* Build status pulse (running only) */}
-        {isBuilding && (
-          <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            Building…
-          </span>
-        )}
-      </div>
-
-      {/* ── Right: actions ─────────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-1.5">
         <button className="ws-iconbtn" title="GitHub" onClick={() => toast("GitHub integration coming soon")}>
           <Github className="h-4 w-4" />
         </button>
@@ -430,7 +428,7 @@ function ChatColumn({
   const screenshotRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="flex h-full flex-col bg-[#0a0a0a]">
+    <div className="flex h-full flex-col">
 
       {/* Messages */}
       <div className="flex-1 min-h-0">
@@ -495,17 +493,10 @@ function ChatColumn({
               <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
             </div>
             <div className="flex items-center gap-1.5">
-              <button onClick={() => toast("Visual editing coming soon")} className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/65 transition hover:bg-white/[0.07] hover:text-white">
-                <Sparkles className="h-3 w-3" />
-                Visual edits
-              </button>
               <button className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75 transition hover:bg-white/[0.07]">
                 <Zap className="h-3 w-3 text-orange-400" />
                 Build
                 <ChevronDown className="h-2.5 w-2.5 opacity-60" />
-              </button>
-              <button className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Voice input">
-                <Mic className="h-4 w-4" />
               </button>
               {isBuilding ? (
                 <button
@@ -573,7 +564,7 @@ function CodePanel({
   };
 
   return (
-    <div className="flex h-full w-full bg-[#0d0d0d]">
+    <div className="flex h-full w-full bg-[#080808]">
 
       {/* Left: file tree column */}
       <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
@@ -731,8 +722,8 @@ function IconTab({
       className={cn(
         "grid h-8 w-8 place-content-center rounded-md transition",
         active
-          ? "bg-white/[0.08] text-white"
-          : "text-white/45 hover:bg-white/[0.05] hover:text-white/80",
+          ? "bg-white/10 text-white"
+          : "text-white/35 hover:bg-white/[0.05] hover:text-white/70",
       )}
     >
       {children}

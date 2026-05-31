@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -8,7 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Search, MoreVertical, Globe, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiDelete } from "@/lib/api";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/projects")({ component: ProjectsPage });
 
@@ -48,7 +54,21 @@ function relativeTime(dateStr: string): string {
 
 function ProjectsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+
+  const handleProjectClick = async (projectId: string) => {
+    const res = await apiGet<{ sessionId?: string; session_id?: string }>(
+      `/api/build/${projectId}/last-session`,
+      { silent: true },
+    ).catch(() => null);
+    const sessionId = res?.sessionId ?? res?.session_id;
+    navigate({
+      to: "/workspace/$projectId",
+      params: { projectId },
+      search: { sessionId: sessionId ?? undefined, mode: "fast" },
+    });
+  };
 
   const { data, isPending } = useQuery<Project[]>({
     queryKey: ["projects"],
@@ -119,9 +139,7 @@ function ProjectsPage() {
               : filtered.map((p, i) => (
                   <div
                     key={p.id}
-                    onClick={() =>
-                      navigate({ to: "/workspace/$projectId", params: { projectId: p.id }, search: { sessionId: undefined, mode: undefined } })
-                    }
+                    onClick={() => handleProjectClick(p.id)}
                     className="group cursor-pointer overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]"
                   >
                     <div
@@ -149,14 +167,29 @@ function ProjectsPage() {
                           {relativeTime(p.updated_at)}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="grid h-8 w-8 shrink-0 place-content-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-red-400 focus:text-red-400"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!confirm("Delete this project?")) return;
+                              await apiDelete(`/api/projects/${p.id}`);
+                              queryClient.invalidateQueries({ queryKey: ["projects"] });
+                            }}
+                          >
+                            Delete project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 ))}

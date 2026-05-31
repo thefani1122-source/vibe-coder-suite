@@ -322,13 +322,23 @@ function WorkspacePage() {
           <Panel defaultSize={75} minSize={30}>
             <div className="flex min-h-0 h-full bg-[#080808]">
               {activeTab === "code" && (
-                <CodePanel
-                  files={files}
-                  newFiles={newFiles}
-                  selectedFile={selectedFile}
-                  setSelectedFile={setSelectedFile}
-                  isBuilding={isBuilding}
-                />
+                <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
+                  <div style={{
+                    width: "100%", height: "100%",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    overflow: "hidden",
+                    display: "flex", flexDirection: "column",
+                  }}>
+                    <CodePanel
+                      files={files}
+                      newFiles={newFiles}
+                      selectedFile={selectedFile}
+                      setSelectedFile={setSelectedFile}
+                      isBuilding={isBuilding}
+                    />
+                  </div>
+                </div>
               )}
               {activeTab === "preview" && (
                 <div key={reloadKey} className="h-full w-full bg-[#080808]">

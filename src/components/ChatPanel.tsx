@@ -68,7 +68,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4"
+        className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20"
       >
         {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">

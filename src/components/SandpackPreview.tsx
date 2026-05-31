@@ -180,19 +180,25 @@ function PreviewWithFrame({
 
   return (
     <div
-      className={cn("flex h-full w-full justify-center bg-[#080808]", className)}
-      style={{ overflow: "hidden" }}
+      className={cn("h-full w-full bg-[#080808]", className)}
+      style={{ padding: 24 }}
     >
-      <div
-        style={{
-          height: "100%",
-          width: "100%",
-          maxWidth: mobile ? 420 : tablet ? 768 : "none",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {makeSandpack()}
+      {/* justify-center handles mobile/tablet centering; h-full fills the padded content area */}
+      <div className="flex h-full justify-center">
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            maxWidth: mobile ? 420 : tablet ? 768 : "none",
+            borderRadius: 12,
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {makeSandpack()}
+        </div>
       </div>
     </div>
   )

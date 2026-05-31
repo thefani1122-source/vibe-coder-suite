@@ -95,6 +95,37 @@ function WorkspacePage() {
       .catch(() => {});
   }, [projectId]);
 
+  // Restore files for a completed build when navigating back from history.
+  useEffect(() => {
+    if (!sessionId) return;
+    type FilesResponse = {
+      groups?: { files?: { path?: string; content?: string }[] }[];
+      files?: Record<string, string>;
+    };
+    apiGet<FilesResponse>(`/api/build/${sessionId}/files`, { silent: true })
+      .then(data => {
+        const filesMap: Record<string, string> = {};
+        if (data.groups) {
+          data.groups.forEach(group => {
+            group.files?.forEach(file => {
+              if (file.path && file.content) filesMap[file.path] = file.content;
+            });
+          });
+        } else if (data.files) {
+          Object.assign(filesMap, data.files);
+        }
+        if (Object.keys(filesMap).length === 0) return;
+        setFiles(filesMap);
+        setBuildStatus("complete");
+        setActiveTab("preview");
+        setMessages([newMsg({
+          type: "text",
+          text: `Restored previous build. ${Object.keys(filesMap).length} files loaded.`,
+        })]);
+      })
+      .catch(() => {});
+  }, [sessionId]);
+
   // Stable handler registration — state setters are stable refs, so empty deps is safe.
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {

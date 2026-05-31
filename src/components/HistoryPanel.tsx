@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
 import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
@@ -8,19 +9,11 @@ type Session = {
   sessionId?: string;
   session_id?: string;
   status: "complete" | "error" | "running" | string;
-  created_at: string;
+  /** API may return camelCase or snake_case */
+  createdAt?: string;
+  created_at?: string;
   prompt?: string;
 };
-
-function relativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 export function HistoryPanel({
   projectId,
@@ -106,7 +99,10 @@ export function HistoryPanel({
                 {s.prompt ?? `Build ${sid.slice(0, 8)}`}
               </p>
               <p className="mt-0.5 text-[10px] text-white/35">
-                {relativeTime(s.created_at)} · {s.status}
+                {s.createdAt ?? s.created_at
+                  ? formatDistanceToNow(new Date((s.createdAt ?? s.created_at)!), { addSuffix: true })
+                  : "Recently"
+                } · {s.status}
               </p>
             </div>
           </button>

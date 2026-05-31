@@ -10,6 +10,7 @@ import { SandpackPreview } from "@/components/SandpackPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
+import { useAuthStore } from "@/lib/auth";
 import {
   ArrowUp, ChevronDown, Sparkles, Zap,
   RotateCw, Monitor, Smartphone, Tablet,
@@ -102,37 +103,39 @@ function WorkspacePage() {
   // Restore files for a completed build when navigating back from history.
   useEffect(() => {
     if (!sessionId) return;
-    type FileEntry = {
-      path?: string; name?: string; filePath?: string;
-      content?: string; code?: string; text?: string;
-    };
-    type FilesResponse = {
-      groups?: { files?: FileEntry[]; items?: FileEntry[] }[];
-      files?: Record<string, string>;
-    };
-    apiGet<FilesResponse>(`/api/build/${sessionId}/files`, { silent: true })
-      .then(data => {
+
+    const token = useAuthStore.getState().session?.access_token;
+    if (!token) return;
+
+    const controller = new AbortController();
+
+    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/build/${sessionId}/files`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: {
+        groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
+        files?: Record<string, string>;
+      } | null) => {
+        if (!data) return;
+
         const filesMap: Record<string, string> = {};
 
-        // Grouped format: { groups: [{ files: [{ path, content }] }] }
-        if (data.groups && Array.isArray(data.groups)) {
-          data.groups.forEach(group => {
-            const fileList = group.files ?? group.items ?? [];
-            fileList.forEach(file => {
-              const path = file.path ?? file.name ?? file.filePath;
-              const content = file.content ?? file.code ?? file.text;
-              if (path && content) filesMap[path] = content;
+        // Format 1: { groups: [{ files: [{ path, content }] }] }
+        if (Array.isArray(data.groups)) {
+          data.groups.forEach(g => {
+            (g.files ?? g.items ?? []).forEach(f => {
+              if (f.path && (f.content ?? f.code)) {
+                filesMap[f.path] = (f.content ?? f.code)!;
+              }
             });
           });
         }
 
-        // Flat format: { files: { "path": "content" } }
+        // Format 2: { files: { "src/App.tsx": "..." } }
         if (data.files && typeof data.files === "object") {
           Object.assign(filesMap, data.files);
-        }
-
-        if (import.meta.env.DEV) {
-          console.log("[history] loaded files:", Object.keys(filesMap));
         }
 
         if (Object.keys(filesMap).length === 0) return;
@@ -141,10 +144,12 @@ function WorkspacePage() {
         setActiveTab("preview");
         setMessages([newMsg({
           type: "text",
-          text: `Restored previous build. ${Object.keys(filesMap).length} files loaded.`,
+          text: `Restored: ${Object.keys(filesMap).length} files loaded from previous build.`,
         })]);
       })
       .catch(() => {});
+
+    return () => controller.abort();
   }, [sessionId]);
 
   // Stable handler registration — state setters are stable refs, so empty deps is safe.

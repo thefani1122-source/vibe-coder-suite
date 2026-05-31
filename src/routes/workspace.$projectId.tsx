@@ -86,10 +86,14 @@ function WorkspacePage() {
   const chatPanelRef = usePanelRef();
 
   // Fetch project name with auth via apiGet (handles token automatically).
+  // API returns { project: { name, description } }; fall back to flat shapes.
   useEffect(() => {
-    apiGet<{ name?: string; title?: string }>(`/api/projects/${projectId}`, { silent: true })
-      .then(data => {
-        const name = data.name ?? data.title;
+    apiGet<{ project?: { name?: string; description?: string }; name?: string; title?: string }>(
+      `/api/projects/${projectId}`,
+      { silent: true },
+    )
+      .then(d => {
+        const name = d?.project?.name ?? d?.name ?? d?.title;
         if (name) setProjectName(name);
       })
       .catch(() => {});
@@ -98,22 +102,39 @@ function WorkspacePage() {
   // Restore files for a completed build when navigating back from history.
   useEffect(() => {
     if (!sessionId) return;
+    type FileEntry = {
+      path?: string; name?: string; filePath?: string;
+      content?: string; code?: string; text?: string;
+    };
     type FilesResponse = {
-      groups?: { files?: { path?: string; content?: string }[] }[];
+      groups?: { files?: FileEntry[]; items?: FileEntry[] }[];
       files?: Record<string, string>;
     };
     apiGet<FilesResponse>(`/api/build/${sessionId}/files`, { silent: true })
       .then(data => {
         const filesMap: Record<string, string> = {};
-        if (data.groups) {
+
+        // Grouped format: { groups: [{ files: [{ path, content }] }] }
+        if (data.groups && Array.isArray(data.groups)) {
           data.groups.forEach(group => {
-            group.files?.forEach(file => {
-              if (file.path && file.content) filesMap[file.path] = file.content;
+            const fileList = group.files ?? group.items ?? [];
+            fileList.forEach(file => {
+              const path = file.path ?? file.name ?? file.filePath;
+              const content = file.content ?? file.code ?? file.text;
+              if (path && content) filesMap[path] = content;
             });
           });
-        } else if (data.files) {
+        }
+
+        // Flat format: { files: { "path": "content" } }
+        if (data.files && typeof data.files === "object") {
           Object.assign(filesMap, data.files);
         }
+
+        if (import.meta.env.DEV) {
+          console.log("[history] loaded files:", Object.keys(filesMap));
+        }
+
         if (Object.keys(filesMap).length === 0) return;
         setFiles(filesMap);
         setBuildStatus("complete");

@@ -117,7 +117,7 @@ function ProjectsPage() {
                   const timeAgo = rawDate
                     ? formatDistanceToNow(new Date(rawDate), { addSuffix: true })
                     : "";
-                  const built = p.lastBuildStatus === "success";
+                  const built = p.lastBuildStatus === "completed";
 
                   return (
                     <div
@@ -126,19 +126,19 @@ function ProjectsPage() {
                       className="group cursor-pointer overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]"
                     >
                       {/* Thumbnail */}
-                      <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-[#0d0d12] flex flex-col items-center justify-center p-4">
-                        <div className="text-white/20 text-xs font-mono mb-2">lampcode.dev</div>
-                        <div className="text-white/60 text-sm font-medium text-center line-clamp-2">
-                          {p.description || p.name}
-                        </div>
-                        <div className="absolute bottom-2 right-2 text-white/20 text-xs">
-                          {built ? "✓ Built" : "○ Draft"}
-                        </div>
-                        {p.fileCount != null && p.fileCount > 0 && (
-                          <div className="absolute bottom-2 left-2 text-white/20 text-xs">
-                            {p.fileCount} files
+                      <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-gradient-to-br from-[#0d0d12] to-[#1a1a2e] flex flex-col justify-between p-4">
+                        <div className="text-white/15 text-xs font-mono">lampcode.dev</div>
+                        <div>
+                          <div className="text-white/70 text-sm font-medium line-clamp-2 mb-2">
+                            {p.name || p.description || "Untitled"}
                           </div>
-                        )}
+                          {built && (
+                            <div className="inline-flex items-center gap-1 text-xs text-green-400/70 bg-green-400/10 px-2 py-0.5 rounded-full">
+                              <span className="w-1 h-1 rounded-full bg-green-400" />
+                              Built
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Footer */}

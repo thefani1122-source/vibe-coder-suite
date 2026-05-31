@@ -360,7 +360,7 @@ function McpCard({
           size="sm"
           variant="default"
           className="mt-auto w-full"
-          onClick={() => toast(`${def.name} OAuth coming soon`)}
+          onClick={() => toast(`${def.name} MCP — launching soon!`, { description: "We're building OAuth flows for all providers." })}
         >
           Connect
         </Button>

@@ -274,10 +274,6 @@ function NotificationsPanel() {
 
 /* ─── Integrations ────────────────────────────────────────────────────────── */
 
-interface IntegrationStatus {
-  connected: boolean;
-}
-
 const INTEGRATION_DEFS = [
   { id: "github",   label: "GitHub",   desc: "Sync your projects to a repo",  Icon: Github },
   { id: "vercel",   label: "Vercel",   desc: "Deploy your apps",              Icon: Plug   },
@@ -285,36 +281,42 @@ const INTEGRATION_DEFS = [
   { id: "stripe",   label: "Stripe",   desc: "Accept payments",               Icon: Plug   },
 ] as const;
 
+type IntegrationRow = { id: string; status: string };
+
 function IntegrationsPanel() {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<Record<string, boolean>>({});
+  const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
 
+  // Query the integrations table directly — avoids the duplicate
+  // /api/users/me/settings call that NotificationsPanel already makes.
   useEffect(() => {
-    apiGet<{ integrations?: Record<string, IntegrationStatus> }>("/api/users/me/settings", { silent: true })
-      .then((data) => {
-        if (data.integrations) {
-          const mapped: Record<string, boolean> = {};
-          for (const [key, val] of Object.entries(data.integrations)) {
-            mapped[key] = val.connected ?? false;
-          }
-          setStatus(mapped);
+    if (!user?.id) { setLoading(false); return; }
+    supabase
+      .from("integrations")
+      .select("id, provider, status")
+      .eq("user_id", user.id)
+      .in("provider", ["github", "vercel", "supabase", "stripe"])
+      .then(({ data }) => {
+        const map: Record<string, IntegrationRow> = {};
+        for (const row of (data ?? []) as { id: string; provider: string; status: string }[]) {
+          map[row.provider] = { id: row.id, status: row.status };
         }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+        setRows(map);
+        setLoading(false);
+      });
+  }, [user?.id]);
 
-  const handleAction = async (id: string, currentlyConnected: boolean) => {
-    if (currentlyConnected) {
-      try {
-        await apiPatch("/api/users/me/settings", {
-          integrations: { [id]: { connected: false } },
-        });
-        setStatus((s) => ({ ...s, [id]: false }));
-        toast.success(`${id} disconnected`);
-      } catch {
-        // apiPatch shows toast
-      }
+  const handleAction = async (id: string, row: IntegrationRow | undefined) => {
+    const isConnected = row?.status === "connected";
+    if (isConnected && row) {
+      const { error } = await supabase
+        .from("integrations")
+        .update({ status: "disconnected" })
+        .eq("id", row.id);
+      if (error) { toast.error("Failed to disconnect"); return; }
+      setRows((r) => ({ ...r, [id]: { ...row, status: "disconnected" } }));
+      toast.success(`${id} disconnected`);
     } else {
       toast(`${id} OAuth coming soon`);
     }
@@ -330,9 +332,8 @@ function IntegrationsPanel() {
           </div>
         ) : (
           INTEGRATION_DEFS.map(({ id, label, desc, Icon }) => {
-            const connected = status[id] ?? false;
-            // Show "Unknown" badge when API returned no data for this integration
-            const hasData = id in status;
+            const row = rows[id];
+            const connected = row?.status === "connected";
             return (
               <div key={id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
                 <div className="flex items-center gap-3">
@@ -342,16 +343,14 @@ function IntegrationsPanel() {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">{label}</span>
-                      {hasData && (
-                        <span className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                          connected
-                            ? "bg-emerald-500/15 text-emerald-400"
-                            : "bg-muted/40 text-muted-foreground",
-                        )}>
-                          {connected ? "Connected" : "Not connected"}
-                        </span>
-                      )}
+                      <span className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        connected
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "bg-muted/40 text-muted-foreground",
+                      )}>
+                        {connected ? "Connected" : "Not connected"}
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground">{desc}</div>
                   </div>
@@ -359,7 +358,7 @@ function IntegrationsPanel() {
                 <Button
                   size="sm"
                   variant={connected ? "outline" : "default"}
-                  onClick={() => handleAction(id, connected)}
+                  onClick={() => handleAction(id, row)}
                 >
                   {connected ? "Disconnect" : "Connect"}
                 </Button>
@@ -386,6 +385,32 @@ interface AuditEntry {
   category: Category;
 }
 
+interface DbAuditRow {
+  action: string;
+  entity_type: string | null;
+  ip_address: string | null;
+  severity: string | null;
+  created_at: string;
+}
+
+function toAuditEntry(row: DbAuditRow, email: string): AuditEntry {
+  const sev = (row.severity ?? "info").toLowerCase();
+  const severity: Severity =
+    sev === "warning" ? "Warning" : sev === "error" || sev === "critical" ? "Error" : "Info";
+
+  const cat = (row.entity_type ?? "").toLowerCase();
+  const category: Category =
+    /bill|payment|credit|stripe/.test(cat) ? "Billing" :
+    /project/.test(cat) ? "Project" : "Security";
+
+  const ms = Date.now() - new Date(row.created_at).getTime();
+  const h = Math.floor(ms / 3_600_000);
+  const d = Math.floor(h / 24);
+  const time = h < 1 ? "Just now" : h < 24 ? `${h}h ago` : `${d}d ago`;
+
+  return { action: row.action, user: email, ip: row.ip_address ?? "—", time, severity, category };
+}
+
 const sevColor: Record<Severity, string> = {
   Info: "bg-sky-500",
   Warning: "bg-amber-500",
@@ -393,19 +418,27 @@ const sevColor: Record<Severity, string> = {
 };
 
 function SecurityPanel() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<"All" | Category>("All");
   const [auditLog, setAuditLog]   = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
   const [auditError,   setAuditError]   = useState(false);
 
   useEffect(() => {
-    apiGet<AuditEntry[]>("/api/users/me/audit-log", { silent: true })
-      .then((data) => {
-        setAuditLog(Array.isArray(data) ? data : []);
-      })
-      .catch(() => setAuditError(true))
-      .finally(() => setAuditLoading(false));
-  }, []);
+    if (!user?.id) { setAuditLoading(false); return; }
+    const email = user.email ?? user.id.slice(0, 8);
+    supabase
+      .from("audit_log")
+      .select("action, entity_type, ip_address, severity, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data, error }) => {
+        if (error) { setAuditError(true); }
+        else { setAuditLog((data as DbAuditRow[] ?? []).map(r => toAuditEntry(r, email))); }
+        setAuditLoading(false);
+      });
+  }, [user?.id]);
 
   const filtered = auditLog.filter((r) => filter === "All" || r.category === filter);
 

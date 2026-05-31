@@ -30,13 +30,6 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-const ideas = [
-  "A neon dashboard for a crypto wallet",
-  "Pomodoro timer with lo-fi vibes",
-  "Landing page for an AI music label",
-  "Habit tracker with streak fireworks",
-];
-
 type Mode = "fast" | "plan" | "editor";
 const MODES: { id: Mode; label: string; icon: typeof Zap; soon?: boolean; desc: string }[] = [
   { id: "fast", label: "Fast Mode", icon: Zap, desc: "Quick build for simple projects (2–5 min)" },
@@ -275,17 +268,6 @@ export function PromptComposer() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {ideas.map((i) => (
-          <button
-            key={i}
-            onClick={() => setValue(i)}
-            className="rounded-full border border-border bg-card/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:bg-card hover:text-foreground"
-          >
-            {i}
-          </button>
-        ))}
-      </div>
     </div>
     </TooltipProvider>
   );

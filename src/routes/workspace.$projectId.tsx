@@ -7,6 +7,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
+import { HistoryPanel } from "@/components/HistoryPanel";
 import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
 import {
@@ -14,7 +15,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
-  Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma,
+  Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -78,6 +79,7 @@ function WorkspacePage() {
   const [reloadKey,    setReloadKey]    = useState(0);
   const [projectName,  setProjectName]  = useState<string>("");
   const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [showHistory,   setShowHistory]   = useState(false);
 
   const socketRef    = useRef<Socket | null>(null);
   const completedRef = useRef(false);
@@ -290,6 +292,8 @@ function WorkspacePage() {
           files={files}
           chatCollapsed={chatCollapsed}
           onToggleChat={toggleChat}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(v => !v)}
         />
 
         <Group
@@ -306,13 +310,33 @@ function WorkspacePage() {
             collapsedSize={0}
             onResize={(size) => setChatCollapsed(size.asPercentage < 1)}
           >
-            <div className="h-full border-r border-white/[0.06] bg-[#0d0d12]">
+            <div className="relative h-full border-r border-white/[0.06] bg-[#0d0d12]">
               <ChatColumn
                 messages={messages}
                 isBuilding={isBuilding}
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
               />
+              {showHistory && (
+                <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
+                  <div className="flex shrink-0 items-center justify-between border-b border-white/[0.08] px-4 py-3">
+                    <span className="text-sm font-medium text-white/80">History</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowHistory(false)}
+                      className="grid h-6 w-6 place-content-center rounded text-white/40 transition hover:bg-white/[0.06] hover:text-white/70"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-auto">
+                    <HistoryPanel
+                      projectId={projectId}
+                      onSelect={() => setShowHistory(false)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </Panel>
 
@@ -366,6 +390,7 @@ function WorkspacePage() {
 function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
   buildStatus, onReload, files, chatCollapsed, onToggleChat,
+  showHistory, onToggleHistory,
 }: {
   projectId: string;
   projectName: string;
@@ -378,8 +403,11 @@ function WorkspaceTopBar({
   files: Record<string, string>;
   chatCollapsed: boolean;
   onToggleChat: () => void;
+  showHistory: boolean;
+  onToggleHistory: () => void;
 }) {
   const navigate = useNavigate();
+  void navigate;
   const isBuilding = buildStatus === "running";
   const displayName = projectName || projectId.slice(0, 8);
 
@@ -422,11 +450,14 @@ function WorkspaceTopBar({
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
 
-      {/* History → /projects */}
+      {/* History panel toggle */}
       <button
-        onClick={() => navigate({ to: "/projects" })}
-        className="p-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-        title="Project history"
+        onClick={onToggleHistory}
+        className={cn(
+          "p-1.5 rounded transition-colors hover:bg-white/5",
+          showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
+        )}
+        title="Build history"
       >
         <History size={14} />
       </button>

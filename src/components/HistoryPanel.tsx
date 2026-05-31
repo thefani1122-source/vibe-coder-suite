@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatDistanceToNow } from "date-fns";
 import { apiGet } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
@@ -14,6 +13,20 @@ type Session = {
   created_at?: string;
   prompt?: string;
 };
+
+function timeAgo(dateStr: string | undefined): string {
+  if (!dateStr) return "Recently";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "Recently";
+  const diff = Date.now() - date.getTime();
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+  if (mins < 1)   return "Just now";
+  if (mins < 60)  return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
 
 export function HistoryPanel({
   projectId,
@@ -99,10 +112,7 @@ export function HistoryPanel({
                 {s.prompt ?? `Build ${sid.slice(0, 8)}`}
               </p>
               <p className="mt-0.5 text-[10px] text-white/35">
-                {s.createdAt ?? s.created_at
-                  ? formatDistanceToNow(new Date((s.createdAt ?? s.created_at)!), { addSuffix: true })
-                  : "Recently"
-                } · {s.status}
+                {timeAgo(s.createdAt ?? s.created_at)} · {s.status}
               </p>
             </div>
           </button>

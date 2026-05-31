@@ -160,6 +160,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
+      completedRef.current = false; // new build stream started — allow build:complete to fire once
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       setMessages(prev => {

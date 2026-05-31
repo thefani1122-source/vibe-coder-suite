@@ -136,7 +136,9 @@ export function AppSidebar() {
           <Sparkles className="h-4 w-4 text-primary" />
           <div className="flex-1 text-xs">
             <div className="font-medium">Starter</div>
-            <div className="text-muted-foreground">{billing?.creditsUsed ?? 0} / {billing?.creditsLimit ?? 500} credits</div>
+            <div className="text-muted-foreground">
+                {(billing?.creditsLimit ?? 500) - (billing?.creditsUsed ?? 0)} / {billing?.creditsLimit ?? 500} credits
+              </div>
           </div>
         </Link>
       </SidebarFooter>

@@ -12,12 +12,20 @@ import { useAuth } from "@/lib/auth";
 export const Route = createFileRoute("/usage")({ component: UsagePage });
 
 type UsageData = {
-  credits_used: number;
-  credits_total: number;
-  projects_built: number;
-  plan: string;
-  plan_limit: number;
-  monthly: Array<{ month: string; value: number }>;
+  /** Nested shape: { usage: { creditsUsed, creditsLimit } } */
+  usage?: {
+    creditsUsed?: number;
+    creditsLimit?: number;
+    projectsBuilt?: number;
+    plan?: string;
+  };
+  /** Flat snake_case shape */
+  credits_used?: number;
+  credits_total?: number;
+  projects_built?: number;
+  plan?: string;
+  plan_limit?: number;
+  monthly?: Array<{ month: string; value: number }>;
 };
 
 const EMPTY_MONTHLY = [
@@ -33,12 +41,11 @@ function UsagePage() {
     retry: false,
   });
 
-  const creditsUsed = data?.credits_used ?? 0;
-  const creditsTotal = data?.credits_total ?? 0;
-  const projectsBuilt = data?.projects_built ?? 0;
-  const plan = data?.plan
-    ? data.plan.charAt(0).toUpperCase() + data.plan.slice(1)
-    : "—";
+  const creditsUsed  = data?.usage?.creditsUsed  ?? data?.credits_used  ?? 0;
+  const creditsTotal = data?.usage?.creditsLimit  ?? data?.credits_total ?? 500;
+  const projectsBuilt = data?.usage?.projectsBuilt ?? data?.projects_built ?? 0;
+  const rawPlan = data?.usage?.plan ?? data?.plan ?? "";
+  const plan = rawPlan ? rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) : "—";
   const planLimit = data?.plan_limit ?? 0;
   const monthly = data?.monthly ?? EMPTY_MONTHLY;
 

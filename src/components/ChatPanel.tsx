@@ -22,6 +22,24 @@ interface ChatPanelProps {
   projectName?: string
 }
 
+// Extract the natural-language portion of a thinking message, stopping at the
+// first line that looks like code. Returns "" if nothing meaningful remains.
+function extractThinkingText(raw: string): string {
+  const lines = raw.split("\n")
+  const out: string[] = []
+  for (const line of lines) {
+    const t = line.trim()
+    if (
+      t.startsWith("```") ||
+      /^(import|export|const|let|var|function|class|interface|type)\s/.test(t) ||
+      t.includes("style={{") ||
+      (t.startsWith("<") && t.includes(">"))
+    ) break
+    out.push(line)
+  }
+  return out.join("\n").trim()
+}
+
 export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -120,16 +138,8 @@ function MessageRow({
 
   switch (msg.type) {
     case "thinking": {
-      const text = msg.text || ""
-      // Hide if empty or contains code
-      if (!text.trim()) return null
-      if (
-        text.includes("```") ||
-        text.includes("import ") ||
-        text.includes("export ") ||
-        text.includes("style={{") ||
-        text.trim().startsWith("<")
-      ) return null
+      const text = extractThinkingText(msg.text || "")
+      if (!text) return null
 
       return (
         <div key={msg.id} style={{

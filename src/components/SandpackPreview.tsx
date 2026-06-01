@@ -1,9 +1,38 @@
-import { useMemo } from "react"
+import { Component, useMemo, type ReactNode } from "react"
 import {
   SandpackProvider,
   SandpackPreview as SP,
 } from "@codesandbox/sandpack-react"
 import { cn } from "@/lib/utils"
+
+class PreviewErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: string | null }
+> {
+  state = { error: null as string | null }
+  static getDerivedStateFromError(e: Error) { return { error: e.message } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-full items-center justify-center p-6 bg-[#0a0005]">
+          <div className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-5 text-center max-w-sm">
+            <p className="text-sm font-semibold text-red-400">Preview error</p>
+            <p className="mt-1.5 font-mono text-[11px] text-red-400/50 break-words">
+              {this.state.error.slice(0, 180)}
+            </p>
+            <button
+              onClick={() => this.setState({ error: null })}
+              className="mt-4 rounded-lg border border-red-500/20 px-4 py-1.5 text-xs text-red-300 hover:bg-red-500/10 transition"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface SandpackPreviewProps {
   files: Record<string, string>
@@ -124,12 +153,14 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   }
 
   return (
-    <PreviewWithFrame
-      files={sandpackFiles}
-      entryFile={entryFile}
-      className={className}
-      externalDevice={externalDevice}
-    />
+    <PreviewErrorBoundary>
+      <PreviewWithFrame
+        files={sandpackFiles}
+        entryFile={entryFile}
+        className={className}
+        externalDevice={externalDevice}
+      />
+    </PreviewErrorBoundary>
   )
 }
 

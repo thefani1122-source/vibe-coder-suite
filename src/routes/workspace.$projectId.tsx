@@ -12,7 +12,7 @@ import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Sparkles, Zap,
+  ArrowUp, ChevronDown, Lamp, Zap,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
@@ -519,7 +519,9 @@ function WorkspaceTopBar({
   const navigate = useNavigate();
   void navigate;
   const isBuilding = buildStatus === "running";
-  const displayName = projectName || projectId.slice(0, 8);
+  const rawName = projectName || projectId.slice(0, 8);
+  const words = rawName.split(/\s+/).filter(Boolean);
+  const displayName = words.length > 4 ? words.slice(0, 4).join(" ") + "…" : rawName;
 
   const cycleDevice = () => {
     const idx = DEVICE_CYCLE.indexOf(device);
@@ -548,13 +550,18 @@ function WorkspaceTopBar({
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-[#0f0f0f] px-3">
 
       {/* ── Left: brand + nav ─────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <div className="grid h-7 w-7 place-content-center rounded-full bg-gradient-to-br from-orange-400 to-amber-500 shadow-lg shadow-orange-500/20">
-          <Sparkles className="h-3.5 w-3.5 text-white" />
+      <div className="flex shrink-0 items-center gap-2">
+        <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
+          <Lamp className="h-4 w-4 text-primary-foreground" />
         </div>
-        <button className="flex items-center gap-0.5 font-mono text-sm font-semibold text-white/90 transition hover:text-white">
-          {displayName}
-          <ChevronDown className="h-3 w-3 text-white/40" />
+        <div className="flex flex-col leading-tight">
+          <span className="text-xs font-bold tracking-tight text-white">Lampcode</span>
+          <span className="text-[9px] uppercase tracking-[0.18em] text-white/40">vibe coder</span>
+        </div>
+        <div className="mx-1 h-4 w-px bg-white/[0.08]" />
+        <button className="flex items-center gap-0.5 text-sm font-semibold text-white/90 transition hover:text-white max-w-[180px]">
+          <span className="truncate">{displayName}</span>
+          <ChevronDown className="h-3 w-3 shrink-0 text-white/40" />
         </button>
       </div>
 

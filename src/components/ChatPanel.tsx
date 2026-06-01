@@ -56,6 +56,10 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
         <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
           <Lamp className="h-4 w-4 text-primary-foreground" />
         </div>
+        <div className="flex flex-col leading-tight">
+          <span className="text-sm font-bold tracking-tight">Lampcode</span>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">vibe coder</span>
+        </div>
         <div className={cn(
           "ml-auto h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
           isBuilding ? "bg-green-400 animate-pulse" : "bg-white/20",

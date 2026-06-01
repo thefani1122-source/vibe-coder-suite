@@ -182,8 +182,10 @@ function WorkspacePage() {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;
+      // If we already have a user bubble (from the original short prompt stored in sessionStorage),
+      // don't overwrite it with the backend's potentially expanded prompt text.
       setMessages(prev =>
-        prev.some(m => m.type === "text" && m.text === t)
+        prev.some(m => m.role === "user")
           ? prev
           : [newMsg({ type: "text", text: t, role: "user" }), ...prev],
       );

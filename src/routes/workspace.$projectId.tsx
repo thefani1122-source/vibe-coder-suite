@@ -100,6 +100,27 @@ function WorkspacePage() {
       .catch(() => {});
   }, [projectId]);
 
+  // 1. Restore from sessionStorage FIRST (instant, no network round-trip).
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const cached = sessionStorage.getItem(`build_${sessionId}`);
+      if (!cached) return;
+      const data = JSON.parse(cached) as {
+        files?: Record<string, string>;
+        messages?: BuildMessage[];
+        buildStatus?: BuildStatus;
+        activeTab?: ActiveTab;
+      };
+      if (data.files && Object.keys(data.files).length > 0) {
+        setFiles(data.files);
+        setMessages(data.messages ?? []);
+        setBuildStatus(data.buildStatus ?? "complete");
+        setActiveTab(data.activeTab ?? "preview");
+      }
+    } catch { /* ignore parse errors */ }
+  }, [sessionId]);
+
   // Restore files for a completed build when navigating back from history.
   useEffect(() => {
     if (!sessionId) return;
@@ -286,6 +307,31 @@ function WorkspacePage() {
 
     return () => { socket.disconnect(); socketRef.current = null; };
   }, [sessionId, registerHandlers]);
+
+  // 2. Persist build state to sessionStorage whenever files/messages/buildStatus change.
+  useEffect(() => {
+    if (!sessionId || Object.keys(files).length === 0) return;
+    try {
+      sessionStorage.setItem(`build_${sessionId}`, JSON.stringify({
+        files, messages, buildStatus, activeTab,
+      }));
+    } catch { /* ignore quota errors */ }
+  }, [files, messages, buildStatus, activeTab, sessionId]);
+
+  // 3. Reconnect the socket when the user returns to this tab mid-build.
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        buildStatus === "running" &&
+        socketRef.current?.disconnected
+      ) {
+        socketRef.current.connect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [buildStatus]);
 
   // Follow-up build: POST new prompt, reconnect socket with fresh sessionId.
   const handleFollowUp = useCallback(async (prompt: string) => {

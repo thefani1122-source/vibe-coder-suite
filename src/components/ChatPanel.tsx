@@ -50,23 +50,14 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   const lastMsg = messages[messages.length - 1]
   const showDots = isBuilding && messages.length > 0 && !lastMsg?.streaming
 
-  const shortName = projectName
-    ? projectName
-        .replace(/^(build me an?|create an?|make an?|i want (?:to build)?(?:an?)?)\s*/i, "")
-        .split(" ").slice(0, 4).join(" ")
-    : "New Project";
-
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
       <div className="flex items-center gap-2.5 px-3 py-2.5 border-b shrink-0">
-        <div className="grid h-6 w-6 shrink-0 place-content-center rounded-xl bg-gradient-to-br from-primary to-accent">
-          <Lamp className="h-3.5 w-3.5 text-primary-foreground" />
+        <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
+          <Lamp className="h-4 w-4 text-primary-foreground" />
         </div>
-        <span className="flex-1 truncate text-sm font-medium text-white/80" title={projectName}>
-          {shortName}
-        </span>
         <div className={cn(
-          "h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
+          "ml-auto h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
           isBuilding ? "bg-green-400 animate-pulse" : "bg-white/20",
         )} />
       </div>
@@ -141,11 +132,10 @@ function MessageRow({
       // Skip messages that are actually code being streamed into the thinking channel
       const looksLikeCode =
         t.includes("```") ||
-        t.includes("import React") ||
-        t.includes("import {") ||
-        t.includes("export default") ||
-        t.trimStart().startsWith("<") ||
-        t.includes("style={{");
+        t.includes("import ") ||
+        t.includes("export ") ||
+        t.includes("style={{") ||
+        t.trimStart().startsWith("<");
       if (!t.trim() || looksLikeCode) return null;
       return (
         <div className="flex flex-col gap-1.5">

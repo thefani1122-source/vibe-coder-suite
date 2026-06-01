@@ -128,15 +128,15 @@ function MessageRow({
 
   switch (msg.type) {
     case "thinking": {
-      const t = msg.text ?? "";
-      // Skip messages that are actually code being streamed into the thinking channel
-      const looksLikeCode =
-        t.includes("```") ||
-        t.includes("import ") ||
-        t.includes("export ") ||
-        t.includes("style={{") ||
-        t.trimStart().startsWith("<");
-      if (!t.trim() || looksLikeCode) return null;
+      const text = msg.text || ""
+      if (!text.trim()) return null
+      if (
+        text.includes("```") ||
+        text.includes("import ") ||
+        text.includes("export ") ||
+        text.includes("style={{") ||
+        text.trim().startsWith("<")
+      ) return null
       return (
         <div className="flex flex-col gap-1.5">
           <button
@@ -161,7 +161,7 @@ function MessageRow({
           {!isCollapsed && (
             <div className="rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.05] px-3 py-2.5">
               <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/45">
-                {t}
+                {text}
                 {showCursor && <BlinkCursor />}
               </p>
             </div>

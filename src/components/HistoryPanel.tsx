@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 type Session = {
+  id?: string;
   sessionId?: string;
   session_id?: string;
   status: "complete" | "error" | "running" | string;
@@ -52,7 +53,7 @@ export function HistoryPanel({
   const sessions = data ?? [];
 
   const handleSelect = (s: Session) => {
-    const sid = s.sessionId ?? s.session_id ?? "";
+    const sid = s.id ?? s.sessionId ?? s.session_id ?? "";
     navigate({
       to: "/workspace/$projectId",
       params: { projectId },
@@ -84,7 +85,7 @@ export function HistoryPanel({
   return (
     <div className="py-1">
       {sessions.map((s, i) => {
-        const sid = s.sessionId ?? s.session_id ?? String(i);
+        const sid = s.id ?? s.sessionId ?? s.session_id ?? String(i);
         const isRunning = s.status === "running";
         const StatusIcon =
           s.status === "complete" ? CheckCircle2 :

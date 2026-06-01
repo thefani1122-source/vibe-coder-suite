@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle, Sparkles } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle, Lamp } from "lucide-react"
 
 export interface BuildMessage {
   id: string
@@ -59,8 +59,8 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
       <div className="flex items-center gap-2.5 px-3 py-2.5 border-b shrink-0">
-        <div className="grid h-6 w-6 shrink-0 place-content-center rounded-full bg-gradient-to-br from-orange-400 to-amber-500">
-          <Sparkles className="h-3 w-3 text-white" />
+        <div className="grid h-6 w-6 shrink-0 place-content-center rounded-xl bg-gradient-to-br from-primary to-accent">
+          <Lamp className="h-3.5 w-3.5 text-primary-foreground" />
         </div>
         <span className="flex-1 truncate text-sm font-medium text-white/80" title={projectName}>
           {shortName}
@@ -136,7 +136,17 @@ function MessageRow({
   const showCursor = isLast && msg.streaming === true
 
   switch (msg.type) {
-    case "thinking":
+    case "thinking": {
+      const t = msg.text ?? "";
+      // Skip messages that are actually code being streamed into the thinking channel
+      const looksLikeCode =
+        t.includes("```") ||
+        t.includes("import React") ||
+        t.includes("import {") ||
+        t.includes("export default") ||
+        t.trimStart().startsWith("<") ||
+        t.includes("style={{");
+      if (!t.trim() || looksLikeCode) return null;
       return (
         <div className="flex flex-col gap-1.5">
           <button
@@ -161,13 +171,14 @@ function MessageRow({
           {!isCollapsed && (
             <div className="rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.05] px-3 py-2.5">
               <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/45">
-                {msg.text}
+                {t}
                 {showCursor && <BlinkCursor />}
               </p>
             </div>
           )}
         </div>
       )
+    }
 
     case "text": {
       // User prompt → right-aligned bubble. Agent text → plain left-aligned text.

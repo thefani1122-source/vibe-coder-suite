@@ -130,6 +130,8 @@ function WorkspacePage() {
 
     const controller = new AbortController();
 
+    console.log("[history] fetching files for sessionId:", sessionId);
+
     fetch(`${import.meta.env.VITE_BACKEND_URL}/api/build/${sessionId}/files`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
@@ -139,6 +141,7 @@ function WorkspacePage() {
         groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
         files?: Record<string, string>;
       } | null) => {
+        console.log("[history] response:", data);
         if (!data) return;
 
         const filesMap: Record<string, string> = {};
@@ -159,6 +162,7 @@ function WorkspacePage() {
           Object.assign(filesMap, data.files);
         }
 
+        console.log("[history] files set:", Object.keys(filesMap));
         if (Object.keys(filesMap).length === 0) return;
         setFiles(filesMap);
         setBuildStatus("complete");
@@ -621,9 +625,17 @@ function WorkspaceTopBar({
               <RotateCw className="h-3.5 w-3.5" />
             </button>
             <button
-              className="ws-iconbtn opacity-40 cursor-not-allowed"
-              title="Preview in new tab — coming soon"
-              onClick={() => toast("Preview in new tab — coming soon")}
+              className="ws-iconbtn"
+              title="Open preview in new tab"
+              onClick={() => {
+                const iframe = document.querySelector('iframe[title="Sandbox Preview"]') as HTMLIFrameElement | null;
+                const url = iframe?.src;
+                if (url && !url.includes("about:blank")) {
+                  window.open(url, "_blank", "noopener,noreferrer");
+                } else {
+                  toast("Preview not ready yet — build first");
+                }
+              }}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </button>

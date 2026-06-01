@@ -190,22 +190,19 @@ export function PromptComposer() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => setUrlOpen((v) => !v)}
-                  className={cn(
-                    "grid h-8 w-8 place-content-center rounded-md transition hover:bg-card",
-                    urlOpen ? "text-primary" : "text-muted-foreground hover:text-foreground",
-                  )}
+                  onClick={() => toast("Import from URL — coming soon!")}
+                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
                   <Link2 className="h-4 w-4" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>URL</TooltipContent>
+              <TooltipContent>Import from URL</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => toast("Figma import coming soon")}
+                  onClick={() => toast("Figma import — coming soon!")}
                   className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
                   <Figma className="h-4 w-4" />

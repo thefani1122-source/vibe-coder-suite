@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle } from "lucide-react"
+import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle, Sparkles } from "lucide-react"
 
 export interface BuildMessage {
   id: string
@@ -19,9 +19,10 @@ interface ChatPanelProps {
   isBuilding: boolean
   currentAgent?: string
   className?: string
+  projectName?: string
 }
 
-export function ChatPanel({ messages, isBuilding, currentAgent, className }: ChatPanelProps) {
+export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -49,20 +50,25 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className }: Cha
   const lastMsg = messages[messages.length - 1]
   const showDots = isBuilding && messages.length > 0 && !lastMsg?.streaming
 
+  const shortName = projectName
+    ? projectName
+        .replace(/^(build me an?|create an?|make an?|i want (?:to build)?(?:an?)?)\s*/i, "")
+        .split(" ").slice(0, 4).join(" ")
+    : "New Project";
+
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b shrink-0">
-        <div className={cn(
-          "w-2 h-2 rounded-full transition-colors",
-          isBuilding ? "bg-green-400 animate-pulse" : "bg-muted-foreground/30",
-        )} />
-        <span className="text-sm font-medium">
-          {isBuilding
-            ? currentAgent
-              ? currentAgent.charAt(0).toUpperCase() + currentAgent.slice(1)
-              : "Building..."
-            : messages.length > 0 ? "Build Complete" : "Ready"}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b shrink-0">
+        <div className="grid h-6 w-6 shrink-0 place-content-center rounded-full bg-gradient-to-br from-orange-400 to-amber-500">
+          <Sparkles className="h-3 w-3 text-white" />
+        </div>
+        <span className="flex-1 truncate text-sm font-medium text-white/80" title={projectName}>
+          {shortName}
         </span>
+        <div className={cn(
+          "h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
+          isBuilding ? "bg-green-400 animate-pulse" : "bg-white/20",
+        )} />
       </div>
 
       <div

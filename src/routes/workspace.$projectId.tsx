@@ -300,7 +300,6 @@ function WorkspacePage() {
     if (storedPrompt.trim()) {
       initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
     }
-    initial.push(newMsg({ type: "text", text: "⚡ Starting Fast Mode build..." }));
     setMessages(initial);
 
     registerHandlers(socket);
@@ -420,6 +419,7 @@ function WorkspacePage() {
                 isBuilding={isBuilding}
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
+                projectName={projectName}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -621,14 +621,9 @@ function WorkspaceTopBar({
               <RotateCw className="h-3.5 w-3.5" />
             </button>
             <button
-              className="ws-iconbtn"
-              title="Open preview in new tab"
-              onClick={() => {
-                const iframe = document.querySelector<HTMLIFrameElement>(".sp-preview-iframe");
-                const src = iframe?.src;
-                if (src) window.open(src, "_blank", "noopener,noreferrer");
-                else toast("Preview not ready yet");
-              }}
+              className="ws-iconbtn opacity-40 cursor-not-allowed"
+              title="Preview in new tab — coming soon"
+              onClick={() => toast("Preview in new tab — coming soon")}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </button>
@@ -666,12 +661,13 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend,
+  messages, isBuilding, currentAgent, onSend, projectName,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
   onSend?: (prompt: string) => void;
+  projectName?: string;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -694,6 +690,7 @@ function ChatColumn({
           isBuilding={isBuilding}
           currentAgent={currentAgent}
           className="h-full !bg-transparent"
+          projectName={projectName}
         />
       </div>
 
@@ -739,21 +736,20 @@ function ChatColumn({
               <button onClick={() => screenshotRef.current?.click()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Screenshot">
                 <ImageIcon className="h-4 w-4" />
               </button>
-              <button onClick={() => toast("URL attach coming soon")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="URL">
+              <button onClick={() => toast("Import from URL — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>
-              <button onClick={() => toast("Figma import coming soon")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
+              <button onClick={() => toast("Figma import — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
                 <Figma className="h-4 w-4" />
               </button>
               <input ref={fileRef} type="file" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
               <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
             </div>
             <div className="flex items-center gap-1.5">
-              <button className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75 transition hover:bg-white/[0.07]">
+              <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75">
                 <Zap className="h-3 w-3 text-orange-400" />
-                Build
-                <ChevronDown className="h-2.5 w-2.5 opacity-60" />
-              </button>
+                Fast Mode
+              </span>
               {isBuilding ? (
                 <button
                   className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13]"

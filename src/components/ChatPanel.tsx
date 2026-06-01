@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
-import { ChevronDown, ChevronRight, Loader2, Check, AlertCircle, Lamp } from "lucide-react"
+import { Loader2, Check, AlertCircle, Lamp } from "lucide-react"
 
 export interface BuildMessage {
   id: string
@@ -26,7 +26,8 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  void currentAgent
+  void projectName
 
   useEffect(() => {
     if (isAtBottomRef.current) {
@@ -39,13 +40,6 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current
     isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 50
   }
-
-  const toggle = (id: string) =>
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
 
   const lastMsg = messages[messages.length - 1]
   const showDots = isBuilding && messages.length > 0 && !lastMsg?.streaming
@@ -94,8 +88,6 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
             key={msg.id}
             msg={msg}
             isLast={i === messages.length - 1}
-            isCollapsed={collapsed.has(msg.id)}
-            onToggle={() => toggle(msg.id)}
           />
         ))}
 
@@ -120,56 +112,62 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
 function MessageRow({
   msg,
   isLast,
-  isCollapsed,
-  onToggle,
 }: {
   msg: BuildMessage
   isLast: boolean
-  isCollapsed: boolean
-  onToggle: () => void
 }) {
   const showCursor = isLast && msg.streaming === true
 
   switch (msg.type) {
     case "thinking": {
       const text = msg.text || ""
+      // Hide if empty or contains code
       if (!text.trim()) return null
       if (
         text.includes("```") ||
         text.includes("import ") ||
         text.includes("export ") ||
         text.includes("style={{") ||
-        text.trim().startsWith("<")
+        text.trim().startsWith("<") ||
+        text.includes("const ") ||
+        text.includes("function ")
       ) return null
+
       return (
-        <div className="flex flex-col gap-1.5">
-          <button
-            type="button"
-            onClick={onToggle}
-            className="flex w-full items-center gap-2 text-xs text-white/60 transition-colors hover:text-white/80"
-          >
-            {!isCollapsed ? (
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-400" />
-              </span>
-            ) : (
-              <span className="h-2 w-2 shrink-0 rounded-full bg-violet-400/50" />
-            )}
-            <span className="font-medium">Thinking...</span>
-            {isCollapsed
-              ? <ChevronRight className="ml-auto h-3 w-3 shrink-0" />
-              : <ChevronDown className="ml-auto h-3 w-3 shrink-0" />
-            }
-          </button>
-          {!isCollapsed && (
-            <div className="rounded-xl border border-violet-500/[0.12] bg-violet-500/[0.05] px-3 py-2.5">
-              <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/45">
-                {text}
-                {showCursor && <BlinkCursor />}
-              </p>
-            </div>
-          )}
+        <div key={msg.id} style={{
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 8,
+          padding: "8px 12px",
+          margin: "2px 0",
+        }}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            marginBottom: 4,
+          }}>
+            <div style={{
+              width: 6, height: 6,
+              borderRadius: "50%",
+              background: "#a78bfa",
+              animation: "pulse 1.5s infinite",
+            }} />
+            <span style={{
+              fontSize: 10,
+              color: "rgba(255,255,255,0.3)",
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}>Thinking</span>
+          </div>
+          <p style={{
+            fontSize: 12,
+            color: "rgba(255,255,255,0.4)",
+            fontStyle: "italic",
+            margin: 0,
+            lineHeight: 1.5,
+          }}>{text}{showCursor && <BlinkCursor />}</p>
         </div>
       )
     }

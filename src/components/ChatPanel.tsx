@@ -128,9 +128,7 @@ function MessageRow({
         text.includes("import ") ||
         text.includes("export ") ||
         text.includes("style={{") ||
-        text.trim().startsWith("<") ||
-        text.includes("const ") ||
-        text.includes("function ")
+        text.trim().startsWith("<")
       ) return null
 
       return (

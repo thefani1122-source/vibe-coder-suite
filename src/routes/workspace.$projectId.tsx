@@ -100,90 +100,11 @@ function WorkspacePage() {
       .catch(() => {});
   }, [projectId]);
 
-  // 1. Restore from sessionStorage FIRST (instant, no network round-trip).
-  useEffect(() => {
-    if (!sessionId) return;
-    try {
-      const cached = sessionStorage.getItem(`build_${sessionId}`);
-      if (!cached) return;
-      const data = JSON.parse(cached) as {
-        files?: Record<string, string>;
-        messages?: BuildMessage[];
-        buildStatus?: BuildStatus;
-        activeTab?: ActiveTab;
-      };
-      if (data.files && Object.keys(data.files).length > 0) {
-        setFiles(data.files);
-        setMessages(data.messages ?? []);
-        setBuildStatus(data.buildStatus ?? "complete");
-        setActiveTab(data.activeTab ?? "preview");
-      }
-    } catch { /* ignore parse errors */ }
-  }, [sessionId]);
-
-  // Restore files for a completed build when navigating back from history.
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const token = useAuthStore.getState().session?.access_token;
-    if (!token) return;
-
-    const controller = new AbortController();
-
-    console.log("[history] fetching files for sessionId:", sessionId);
-
-    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/build/${sessionId}/files`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: controller.signal,
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then((data: {
-        groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
-        files?: Record<string, string>;
-      } | null) => {
-        console.log("[history] response:", data);
-        if (!data) return;
-
-        const filesMap: Record<string, string> = {};
-
-        // Format 1: { groups: [{ files: [{ path, content }] }] }
-        if (Array.isArray(data.groups)) {
-          data.groups.forEach(g => {
-            (g.files ?? g.items ?? []).forEach(f => {
-              if (f.path && (f.content ?? f.code)) {
-                filesMap[f.path] = (f.content ?? f.code)!;
-              }
-            });
-          });
-        }
-
-        // Format 2: { files: { "src/App.tsx": "..." } }
-        if (data.files && typeof data.files === "object") {
-          Object.assign(filesMap, data.files);
-        }
-
-        console.log("[history] files set:", Object.keys(filesMap));
-        if (Object.keys(filesMap).length === 0) return;
-        setFiles(filesMap);
-        setBuildStatus("complete");
-        setActiveTab("preview");
-        setMessages([newMsg({
-          type: "text",
-          text: `Restored: ${Object.keys(filesMap).length} files loaded from previous build.`,
-        })]);
-      })
-      .catch(() => {});
-
-    return () => controller.abort();
-  }, [sessionId]);
-
   // Stable handler registration — state setters are stable refs, so empty deps is safe.
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;
-      // If we already have a user bubble (from the original short prompt stored in sessionStorage),
-      // don't overwrite it with the backend's potentially expanded prompt text.
       setMessages(prev =>
         prev.some(m => m.role === "user")
           ? prev
@@ -192,7 +113,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:thinking", (data: { text?: string; content?: string }) => {
-      completedRef.current = false; // new build stream started — allow build:complete to fire once
+      completedRef.current = false;
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       setMessages(prev => {
@@ -202,10 +123,7 @@ function WorkspacePage() {
             i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
           );
         }
-        return [
-          ...closeStreaming(prev),
-          newMsg({ type: "thinking", text: chunk, streaming: true }),
-        ];
+        return [...closeStreaming(prev), newMsg({ type: "thinking", text: chunk, streaming: true })];
       });
     });
 
@@ -292,26 +210,118 @@ function WorkspacePage() {
     });
   }, []);
 
-  // Initial socket setup
+  // 1. Restore from sessionStorage THEN connect socket in one effect so they
+  //    never race. If cache exists, skip the "blank slate" setMessages(initial).
   useEffect(() => {
     completedRef.current = false;
+
+    let hadCache = false;
+    if (sessionId) {
+      try {
+        const raw = sessionStorage.getItem(`build_${sessionId}`);
+        if (raw) {
+          const data = JSON.parse(raw) as {
+            files?: Record<string, string>;
+            messages?: BuildMessage[];
+            buildStatus?: BuildStatus;
+            activeTab?: ActiveTab;
+          };
+          if (data.files && Object.keys(data.files).length > 0) {
+            setFiles(data.files);
+            setMessages(data.messages ?? []);
+            setBuildStatus(data.buildStatus ?? "complete");
+            setActiveTab(data.activeTab ?? "preview");
+            hadCache = true;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
-    const storedPrompt =
-      (typeof window !== "undefined" && sessionId
-        ? window.sessionStorage.getItem(`prompt:${sessionId}`)
-        : null) ?? "";
-    const initial: BuildMessage[] = [];
-    if (storedPrompt.trim()) {
-      initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
+    // Only reset to the original prompt when there is no cached state.
+    // If we already loaded messages from cache, leave them untouched.
+    if (!hadCache) {
+      const storedPrompt =
+        sessionId ? (window.sessionStorage.getItem(`prompt:${sessionId}`) ?? "") : "";
+      const initial: BuildMessage[] = [];
+      if (storedPrompt.trim()) {
+        initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
+      }
+      setMessages(initial);
     }
-    setMessages(initial);
 
     registerHandlers(socket);
-
     return () => { socket.disconnect(); socketRef.current = null; };
   }, [sessionId, registerHandlers]);
+
+  // Fetch files from the API only when sessionStorage has no data for this session
+  // (e.g. navigating to a historical session on a fresh page load).
+  // Never called when cache already hydrated messages above.
+  useEffect(() => {
+    if (!sessionId) return;
+
+    // Skip if sessionStorage already has a usable snapshot for this session.
+    try {
+      const raw = sessionStorage.getItem(`build_${sessionId}`);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.files && Object.keys(data.files).length > 0) return;
+      }
+    } catch { /* ignore */ }
+
+    const token = useAuthStore.getState().session?.access_token;
+    if (!token) return;
+
+    const controller = new AbortController();
+
+    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/build/${sessionId}/files`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: {
+        groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
+        files?: Record<string, string>;
+      } | null) => {
+        if (!data) return;
+
+        const filesMap: Record<string, string> = {};
+
+        if (Array.isArray(data.groups)) {
+          data.groups.forEach(g => {
+            (g.files ?? g.items ?? []).forEach(f => {
+              if (f.path && (f.content ?? f.code)) {
+                filesMap[f.path] = (f.content ?? f.code)!;
+              }
+            });
+          });
+        }
+
+        if (data.files && typeof data.files === "object") {
+          Object.assign(filesMap, data.files);
+        }
+
+        if (Object.keys(filesMap).length === 0) return;
+        setFiles(filesMap);
+        setBuildStatus("complete");
+        setActiveTab("preview");
+        // Use functional updater — never overwrite messages that already exist
+        // (e.g. live build messages). Only set the restore note when chat is empty.
+        setMessages(prev =>
+          prev.length > 0
+            ? prev
+            : [newMsg({
+                type: "text",
+                text: `Restored: ${Object.keys(filesMap).length} files loaded from previous build.`,
+              })],
+        );
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [sessionId]);
 
   // 2. Persist build state to sessionStorage whenever files/messages/buildStatus change.
   useEffect(() => {

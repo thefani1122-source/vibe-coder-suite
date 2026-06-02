@@ -60,6 +60,19 @@ const AGENT_LABELS: Record<string, string> = {
   connection: "Working on it…",
 };
 
+// System messages injected by the backend pipeline — never real AI thinking.
+// Matched against the trimmed text of each build:thinking event.
+const HARDCODED_PATTERNS: RegExp[] = [
+  /^Building:/i,
+  /^Starting new build/i,
+  /^Calling AI model/i,
+  /^Analyzing your prompt and planning the build/i,
+  /^Finalizing and preparing preview/i,
+  /^Writing files\.\.\./i,
+  /^Writing src\/.+\(\d+ lines/i,
+  /^Editing existing project/i,
+];
+
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Page                                                                       */
@@ -79,8 +92,9 @@ function WorkspacePage() {
   const [device,       setDevice]       = useState<Device>("desktop");
   const [reloadKey,    setReloadKey]    = useState(0);
   const [projectName,  setProjectName]  = useState<string>("");
-  const [chatCollapsed, setChatCollapsed] = useState(false);
-  const [showHistory,   setShowHistory]   = useState(false);
+  const [chatCollapsed,  setChatCollapsed]  = useState(false);
+  const [showHistory,    setShowHistory]    = useState(false);
+  const [activityStatus, setActivityStatus] = useState<string | null>(null);
 
   const socketRef    = useRef<Socket | null>(null);
   const completedRef = useRef(false);
@@ -116,6 +130,16 @@ function WorkspacePage() {
       completedRef.current = false;
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
+      if (!chunk.trim()) return;
+
+      // Route system/pipeline messages to activityStatus; real AI thinking goes to chat.
+      if (HARDCODED_PATTERNS.some(p => p.test(chunk.trim()))) {
+        setActivityStatus(chunk.trim());
+        return;
+      }
+
+      // Clear any lingering status chip when real thinking arrives.
+      setActivityStatus(null);
       setMessages(prev => {
         const last = prev[prev.length - 1];
         if (last?.type === "thinking" && last.streaming) {
@@ -181,6 +205,7 @@ function WorkspacePage() {
     socket.on("build:complete", (data?: { files?: Record<string, string> }) => {
       if (completedRef.current) return;
       completedRef.current = true;
+      setActivityStatus(null);
       const completedFiles = data?.files ?? {};
       const count = Object.keys(completedFiles).length;
       if (data?.files) {
@@ -201,6 +226,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
+      setActivityStatus(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
       setMessages(prev => [
@@ -228,7 +254,11 @@ function WorkspacePage() {
           };
           if (data.files && Object.keys(data.files).length > 0) {
             setFiles(data.files);
-            setMessages(data.messages ?? []);
+            // Strip any hardcoded system messages that leaked into previous snapshots.
+            const clean = (data.messages ?? []).filter(
+              m => !(m.type === "thinking" && HARDCODED_PATTERNS.some(p => p.test(m.text.trim()))),
+            );
+            setMessages(clean);
             setBuildStatus(data.buildStatus ?? "complete");
             setActiveTab(data.activeTab ?? "preview");
             hadCache = true;
@@ -436,6 +466,7 @@ function WorkspacePage() {
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
                 projectName={projectName}
+                activityStatus={activityStatus}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -692,13 +723,14 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend, projectName,
+  messages, isBuilding, currentAgent, onSend, projectName, activityStatus,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
   onSend?: (prompt: string) => void;
   projectName?: string;
+  activityStatus?: string | null;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -740,6 +772,13 @@ function ChatColumn({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Activity status chip — shows backend pipeline progress, never AI thinking */}
+      {activityStatus && (
+        <div className="shrink-0 px-4 pb-1">
+          <span className="text-[11px] italic text-white/30">{activityStatus}</span>
         </div>
       )}
 

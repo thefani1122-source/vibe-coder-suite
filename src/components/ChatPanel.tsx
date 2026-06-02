@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, Lamp } from "lucide-react"
+import { Loader2, Check, AlertCircle, Lamp, ChevronDown, ChevronRight } from "lucide-react"
 
 export interface BuildMessage {
   id: string
@@ -20,24 +20,6 @@ interface ChatPanelProps {
   currentAgent?: string
   className?: string
   projectName?: string
-}
-
-// Extract the natural-language portion of a thinking message, stopping at the
-// first line that looks like code. Returns "" if nothing meaningful remains.
-function extractThinkingText(raw: string): string {
-  const lines = raw.split("\n")
-  const out: string[] = []
-  for (const line of lines) {
-    const t = line.trim()
-    if (
-      t.startsWith("```") ||
-      /^(import|export|const|let|var|function|class|interface|type)\s/.test(t) ||
-      t.includes("style={{") ||
-      (t.startsWith("<") && t.includes(">"))
-    ) break
-    out.push(line)
-  }
-  return out.join("\n").trim()
 }
 
 export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName }: ChatPanelProps) {
@@ -127,6 +109,50 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   )
 }
 
+// Collapsible thinking card — starts collapsed so it never overwhelms the chat.
+// Each card manages its own expand/collapse independently.
+function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const showCursor = isLast && msg.streaming === true
+  const text = msg.text?.trim() ?? ""
+  if (!text) return null
+
+  return (
+    <div className="rounded-xl border border-violet-500/[0.18] bg-violet-500/[0.04] overflow-hidden">
+      {/* Header — always visible, click to toggle */}
+      <button
+        type="button"
+        onClick={() => setExpanded(e => !e)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-violet-500/[0.06]"
+      >
+        <span className="shrink-0 text-sm leading-none">💡</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-300/70">
+          Plan
+        </span>
+        {msg.streaming && !expanded && (
+          <span className="relative ml-1 flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
+          </span>
+        )}
+        {expanded
+          ? <ChevronDown className="ml-auto h-3 w-3 shrink-0 text-white/30" />
+          : <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-white/30" />
+        }
+      </button>
+
+      {/* Body — shown only when expanded, scrollable within 200px */}
+      {expanded && (
+        <div className="max-h-[200px] overflow-y-auto border-t border-violet-500/[0.12] px-3 py-2.5 scrollbar-thin scrollbar-thumb-white/10">
+          <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/50">
+            {text}{showCursor && <BlinkCursor />}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MessageRow({
   msg,
   isLast,
@@ -137,51 +163,10 @@ function MessageRow({
   const showCursor = isLast && msg.streaming === true
 
   switch (msg.type) {
-    case "thinking": {
-      const text = extractThinkingText(msg.text || "")
-      if (!text) return null
-
-      return (
-        <div key={msg.id} style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.06)",
-          borderRadius: 8,
-          padding: "8px 12px",
-          margin: "2px 0",
-        }}>
-          <div style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            marginBottom: 4,
-          }}>
-            <div style={{
-              width: 6, height: 6,
-              borderRadius: "50%",
-              background: "#a78bfa",
-              animation: "pulse 1.5s infinite",
-            }} />
-            <span style={{
-              fontSize: 10,
-              color: "rgba(255,255,255,0.3)",
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}>Thinking</span>
-          </div>
-          <p style={{
-            fontSize: 12,
-            color: "rgba(255,255,255,0.4)",
-            fontStyle: "italic",
-            margin: 0,
-            lineHeight: 1.5,
-          }}>{text}{showCursor && <BlinkCursor />}</p>
-        </div>
-      )
-    }
+    case "thinking":
+      return <ThinkingCard msg={msg} isLast={isLast} />
 
     case "text": {
-      // User prompt → right-aligned bubble. Agent text → plain left-aligned text.
       if (msg.role === "user") {
         return (
           <div className="flex justify-end">

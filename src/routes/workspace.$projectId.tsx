@@ -73,6 +73,12 @@ const HARDCODED_PATTERNS: RegExp[] = [
   /^Editing existing project/i,
 ];
 
+// Paths that indicate a fullstack build requiring a live sandbox instead of Sandpack.
+const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
+function hasBackendFiles(files: Record<string, string>): boolean {
+  return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Page                                                                       */
@@ -101,9 +107,10 @@ function WorkspacePage() {
   const [e2bWarning,    setE2bWarning]    = useState<string | null>(null);
   const [isFullstack,   setIsFullstack]   = useState(false);
 
-  const socketRef    = useRef<Socket | null>(null);
-  const completedRef = useRef(false);
-  const chatPanelRef = usePanelRef();
+  const socketRef      = useRef<Socket | null>(null);
+  const completedRef   = useRef(false);
+  const e2bStartedRef  = useRef(false);
+  const chatPanelRef   = usePanelRef();
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -121,6 +128,44 @@ function WorkspacePage() {
 
   // Stable handler registration — state setters are stable refs, so empty deps is safe.
   const registerHandlers = useCallback((socket: Socket) => {
+    // Shared E2B boot — called from build:backend_ready (early) or build:complete (fallback).
+    // Guards with e2bStartedRef so only one invocation wins per build.
+    function startE2B(files: Record<string, string>) {
+      if (e2bStartedRef.current) return;
+      e2bStartedRef.current = true;
+      setIsFullstack(true);
+      setE2bLoading(true);
+      setE2bWarning(null);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "Starting live preview…" }),
+      ]);
+      const token = useAuthStore.getState().session?.access_token;
+      fetch(`${import.meta.env.VITE_BACKEND_URL}/api/e2b/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ projectId, files }),
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then((result: { sandboxUrl?: string; url?: string }) => {
+          const url = result.sandboxUrl ?? result.url ?? "";
+          if (url) {
+            setE2bSandboxUrl(url);
+            setE2bExpiry(Date.now() + 30 * 60 * 1000);
+            setActiveTab("preview");
+          }
+          setE2bLoading(false);
+        })
+        .catch(() => {
+          setE2bLoading(false);
+          setIsFullstack(false);
+          setE2bWarning("Backend preview unavailable. Showing frontend only.");
+        });
+    }
+
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;
@@ -228,6 +273,9 @@ function WorkspacePage() {
           text: `Here's your app! I generated ${count > 0 ? count : "your"} files. You can see the preview on the right, or click Code to explore the files.`,
         }),
       ]);
+      // Fallback detection: if build:backend_ready was never fired but files contain
+      // backend paths, boot E2B now. startE2B is a no-op if already started.
+      if (hasBackendFiles(completedFiles)) startE2B(completedFiles);
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
@@ -241,38 +289,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:backend_ready", (data: { files?: Record<string, string> }) => {
-      setIsFullstack(true);
-      setE2bLoading(true);
-      setE2bWarning(null);
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({ type: "text", text: "Starting live preview…" }),
-      ]);
-
-      const token = useAuthStore.getState().session?.access_token;
-      fetch(`${import.meta.env.VITE_BACKEND_URL}/api/e2b/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ files: data.files ?? {} }),
-      })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then((result: { sandboxUrl?: string; url?: string }) => {
-          const url = result.sandboxUrl ?? result.url ?? "";
-          if (url) {
-            setE2bSandboxUrl(url);
-            setE2bExpiry(Date.now() + 30 * 60 * 1000);
-            setActiveTab("preview");
-          }
-          setE2bLoading(false);
-        })
-        .catch(() => {
-          setE2bLoading(false);
-          setIsFullstack(false);
-          setE2bWarning("Backend preview unavailable, showing frontend only");
-        });
+      startE2B(data.files ?? {});
     });
 
     socket.on("build:e2b_ready", (data: { sandboxUrl?: string; url?: string }) => {
@@ -428,7 +445,19 @@ function WorkspacePage() {
     } catch { /* ignore quota errors */ }
   }, [files, messages, buildStatus, activeTab, sessionId]);
 
-  // 3. Reconnect the socket when the user returns to this tab mid-build.
+  // 3. 60-second E2B boot timeout — fall back to Sandpack if sandbox never becomes ready.
+  useEffect(() => {
+    if (!e2bLoading) return;
+    const id = setTimeout(() => {
+      setE2bLoading(false);
+      setIsFullstack(false);
+      setE2bSandboxUrl(null);
+      setE2bWarning("Backend preview timed out. Showing frontend only.");
+    }, 60_000);
+    return () => clearTimeout(id);
+  }, [e2bLoading]);
+
+  // 4. Reconnect the socket when the user returns to this tab mid-build.
   useEffect(() => {
     const handleVisibility = () => {
       if (
@@ -454,6 +483,7 @@ function WorkspacePage() {
     setBuildStatus("running");
     setCurrentAgent(undefined);
     completedRef.current = false;
+    e2bStartedRef.current = false;
     setE2bSandboxUrl(null);
     setE2bExpiry(null);
     setE2bLoading(false);
@@ -694,8 +724,8 @@ function E2BPreview({
               <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
                 <Zap className="h-5 w-5 animate-pulse text-orange-400" />
               </div>
-              <p className="text-sm font-medium text-white/60">Starting live preview…</p>
-              <p className="text-xs text-white/30">Spinning up backend sandbox</p>
+              <p className="text-sm font-medium text-white/60">Booting sandbox…</p>
+              <p className="text-xs text-white/30">This takes 30–60 seconds</p>
             </div>
           ) : sandboxUrl ? (
             <iframe

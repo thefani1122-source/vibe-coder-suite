@@ -95,6 +95,11 @@ function WorkspacePage() {
   const [chatCollapsed,  setChatCollapsed]  = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
   const [activityStatus, setActivityStatus] = useState<string | null>(null);
+  const [e2bSandboxUrl, setE2bSandboxUrl] = useState<string | null>(null);
+  const [e2bExpiry,     setE2bExpiry]     = useState<number | null>(null);
+  const [e2bLoading,    setE2bLoading]    = useState(false);
+  const [e2bWarning,    setE2bWarning]    = useState<string | null>(null);
+  const [isFullstack,   setIsFullstack]   = useState(false);
 
   const socketRef    = useRef<Socket | null>(null);
   const completedRef = useRef(false);
@@ -232,6 +237,66 @@ function WorkspacePage() {
       setMessages(prev => [
         ...closeStreaming(prev),
         newMsg({ type: "error", text: data?.message ?? data?.error ?? "Build failed" }),
+      ]);
+    });
+
+    socket.on("build:backend_ready", (data: { files?: Record<string, string> }) => {
+      setIsFullstack(true);
+      setE2bLoading(true);
+      setE2bWarning(null);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "Starting live preview…" }),
+      ]);
+
+      const token = useAuthStore.getState().session?.access_token;
+      fetch(`${import.meta.env.VITE_BACKEND_URL}/api/e2b/create`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ files: data.files ?? {} }),
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then((result: { sandboxUrl?: string; url?: string }) => {
+          const url = result.sandboxUrl ?? result.url ?? "";
+          if (url) {
+            setE2bSandboxUrl(url);
+            setE2bExpiry(Date.now() + 30 * 60 * 1000);
+            setActiveTab("preview");
+          }
+          setE2bLoading(false);
+        })
+        .catch(() => {
+          setE2bLoading(false);
+          setIsFullstack(false);
+          setE2bWarning("Backend preview unavailable, showing frontend only");
+        });
+    });
+
+    socket.on("build:e2b_ready", (data: { sandboxUrl?: string; url?: string }) => {
+      const url = data.sandboxUrl ?? data.url ?? "";
+      if (!url) return;
+      setE2bSandboxUrl(url);
+      setE2bExpiry(Date.now() + 30 * 60 * 1000);
+      setE2bLoading(false);
+      setIsFullstack(true);
+      setActiveTab("preview");
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "Your live preview is ready!" }),
+      ]);
+    });
+
+    socket.on("build:e2b_error", (data?: { message?: string }) => {
+      setE2bLoading(false);
+      setIsFullstack(false);
+      setE2bSandboxUrl(null);
+      setE2bWarning("Backend preview unavailable, showing frontend only");
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "error", text: data?.message ?? "Backend preview failed — showing frontend only" }),
       ]);
     });
   }, []);
@@ -389,6 +454,11 @@ function WorkspacePage() {
     setBuildStatus("running");
     setCurrentAgent(undefined);
     completedRef.current = false;
+    setE2bSandboxUrl(null);
+    setE2bExpiry(null);
+    setE2bLoading(false);
+    setE2bWarning(null);
+    setIsFullstack(false);
 
     let newSessionId: string;
     try {
@@ -443,6 +513,7 @@ function WorkspacePage() {
           onToggleChat={toggleChat}
           showHistory={showHistory}
           onToggleHistory={() => setShowHistory(v => !v)}
+          e2bSandboxUrl={e2bSandboxUrl}
         />
 
         <Group
@@ -517,12 +588,22 @@ function WorkspacePage() {
               )}
               {activeTab === "preview" && (
                 <div key={reloadKey} className="h-full w-full bg-[#080808]">
-                  <SandpackPreview
-                    files={buildStatus === "complete" ? files : {}}
-                    isBuilding={isBuilding}
-                    externalDevice={device}
-                    className="h-full w-full"
-                  />
+                  {(isFullstack || e2bLoading) ? (
+                    <E2BPreview
+                      sandboxUrl={e2bSandboxUrl}
+                      expiryMs={e2bExpiry}
+                      warning={e2bWarning}
+                      loading={e2bLoading}
+                      device={device}
+                    />
+                  ) : (
+                    <SandpackPreview
+                      files={buildStatus === "complete" ? files : {}}
+                      isBuilding={isBuilding}
+                      externalDevice={device}
+                      className="h-full w-full"
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -535,13 +616,109 @@ function WorkspacePage() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/*  E2B Live Preview                                                             */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function E2BPreview({
+  sandboxUrl, expiryMs, warning, loading, device,
+}: {
+  sandboxUrl: string | null;
+  expiryMs: number | null;
+  warning: string | null;
+  loading: boolean;
+  device: Device;
+}) {
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    if (!expiryMs) return;
+    const tick = () => {
+      const diff = expiryMs - Date.now();
+      if (diff <= 0) { setTimeLeft("Expired"); return; }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${m}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [expiryMs]);
+
+  const mobile = device === "mobile";
+  const tablet = device === "tablet";
+
+  return (
+    <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
+      <div className="flex h-full justify-center">
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            maxWidth: mobile ? 420 : tablet ? 768 : "none",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.08)",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {/* Warning banner — shown when E2B failed and we fell back to Sandpack */}
+          {warning && (
+            <div className="shrink-0 flex items-center gap-2 border-b border-yellow-500/20 bg-yellow-500/[0.06] px-3 py-2">
+              <span className="text-xs text-yellow-400/90">{warning}</span>
+            </div>
+          )}
+
+          {/* Toolbar strip — only when sandbox is live */}
+          {sandboxUrl && (
+            <div className="shrink-0 flex items-center gap-2 border-b border-white/[0.08] bg-[#0d0d0d] px-3 py-1.5">
+              {timeLeft && (
+                <span className="font-mono text-[11px] text-white/35">
+                  Preview expires in {timeLeft}
+                </span>
+              )}
+              <div className="flex-1" />
+              <button
+                onClick={() => window.open(sandboxUrl, "_blank", "noopener,noreferrer")}
+                className="flex items-center gap-1.5 rounded-md border border-white/[0.10] px-2.5 py-1 text-xs text-white/70 transition hover:bg-white/[0.06]"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open in New Tab
+              </button>
+            </div>
+          )}
+
+          {/* Content */}
+          {loading ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+                <Zap className="h-5 w-5 animate-pulse text-orange-400" />
+              </div>
+              <p className="text-sm font-medium text-white/60">Starting live preview…</p>
+              <p className="text-xs text-white/30">Spinning up backend sandbox</p>
+            </div>
+          ) : sandboxUrl ? (
+            <iframe
+              src={sandboxUrl}
+              title="E2B Live Preview"
+              className="flex-1 w-full border-0"
+              allow="cross-origin-isolated"
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Top Bar                                                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
   buildStatus, onReload, files, chatCollapsed, onToggleChat,
-  showHistory, onToggleHistory,
+  showHistory, onToggleHistory, e2bSandboxUrl,
 }: {
   projectId: string;
   projectName: string;
@@ -556,6 +733,7 @@ function WorkspaceTopBar({
   onToggleChat: () => void;
   showHistory: boolean;
   onToggleHistory: () => void;
+  e2bSandboxUrl?: string | null;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -678,6 +856,10 @@ function WorkspaceTopBar({
               className="ws-iconbtn"
               title="Open preview in new tab"
               onClick={() => {
+                if (e2bSandboxUrl) {
+                  window.open(e2bSandboxUrl, "_blank", "noopener,noreferrer");
+                  return;
+                }
                 const iframe = document.querySelector('iframe[title="Sandbox Preview"]') as HTMLIFrameElement | null;
                 const url = iframe?.src;
                 if (url && !url.includes("about:blank")) {

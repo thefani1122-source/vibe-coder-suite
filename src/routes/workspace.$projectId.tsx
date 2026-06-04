@@ -6,6 +6,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
+import { WebContainerPreview } from "@/components/WebContainerPreview";
 import { createBuildSocket } from "@/lib/websocket";
 
 export const Route = createFileRoute("/workspace/$projectId")({
@@ -17,6 +18,12 @@ export const Route = createFileRoute("/workspace/$projectId")({
 });
 
 type BuildStatus = "running" | "complete" | "error";
+
+// Backend file path patterns — presence of any signals a fullstack build needing WebContainers.
+const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
+function hasBackendFiles(files: Record<string, string>): boolean {
+  return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+}
 
 function toolToAgent(tool: string): string {
   if (/file|write|create/i.test(tool)) return "frontend";
@@ -44,11 +51,17 @@ function WorkspacePage() {
   const [files, setFiles] = useState<Record<string, string>>({});
   const [newFiles, setNewFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [buildStatus, setBuildStatus] = useState<BuildStatus>("running");
+  const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
   const [currentAgent, setCurrentAgent] = useState<string | undefined>();
+  const [isFullstack,  setIsFullstack]  = useState(false);
+  const [wcKey,        setWcKey]        = useState(0);
+
   const socketRef = useRef<Socket | null>(null);
+  const filesRef  = useRef<Record<string, string>>({});
 
   useEffect(() => {
+    filesRef.current = {};
+    setIsFullstack(false);
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 
@@ -102,22 +115,30 @@ function WorkspacePage() {
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
         const path = data.path ?? data.file ?? "file";
         const code = data.content ?? data.code ?? "";
+        filesRef.current = { ...filesRef.current, [path]: code };
         setFiles(prev => ({ ...prev, [path]: code }));
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
         setCurrentAgent("frontend");
-        setMessages(prev => [
-          ...closeStreaming(prev),
-          newMsg({ type: "file_write", text: path, path }),
-        ]);
+        // Deduplicate pills — only add on first write per path.
+        setMessages(prev => {
+          if (prev.some(m => m.type === "file_write" && m.path === path)) return prev;
+          return [...closeStreaming(prev), newMsg({ type: "file_write", text: path, path })];
+        });
       },
     );
 
     socket.on("build:complete", (data?: { files?: Record<string, string> }) => {
+      // Merge without overwriting file_write content.
+      const merged = { ...filesRef.current };
       if (data?.files) {
-        setFiles(data.files);
-        setSelectedFile(prev => prev ?? Object.keys(data.files!)[0] ?? null);
+        for (const [path, content] of Object.entries(data.files)) {
+          if (!merged[path]) merged[path] = content;
+        }
       }
+      filesRef.current = merged;
+      setFiles(merged);
+      setSelectedFile(prev => prev ?? Object.keys(merged)[0] ?? null);
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
@@ -125,6 +146,12 @@ function WorkspacePage() {
         ...closeStreaming(prev),
         newMsg({ type: "text", text: "✅ Build complete" }),
       ]);
+      if (hasBackendFiles(merged)) setIsFullstack(true);
+    });
+
+    // Backend signals server-side files are ready — switch to WebContainers.
+    socket.on("build:backend_ready", () => {
+      setIsFullstack(true);
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
@@ -163,6 +190,11 @@ function WorkspacePage() {
             />
             <span className="text-xs capitalize text-muted-foreground">{buildStatus}</span>
           </div>
+          {isFullstack && (
+            <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-400">
+              Fullstack · WebContainer
+            </span>
+          )}
         </header>
 
         {/* Three-panel row */}
@@ -196,13 +228,21 @@ function WorkspacePage() {
             </div>
           </div>
 
-          {/* Right 35%: Live preview */}
+          {/* Right 35%: WebContainers for fullstack, Sandpack for frontend-only */}
           <div className="flex-1">
-            <SandpackPreview
-              files={buildStatus === "complete" ? files : {}}
-              isBuilding={isBuilding}
-              className="h-full"
-            />
+            {isFullstack ? (
+              <WebContainerPreview
+                key={wcKey}
+                files={files}
+                onRetry={() => setWcKey(k => k + 1)}
+              />
+            ) : (
+              <SandpackPreview
+                files={buildStatus === "complete" ? files : {}}
+                isBuilding={isBuilding}
+                className="h-full"
+              />
+            )}
           </div>
         </div>
       </div>

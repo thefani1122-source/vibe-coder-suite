@@ -259,15 +259,19 @@ function WorkspacePage() {
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
         const path = data.path ?? data.file ?? "file";
         const code = data.content ?? data.code ?? "";
+        const isUpdate = !!filesRef.current[path];
+        console.log(`[FRONTEND] ${isUpdate ? "Updating" : "Adding"} file:`, path);
         filesRef.current = { ...filesRef.current, [path]: code };
         setFiles(prev => ({ ...prev, [path]: code }));
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
         setCurrentAgent("frontend");
-        setMessages(prev => [
-          ...closeStreaming(prev),
-          newMsg({ type: "file_write", text: path, path }),
-        ]);
+        // Only add a chat pill for the first write of each path — prevents duplicate pills
+        // when the backend emits the same file more than once.
+        setMessages(prev => {
+          if (prev.some(m => m.type === "file_write" && m.path === path)) return prev;
+          return [...closeStreaming(prev), newMsg({ type: "file_write", text: path, path })];
+        });
       },
     );
 
@@ -275,13 +279,30 @@ function WorkspacePage() {
       if (completedRef.current) return;
       completedRef.current = true;
       setActivityStatus(null);
-      const completedFiles = data?.files ?? filesRef.current;
-      const count = Object.keys(completedFiles).length;
+
+      // Merge build:complete files into what file_write events already accumulated.
+      // Never overwrite — file_write events may have newer content for the same path.
+      let mergedFiles = { ...filesRef.current };
+      let addedCount = 0;
       if (data?.files) {
-        filesRef.current = data.files;
-        setFiles(data.files);
-        setSelectedFile(prev => prev ?? Object.keys(data.files!)[0] ?? null);
+        for (const [path, content] of Object.entries(data.files)) {
+          if (!mergedFiles[path]) {
+            mergedFiles[path] = content;
+            addedCount++;
+          }
+        }
       }
+      console.log(
+        "[FRONTEND] build:complete received:",
+        Object.keys(data?.files ?? {}),
+        "| existing:", Object.keys(filesRef.current).length,
+        "| new additions:", addedCount,
+      );
+      filesRef.current = mergedFiles;
+      setFiles(mergedFiles);
+      setSelectedFile(prev => prev ?? Object.keys(mergedFiles)[0] ?? null);
+
+      const count = Object.keys(mergedFiles).length;
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
@@ -295,7 +316,7 @@ function WorkspacePage() {
       ]);
       // Fallback detection: if build:backend_ready was never fired but files contain
       // backend paths, boot E2B now. startE2B is a no-op if already started.
-      if (hasBackendFiles(completedFiles)) startE2B(completedFiles);
+      if (hasBackendFiles(mergedFiles)) startE2B(mergedFiles);
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
@@ -309,10 +330,12 @@ function WorkspacePage() {
     });
 
     socket.on("build:backend_ready", (data: { files?: Record<string, string> }) => {
-      startE2B(data.files ?? {});
+      console.log("[FRONTEND] build:backend_ready received:", Object.keys(data.files ?? {}));
+      startE2B(data.files ?? filesRef.current);
     });
 
     socket.on("build:e2b_ready", (data: { sandboxUrl?: string; url?: string }) => {
+      console.log("[FRONTEND] build:e2b_ready received:", data);
       const url = data.sandboxUrl ?? data.url ?? "";
       if (!url) return;
       setE2bSandboxUrl(url);
@@ -327,6 +350,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:e2b_error", (data?: { message?: string }) => {
+      console.log("[FRONTEND] build:e2b_error received:", data);
       setE2bLoading(false);
       setE2bSandboxUrl(null);
       // Keep isFullstack=true — fullstack apps never fall back to Sandpack.
@@ -543,12 +567,18 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  // Log when Sandpack renders (frontend-only builds only).
+  // Log the hard-switch decision whenever key state changes.
   useEffect(() => {
-    if (buildStatus === "complete" && !isFullstack && Object.keys(files).length > 0) {
-      console.log("[E2B] Sandpack rendering (frontend-only build), files:", Object.keys(files));
-    }
-  }, [buildStatus, isFullstack, files]);
+    if (buildStatus !== "complete" && !isFullstack) return;
+    console.log(
+      "[FRONTEND] Rendering:", isFullstack ? "E2B" : "Sandpack",
+      "| isFullstack:", isFullstack,
+      "| e2bLoading:", e2bLoading,
+      "| e2bSandboxUrl:", e2bSandboxUrl,
+      "| e2bError:", e2bError,
+      "| files:", Object.keys(files).length,
+    );
+  }, [buildStatus, isFullstack, e2bLoading, e2bSandboxUrl, e2bError, files]);
 
   // Derived debug state for the overlay panel.
   const e2bDebugStatus =
@@ -772,6 +802,12 @@ function E2BErrorScreen({
 /*  E2B Live Preview                                                             */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+const E2B_STEPS = [
+  "Uploading files",
+  "Installing dependencies",
+  "Starting server",
+] as const;
+
 function E2BPreview({
   sandboxUrl, expiryMs, loading, device,
 }: {
@@ -780,7 +816,8 @@ function E2BPreview({
   loading: boolean;
   device: Device;
 }) {
-  const [timeLeft, setTimeLeft] = useState("");
+  const [timeLeft,  setTimeLeft]  = useState("");
+  const [elapsedS,  setElapsedS]  = useState(0);
 
   useEffect(() => {
     if (!expiryMs) return;
@@ -795,6 +832,15 @@ function E2BPreview({
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [expiryMs]);
+
+  // Track elapsed seconds while loading for the progress steps.
+  useEffect(() => {
+    if (!loading) { setElapsedS(0); return; }
+    const id = setInterval(() => setElapsedS(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  const currentStep = elapsedS < 10 ? 0 : elapsedS < 35 ? 1 : 2;
 
   const mobile = device === "mobile";
   const tablet = device === "tablet";
@@ -833,22 +879,46 @@ function E2BPreview({
             </div>
           )}
 
-          {/* Content */}
-          {loading ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-                <Zap className="h-5 w-5 animate-pulse text-orange-400" />
-              </div>
-              <p className="text-sm font-medium text-white/60">Booting sandbox…</p>
-              <p className="text-xs text-white/30">This takes 30–60 seconds</p>
-            </div>
-          ) : sandboxUrl ? (
+          {/* Content — URL takes priority over loading spinner to handle races */}
+          {sandboxUrl ? (
             <iframe
               src={sandboxUrl}
               title="E2B Live Preview"
-              className="flex-1 w-full border-0"
-              allow="cross-origin-isolated"
+              style={{ flex: 1, width: "100%", height: "100%", border: "none", display: "block" }}
+              allow="cross-origin-isolated; clipboard-write; clipboard-read"
             />
+          ) : loading ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
+                <Zap className="h-5 w-5 animate-pulse text-orange-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-white/60">Booting sandbox…</p>
+                <p className="text-xs text-white/30 mt-0.5">This takes 30–60 seconds</p>
+              </div>
+              {/* Progress steps */}
+              <div className="space-y-2 mt-1">
+                {E2B_STEPS.map((step, i) => (
+                  <div
+                    key={step}
+                    className={cn(
+                      "flex items-center gap-2 text-xs transition-colors",
+                      i < currentStep  ? "text-emerald-400"  :
+                      i === currentStep ? "text-white/60"     : "text-white/20",
+                    )}
+                  >
+                    {i < currentStep ? (
+                      <Check className="h-3 w-3 shrink-0" />
+                    ) : i === currentStep ? (
+                      <div className="h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" />
+                    ) : (
+                      <div className="h-3 w-3 shrink-0 rounded-full border border-current opacity-40" />
+                    )}
+                    {step}
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
         </div>
       </div>

@@ -16,6 +16,14 @@ const ENTRY_PRIORITY = [
   "/App.tsx",
 ] as const
 
+// ─── Backend-only path patterns — stripped when falling back from E2B ─────────
+// These files are Node/server-side and will always break the browser sandbox.
+const BACKEND_SKIP_RE = [
+  /^\/src\/server\//,
+  /^\/src\/db\//,
+  /^\/src\/lib\/api\./,
+]
+
 // ─── Shared "Preview failed" screen ──────────────────────────────────────────
 
 interface FailScreenProps {
@@ -184,11 +192,13 @@ function PreviewWithFrame({
   entryFile,
   className,
   externalDevice,
+  fallbackWarning,
 }: {
   files: Record<string, { code: string }>
   entryFile: string
   className?: string
   externalDevice?: "desktop" | "mobile" | "tablet"
+  fallbackWarning?: string
 }) {
   const [retryKey, setRetryKey] = useState(0)
   const device = externalDevice ?? "desktop"
@@ -213,6 +223,14 @@ function PreviewWithFrame({
             flexDirection: "column",
           }}
         >
+          {/* E2B fallback warning — only shown when backend preview was unavailable */}
+          {fallbackWarning && (
+            <div className="shrink-0 flex items-center gap-2 border-b border-yellow-500/20 bg-yellow-500/[0.06] px-3 py-2">
+              <span className="text-xs leading-relaxed text-yellow-400/90">
+                ⚠️ Backend preview unavailable. Showing frontend only. Deploy to see the full app.
+              </span>
+            </div>
+          )}
           <PreviewErrorBoundary files={files} entryFile={entryFile}>
             <SandpackProvider
               key={retryKey}
@@ -254,9 +272,11 @@ interface SandpackPreviewProps {
   isBuilding: boolean
   className?: string
   externalDevice?: "desktop" | "mobile" | "tablet"
+  /** Set when E2B failed and Sandpack is rendering as a fallback. Used to filter backend files. */
+  fallbackWarning?: string | null
 }
 
-export function SandpackPreview({ files, isBuilding, className, externalDevice }: SandpackPreviewProps) {
+export function SandpackPreview({ files, isBuilding, className, externalDevice, fallbackWarning }: SandpackPreviewProps) {
   const fileCount = Object.keys(files).length
 
   const sandpackFiles = useMemo(() => {
@@ -267,7 +287,8 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       "vite.config.ts", "vite.config.js",
       "next.config.js", "next.config.ts",
       "tsconfig.json", "tsconfig.node.json",
-      ".env", ".gitignore", ".eslintrc.js", ".eslintrc.json",
+      ".env", ".env.example", ".env.local",
+      ".gitignore", ".eslintrc.js", ".eslintrc.json",
     ])
 
     const result: Record<string, { code: string }> = {}
@@ -282,6 +303,10 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
         /\.(tsx?|jsx?|css|svg)$/.test(normalized)
           ? "/src" + normalized
           : normalized
+
+      // When falling back from E2B, drop all backend-only paths so Sandpack
+      // doesn't choke on Node/server imports it can never resolve.
+      if (fallbackWarning && BACKEND_SKIP_RE.some(r => r.test(cleanPath))) continue
 
       const code = cleanPath.endsWith(".css")
         ? content.replace(/^@(tailwind|layer|apply)\b.*$/gm, "").trim()
@@ -372,6 +397,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       entryFile={entryFile}
       className={className}
       externalDevice={externalDevice}
+      fallbackWarning={fallbackWarning ?? undefined}
     />
   )
 }

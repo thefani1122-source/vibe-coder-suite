@@ -679,6 +679,7 @@ function WorkspacePage() {
                       isBuilding={isBuilding}
                       externalDevice={device}
                       className="h-full w-full"
+                      fallbackWarning={e2bWarning ?? undefined}
                     />
                   )}
                 </div>

@@ -76,7 +76,9 @@ const HARDCODED_PATTERNS: RegExp[] = [
 // Paths that indicate a fullstack build requiring a live sandbox instead of Sandpack.
 const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
 function hasBackendFiles(files: Record<string, string>): boolean {
-  return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+  const result = Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+  console.log("[E2B] hasBackendFiles check:", Object.keys(files), "result:", result);
+  return result;
 }
 
 
@@ -131,6 +133,8 @@ function WorkspacePage() {
     // Shared E2B boot — called from build:backend_ready (early) or build:complete (fallback).
     // Guards with e2bStartedRef so only one invocation wins per build.
     function startE2B(files: Record<string, string>) {
+      console.log("[E2B] startE2B called with files:", Object.keys(files));
+      console.log("[E2B] e2bStartedRef.current:", e2bStartedRef.current);
       if (e2bStartedRef.current) return;
       e2bStartedRef.current = true;
       setIsFullstack(true);
@@ -141,6 +145,7 @@ function WorkspacePage() {
         newMsg({ type: "text", text: "Starting live preview…" }),
       ]);
       const token = useAuthStore.getState().session?.access_token;
+      console.log("[E2B] Calling POST /api/e2b/create with projectId:", projectId);
       fetch(`${import.meta.env.VITE_BACKEND_URL}/api/e2b/create`, {
         method: "POST",
         headers: {
@@ -149,9 +154,10 @@ function WorkspacePage() {
         },
         body: JSON.stringify({ projectId, files }),
       })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(r => r.ok ? r.json() : Promise.reject({ status: r.status, message: `HTTP ${r.status}` }))
         .then((result: { sandboxUrl?: string; url?: string }) => {
           const url = result.sandboxUrl ?? result.url ?? "";
+          console.log("[E2B] Sandbox created:", url || "(no url in response)");
           if (url) {
             setE2bSandboxUrl(url);
             setE2bExpiry(Date.now() + 30 * 60 * 1000);
@@ -159,7 +165,9 @@ function WorkspacePage() {
           }
           setE2bLoading(false);
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          const e = err as { message?: string; status?: number };
+          console.log("[E2B] Sandbox creation FAILED:", e.message ?? String(err), "status:", e.status);
           setE2bLoading(false);
           setIsFullstack(false);
           setE2bWarning("Backend preview unavailable. Showing frontend only.");
@@ -449,6 +457,7 @@ function WorkspacePage() {
   useEffect(() => {
     if (!e2bLoading) return;
     const id = setTimeout(() => {
+      console.log("[E2B] Timeout triggered, falling back to Sandpack");
       setE2bLoading(false);
       setIsFullstack(false);
       setE2bSandboxUrl(null);
@@ -525,6 +534,20 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
+  // Log when the Sandpack branch is active (non-fullstack build or after E2B fallback).
+  useEffect(() => {
+    if (buildStatus === "complete" && !isFullstack && !e2bLoading && Object.keys(files).length > 0) {
+      console.log("[E2B] Sandpack fallback, files:", Object.keys(files));
+    }
+  }, [buildStatus, isFullstack, e2bLoading, files]);
+
+  // Derived debug state for the overlay panel.
+  const e2bDebugStatus =
+    e2bLoading      ? "loading"         :
+    e2bSandboxUrl   ? "ready"           :
+    isFullstack     ? "fullstack-no-url":
+    buildStatus === "complete" ? "sandpack" : "idle";
+
   return (
     <RequireAuth>
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
@@ -596,7 +619,31 @@ function WorkspacePage() {
 
           {/* Right: preview / code — takes remaining space */}
           <Panel defaultSize={75} minSize={30}>
-            <div className="flex min-h-0 h-full bg-[#080808]">
+            <div className="relative flex min-h-0 h-full bg-[#080808]">
+              {/* ── E2B debug overlay ── */}
+              <div className="absolute bottom-4 right-4 z-50 max-w-[300px] rounded-xl border border-white/[0.10] bg-black/85 p-3 backdrop-blur-sm font-mono text-[11px] text-white/70 space-y-1 pointer-events-none">
+                <p className="font-sans text-[10px] font-semibold uppercase tracking-widest text-white/40 mb-1.5">E2B Debug</p>
+                <div className="flex gap-2">
+                  <span className="text-white/35 shrink-0">Status:</span>
+                  <span className={cn(
+                    "font-medium",
+                    e2bDebugStatus === "ready"    && "text-emerald-400",
+                    e2bDebugStatus === "loading"  && "text-yellow-400",
+                    e2bDebugStatus === "sandpack" && "text-blue-400",
+                    !["ready","loading","sandpack"].includes(e2bDebugStatus) && "text-white/60",
+                  )}>{e2bDebugStatus}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-white/35 shrink-0">Files:</span>
+                  <span>{Object.keys(files).length}</span>
+                </div>
+                {e2bWarning && (
+                  <div className="flex gap-2">
+                    <span className="text-white/35 shrink-0 mt-px">Error:</span>
+                    <span className="text-red-400/90 break-words">{e2bWarning}</span>
+                  </div>
+                )}
+              </div>
               {activeTab === "code" && (
                 <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
                   <div style={{
@@ -636,7 +683,7 @@ function WorkspacePage() {
                   )}
                 </div>
               )}
-            </div>
+            </div>{/* end debug overlay wrapper */}
           </Panel>
         </Group>
 

@@ -7,6 +7,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
+import { WebContainerPreview } from "@/components/WebContainerPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
@@ -73,12 +74,10 @@ const HARDCODED_PATTERNS: RegExp[] = [
   /^Editing existing project/i,
 ];
 
-// Paths that indicate a fullstack build requiring a live sandbox instead of Sandpack.
+// Paths that indicate a fullstack build requiring WebContainers instead of Sandpack.
 const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
 function hasBackendFiles(files: Record<string, string>): boolean {
-  const result = Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
-  console.log("[E2B] hasBackendFiles check:", Object.keys(files), "result:", result);
-  return result;
+  return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
 }
 
 
@@ -103,16 +102,12 @@ function WorkspacePage() {
   const [chatCollapsed,  setChatCollapsed]  = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
   const [activityStatus, setActivityStatus] = useState<string | null>(null);
-  const [e2bSandboxUrl, setE2bSandboxUrl] = useState<string | null>(null);
-  const [e2bExpiry,     setE2bExpiry]     = useState<number | null>(null);
-  const [e2bLoading,    setE2bLoading]    = useState(false);
-  const [e2bError,      setE2bError]      = useState<string | null>(null);
-  const [isFullstack,   setIsFullstack]   = useState(false);
+  const [isFullstack, setIsFullstack] = useState(false);
+  const [wcKey,       setWcKey]       = useState(0);
 
-  const socketRef      = useRef<Socket | null>(null);
-  const completedRef   = useRef(false);
-  const e2bStartedRef  = useRef(false);
-  const filesRef       = useRef<Record<string, string>>({});
+  const socketRef    = useRef<Socket | null>(null);
+  const completedRef = useRef(false);
+  const filesRef     = useRef<Record<string, string>>({});
   const chatPanelRef   = usePanelRef();
 
   // Fetch project name with auth via apiGet (handles token automatically).
@@ -128,60 +123,6 @@ function WorkspacePage() {
       })
       .catch(() => {});
   }, [projectId]);
-
-  // E2B boot — extracted so retry button can call it directly.
-  // Guards with e2bStartedRef so only one invocation wins per build.
-  const startE2B = useCallback((files: Record<string, string>) => {
-    console.log("[E2B] startE2B called with files:", Object.keys(files));
-    console.log("[E2B] e2bStartedRef.current:", e2bStartedRef.current);
-    if (e2bStartedRef.current) return;
-    e2bStartedRef.current = true;
-    setIsFullstack(true);
-    setE2bLoading(true);
-    setE2bError(null);
-    setMessages(prev => [
-      ...closeStreaming(prev),
-      newMsg({ type: "text", text: "Starting live preview…" }),
-    ]);
-    const token = useAuthStore.getState().session?.access_token;
-    console.log("[E2B] Calling POST /api/e2b/create with projectId:", projectId);
-    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/e2b/create`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ projectId, files }),
-    })
-      .then(r => r.ok ? r.json() : Promise.reject({ status: r.status, message: `HTTP ${r.status}` }))
-      .then((result: { sandboxUrl?: string; url?: string }) => {
-        const url = result.sandboxUrl ?? result.url ?? "";
-        console.log("[E2B] Sandbox created:", url || "(no url in response)");
-        if (url) {
-          setE2bSandboxUrl(url);
-          setE2bExpiry(Date.now() + 30 * 60 * 1000);
-          setActiveTab("preview");
-        }
-        setE2bLoading(false);
-      })
-      .catch((err: unknown) => {
-        const e = err as { message?: string; status?: number };
-        console.log("[E2B] Sandbox creation FAILED:", e.message ?? String(err), "status:", e.status);
-        setE2bLoading(false);
-        // Keep isFullstack=true — fullstack apps never fall back to Sandpack.
-        setE2bError(`Sandbox creation failed (${e.message ?? String(err)})`);
-      });
-  }, [projectId]);
-
-  // Retry: reset guard + error state, then re-boot with last known files.
-  const handleE2BRetry = useCallback(() => {
-    setE2bError(null);
-    setE2bSandboxUrl(null);
-    setE2bExpiry(null);
-    setE2bLoading(false);
-    e2bStartedRef.current = false;
-    startE2B(filesRef.current);
-  }, [startE2B]);
 
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
@@ -314,9 +255,8 @@ function WorkspacePage() {
           text: `Here's your app! I generated ${count > 0 ? count : "your"} files. You can see the preview on the right, or click Code to explore the files.`,
         }),
       ]);
-      // Fallback detection: if build:backend_ready was never fired but files contain
-      // backend paths, boot E2B now. startE2B is a no-op if already started.
-      if (hasBackendFiles(mergedFiles)) startE2B(mergedFiles);
+      // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
+      if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
@@ -329,34 +269,12 @@ function WorkspacePage() {
       ]);
     });
 
-    socket.on("build:backend_ready", (data: { files?: Record<string, string> }) => {
-      console.log("[FRONTEND] build:backend_ready received:", Object.keys(data.files ?? {}));
-      startE2B(data.files ?? filesRef.current);
-    });
-
-    socket.on("build:e2b_ready", (data: { sandboxUrl?: string; url?: string }) => {
-      console.log("[FRONTEND] build:e2b_ready received:", data);
-      const url = data.sandboxUrl ?? data.url ?? "";
-      if (!url) return;
-      setE2bSandboxUrl(url);
-      setE2bExpiry(Date.now() + 30 * 60 * 1000);
-      setE2bLoading(false);
+    socket.on("build:backend_ready", () => {
+      console.log("[FRONTEND] build:backend_ready received — switching to WebContainers");
       setIsFullstack(true);
       setActiveTab("preview");
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({ type: "text", text: "Your live preview is ready!" }),
-      ]);
     });
-
-    socket.on("build:e2b_error", (data?: { message?: string }) => {
-      console.log("[FRONTEND] build:e2b_error received:", data);
-      setE2bLoading(false);
-      setE2bSandboxUrl(null);
-      // Keep isFullstack=true — fullstack apps never fall back to Sandpack.
-      setE2bError(data?.message ?? "Backend preview failed");
-    });
-  }, [startE2B]);
+  }, []);
 
   // 1. Restore from sessionStorage THEN connect socket in one effect so they
   //    never race. If cache exists, skip the "blank slate" setMessages(initial).
@@ -485,20 +403,7 @@ function WorkspacePage() {
     } catch { /* ignore quota errors */ }
   }, [files, messages, buildStatus, activeTab, sessionId]);
 
-  // 3. 60-second E2B boot timeout — show error screen, never fall back to Sandpack.
-  useEffect(() => {
-    if (!e2bLoading) return;
-    const id = setTimeout(() => {
-      console.log("[E2B] Timeout triggered — sandbox did not respond in 60s");
-      setE2bLoading(false);
-      setE2bSandboxUrl(null);
-      // Keep isFullstack=true — fullstack apps show E2BErrorScreen, not Sandpack.
-      setE2bError("Sandbox did not respond within 60 seconds. Check E2B setup or deploy your app.");
-    }, 60_000);
-    return () => clearTimeout(id);
-  }, [e2bLoading]);
-
-  // 4. Reconnect the socket when the user returns to this tab mid-build.
+  // 3. Reconnect the socket when the user returns to this tab mid-build.
   useEffect(() => {
     const handleVisibility = () => {
       if (
@@ -524,13 +429,9 @@ function WorkspacePage() {
     setBuildStatus("running");
     setCurrentAgent(undefined);
     completedRef.current = false;
-    e2bStartedRef.current = false;
     filesRef.current = {};
-    setE2bSandboxUrl(null);
-    setE2bExpiry(null);
-    setE2bLoading(false);
-    setE2bError(null);
     setIsFullstack(false);
+    setWcKey(k => k + 1);
 
     let newSessionId: string;
     try {
@@ -553,7 +454,7 @@ function WorkspacePage() {
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers, startE2B]);
+  }, [projectId, registerHandlers]);
 
   const toggleChat = useCallback(() => {
     if (chatPanelRef.current?.isCollapsed()) {
@@ -567,26 +468,9 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  // Log the hard-switch decision whenever key state changes.
-  useEffect(() => {
-    if (buildStatus !== "complete" && !isFullstack) return;
-    console.log(
-      "[FRONTEND] Rendering:", isFullstack ? "E2B" : "Sandpack",
-      "| isFullstack:", isFullstack,
-      "| e2bLoading:", e2bLoading,
-      "| e2bSandboxUrl:", e2bSandboxUrl,
-      "| e2bError:", e2bError,
-      "| files:", Object.keys(files).length,
-    );
-  }, [buildStatus, isFullstack, e2bLoading, e2bSandboxUrl, e2bError, files]);
-
-  // Derived debug state for the overlay panel.
-  const e2bDebugStatus =
-    e2bLoading    ? "loading"          :
-    e2bSandboxUrl ? "ready"            :
-    e2bError      ? "error"            :
-    isFullstack   ? "fullstack-no-url" :
-    buildStatus === "complete" ? "sandpack" : "idle";
+  const wcDebugStatus =
+    isFullstack && buildStatus === "complete" ? "webcontainer" :
+    buildStatus === "complete"                ? "sandpack"     : "idle";
 
   return (
     <RequireAuth>
@@ -606,7 +490,6 @@ function WorkspacePage() {
           onToggleChat={toggleChat}
           showHistory={showHistory}
           onToggleHistory={() => setShowHistory(v => !v)}
-          e2bSandboxUrl={e2bSandboxUrl}
         />
 
         <Group
@@ -660,30 +543,22 @@ function WorkspacePage() {
           {/* Right: preview / code — takes remaining space */}
           <Panel defaultSize={75} minSize={30}>
             <div className="relative flex min-h-0 h-full bg-[#080808]">
-              {/* ── E2B debug overlay ── */}
-              <div className="absolute bottom-4 right-4 z-50 max-w-[300px] rounded-xl border border-white/[0.10] bg-black/85 p-3 backdrop-blur-sm font-mono text-[11px] text-white/70 space-y-1 pointer-events-none">
-                <p className="font-sans text-[10px] font-semibold uppercase tracking-widest text-white/40 mb-1.5">E2B Debug</p>
+              {/* ── Preview debug overlay ── */}
+              <div className="absolute bottom-4 right-4 z-50 max-w-[240px] rounded-xl border border-white/[0.10] bg-black/85 p-3 backdrop-blur-sm font-mono text-[11px] text-white/70 space-y-1 pointer-events-none">
+                <p className="font-sans text-[10px] font-semibold uppercase tracking-widest text-white/40 mb-1.5">Preview Debug</p>
                 <div className="flex gap-2">
-                  <span className="text-white/35 shrink-0">Status:</span>
+                  <span className="text-white/35 shrink-0">Mode:</span>
                   <span className={cn(
                     "font-medium",
-                    e2bDebugStatus === "ready"    && "text-emerald-400",
-                    e2bDebugStatus === "loading"  && "text-yellow-400",
-                    e2bDebugStatus === "sandpack" && "text-blue-400",
-                    e2bDebugStatus === "error"    && "text-red-400",
-                    !["ready","loading","sandpack","error"].includes(e2bDebugStatus) && "text-white/60",
-                  )}>{e2bDebugStatus}</span>
+                    wcDebugStatus === "webcontainer" && "text-violet-400",
+                    wcDebugStatus === "sandpack"     && "text-blue-400",
+                    wcDebugStatus === "idle"         && "text-white/40",
+                  )}>{wcDebugStatus}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-white/35 shrink-0">Files:</span>
                   <span>{Object.keys(files).length}</span>
                 </div>
-                {e2bError && (
-                  <div className="flex gap-2">
-                    <span className="text-white/35 shrink-0 mt-px">Error:</span>
-                    <span className="text-red-400/90 break-words">{e2bError}</span>
-                  </div>
-                )}
               </div>
               {activeTab === "code" && (
                 <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
@@ -707,20 +582,12 @@ function WorkspacePage() {
               {activeTab === "preview" && (
                 <div key={reloadKey} className="h-full w-full bg-[#080808]">
                   {isFullstack ? (
-                    e2bError ? (
-                      <E2BErrorScreen
-                        error={e2bError}
-                        files={files}
-                        onRetry={handleE2BRetry}
-                      />
-                    ) : (
-                      <E2BPreview
-                        sandboxUrl={e2bSandboxUrl}
-                        expiryMs={e2bExpiry}
-                        loading={e2bLoading}
-                        device={device}
-                      />
-                    )
+                    <WebContainerPreview
+                      key={wcKey}
+                      files={files}
+                      onRetry={() => setWcKey(k => k + 1)}
+                      device={device}
+                    />
                   ) : (
                     <SandpackPreview
                       files={buildStatus === "complete" ? files : {}}
@@ -741,199 +608,13 @@ function WorkspacePage() {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
-/*  E2B Error Screen                                                             */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
-function E2BErrorScreen({
-  error, files, onRetry,
-}: {
-  error: string;
-  files: Record<string, string>;
-  onRetry: () => void;
-}) {
-  const handleDownload = () => {
-    const entries = Object.entries(files);
-    if (entries.length === 0) { toast("No files to download"); return; }
-    const blob = new Blob(
-      [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
-      { type: "text/plain" },
-    );
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob),
-      download: "codebase.txt",
-    });
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast.success("Codebase downloaded");
-  };
-
-  return (
-    <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
-      <div className="w-full max-w-md space-y-4">
-        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.05] p-5">
-          <p className="text-base font-semibold text-yellow-400">⚠️ Could not start live preview</p>
-          <p className="mt-2 font-mono text-xs text-white/40 break-words">Error: {error}</p>
-          <p className="mt-3 text-xs leading-relaxed text-white/50">
-            Your code is ready. Download and deploy to see the full app.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              onClick={onRetry}
-              className="flex items-center gap-1.5 rounded-lg border border-white/[0.12] px-4 py-2 text-xs text-white/70 transition hover:bg-white/[0.06]"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-              Retry Preview
-            </button>
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download Codebase
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  E2B Live Preview                                                             */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
-const E2B_STEPS = [
-  "Uploading files",
-  "Installing dependencies",
-  "Starting server",
-] as const;
-
-function E2BPreview({
-  sandboxUrl, expiryMs, loading, device,
-}: {
-  sandboxUrl: string | null;
-  expiryMs: number | null;
-  loading: boolean;
-  device: Device;
-}) {
-  const [timeLeft,  setTimeLeft]  = useState("");
-  const [elapsedS,  setElapsedS]  = useState(0);
-
-  useEffect(() => {
-    if (!expiryMs) return;
-    const tick = () => {
-      const diff = expiryMs - Date.now();
-      if (diff <= 0) { setTimeLeft("Expired"); return; }
-      const m = Math.floor(diff / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(`${m}:${String(s).padStart(2, "0")}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [expiryMs]);
-
-  // Track elapsed seconds while loading for the progress steps.
-  useEffect(() => {
-    if (!loading) { setElapsedS(0); return; }
-    const id = setInterval(() => setElapsedS(s => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [loading]);
-
-  const currentStep = elapsedS < 10 ? 0 : elapsedS < 35 ? 1 : 2;
-
-  const mobile = device === "mobile";
-  const tablet = device === "tablet";
-
-  return (
-    <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
-      <div className="flex h-full justify-center">
-        <div
-          style={{
-            width: "100%",
-            height: "100%",
-            maxWidth: mobile ? 420 : tablet ? 768 : "none",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.08)",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          {/* Toolbar strip — only when sandbox is live */}
-          {sandboxUrl && (
-            <div className="shrink-0 flex items-center gap-2 border-b border-white/[0.08] bg-[#0d0d0d] px-3 py-1.5">
-              {timeLeft && (
-                <span className="font-mono text-[11px] text-white/35">
-                  Preview expires in {timeLeft}
-                </span>
-              )}
-              <div className="flex-1" />
-              <button
-                onClick={() => window.open(sandboxUrl, "_blank", "noopener,noreferrer")}
-                className="flex items-center gap-1.5 rounded-md border border-white/[0.10] px-2.5 py-1 text-xs text-white/70 transition hover:bg-white/[0.06]"
-              >
-                <ExternalLink className="h-3 w-3" />
-                Open in New Tab
-              </button>
-            </div>
-          )}
-
-          {/* Content — URL takes priority over loading spinner to handle races */}
-          {sandboxUrl ? (
-            <iframe
-              src={sandboxUrl}
-              title="E2B Live Preview"
-              style={{ flex: 1, width: "100%", height: "100%", border: "none", display: "block" }}
-              allow="cross-origin-isolated; clipboard-write; clipboard-read"
-            />
-          ) : loading ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
-                <Zap className="h-5 w-5 animate-pulse text-orange-400" />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-medium text-white/60">Booting sandbox…</p>
-                <p className="text-xs text-white/30 mt-0.5">This takes 30–60 seconds</p>
-              </div>
-              {/* Progress steps */}
-              <div className="space-y-2 mt-1">
-                {E2B_STEPS.map((step, i) => (
-                  <div
-                    key={step}
-                    className={cn(
-                      "flex items-center gap-2 text-xs transition-colors",
-                      i < currentStep  ? "text-emerald-400"  :
-                      i === currentStep ? "text-white/60"     : "text-white/20",
-                    )}
-                  >
-                    {i < currentStep ? (
-                      <Check className="h-3 w-3 shrink-0" />
-                    ) : i === currentStep ? (
-                      <div className="h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" />
-                    ) : (
-                      <div className="h-3 w-3 shrink-0 rounded-full border border-current opacity-40" />
-                    )}
-                    {step}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Top Bar                                                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
   buildStatus, onReload, files, chatCollapsed, onToggleChat,
-  showHistory, onToggleHistory, e2bSandboxUrl,
+  showHistory, onToggleHistory,
 }: {
   projectId: string;
   projectName: string;
@@ -948,7 +629,6 @@ function WorkspaceTopBar({
   onToggleChat: () => void;
   showHistory: boolean;
   onToggleHistory: () => void;
-  e2bSandboxUrl?: string | null;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -1071,11 +751,7 @@ function WorkspaceTopBar({
               className="ws-iconbtn"
               title="Open preview in new tab"
               onClick={() => {
-                if (e2bSandboxUrl) {
-                  window.open(e2bSandboxUrl, "_blank", "noopener,noreferrer");
-                  return;
-                }
-                const iframe = document.querySelector('iframe[title="Sandbox Preview"]') as HTMLIFrameElement | null;
+                const iframe = document.querySelector('iframe[title="WebContainer Preview"], iframe[title="Sandbox Preview"]') as HTMLIFrameElement | null;
                 const url = iframe?.src;
                 if (url && !url.includes("about:blank")) {
                   window.open(url, "_blank", "noopener,noreferrer");

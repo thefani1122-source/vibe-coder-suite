@@ -15,6 +15,31 @@ function isSupportedBrowser(): boolean {
   return /Chrome\/|Edg\/|Chromium\//.test(ua) && !/Safari\/[0-9]/.test(ua.replace(/Chrome\/[0-9]+/, "").replace(/Edg\/[0-9]+/, ""))
 }
 
+// ─── Framework detection ──────────────────────────────────────────────────────
+
+type Framework = "next" | "vue" | "react"
+
+function detectFramework(files: Record<string, string>): Framework {
+  const pkgRaw = files["package.json"] ?? files["/package.json"]
+  if (pkgRaw) {
+    try {
+      const deps = {
+        ...(JSON.parse(pkgRaw).dependencies ?? {}),
+        ...(JSON.parse(pkgRaw).devDependencies ?? {}),
+      }
+      if ("next" in deps) return "next"
+      if ("vue" in deps) return "vue"
+    } catch { /* fall through */ }
+  }
+  return "react"
+}
+
+const FRAMEWORK_LABEL: Record<Framework, string> = {
+  next:  "Next.js",
+  vue:   "Vue + Vite",
+  react: "React + Vite",
+}
+
 // ─── File tree conversion ─────────────────────────────────────────────────────
 
 function toFileTree(files: Record<string, string>): FileSystemTree {
@@ -236,7 +261,7 @@ function ErrorScreen({
 
 // ─── Loading panel ────────────────────────────────────────────────────────────
 
-function LoadingPanel({ stage, logLines }: { stage: Stage; logLines: string[] }) {
+function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: string[]; framework: Framework }) {
   const logRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -253,7 +278,9 @@ function LoadingPanel({ stage, logLines }: { stage: Stage; logLines: string[] })
 
       <div className="text-center">
         <p className="text-sm font-medium text-white/60">{WC_STAGES[stage]}</p>
-        <p className="mt-0.5 text-xs text-white/30">This takes 30–90 seconds</p>
+        <p className="mt-0.5 text-xs text-white/30">
+          {FRAMEWORK_LABEL[framework]} · This takes 30–90 seconds
+        </p>
       </div>
 
       {/* Stage indicators */}
@@ -318,6 +345,8 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
   const [stage, setStage]           = useState<Stage>(0)
   const [error, setError]           = useState<string | null>(null)
   const [logLines, setLogLines]     = useState<string[]>([])
+
+  const framework = detectFramework(files)
 
   const appendLog = useCallback((line: string) => {
     setLogLines(prev => [...prev, line])
@@ -434,7 +463,7 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
               allow="cross-origin-isolated; clipboard-write; clipboard-read"
             />
           ) : (
-            <LoadingPanel stage={stage} logLines={logLines} />
+            <LoadingPanel stage={stage} logLines={logLines} framework={framework} />
           )}
         </div>
       </div>

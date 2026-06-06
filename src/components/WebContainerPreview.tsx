@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { WebContainer } from "@webcontainer/api"
 import type { FileSystemTree } from "@webcontainer/api"
 import { cn } from "@/lib/utils"
-import { ExternalLink, RotateCw } from "lucide-react"
+import { Check, ExternalLink, RotateCw } from "lucide-react"
 import { SandpackPreview } from "@/components/SandpackPreview"
 
 // ─── Browser support detection ────────────────────────────────────────────────
@@ -190,8 +190,6 @@ function SandpackFallback({
 
 // ─── Loading panel ────────────────────────────────────────────────────────────
 
-import { Check } from "lucide-react"
-
 function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: string[]; framework: Framework }) {
   const logRef = useRef<HTMLDivElement>(null)
 
@@ -252,7 +250,7 @@ function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: 
   )
 }
 
-// ─── Inner WebContainer hook ──────────────────────────────────────────────────
+// ─── WebContainer singleton ───────────────────────────────────────────────────
 
 let globalWC: WebContainer | null = null
 
@@ -279,6 +277,11 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
 
   const framework = detectFramework(files)
 
+  // bootedRef: true once dev server is live and accepting HMR updates
+  const bootedRef    = useRef(false)
+  // prevFilesRef: snapshot of files after the last successful mount/sync
+  const prevFilesRef = useRef<Record<string, string> | null>(null)
+
   // Debug logging — emitted once on mount so devtools always show exact values
   useEffect(() => {
     console.log("[WebContainerPreview]", {
@@ -292,11 +295,15 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     setLogLines(prev => [...prev, line])
   }, [])
 
+  // ── Boot effect ─────────────────────────────────────────────────────────────
+  // Runs ONCE per component lifetime (key-based retry resets everything).
+  // Does NOT include `files` in deps — initial files are captured at mount time.
+  // Follow-up file changes are handled by the sync effect below.
   useEffect(() => {
     let cancelled = false
 
     async function run() {
-      // WebContainers require cross-origin isolation (COOP/COEP headers).
+      // WebContainers require cross-origin isolation (COOP + COEP headers).
       if (!window.crossOriginIsolated) return
 
       try {
@@ -309,6 +316,9 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
         await wc.mount(toFileTree(prepared))
         if (cancelled) return
         appendLog(`Mounted ${Object.keys(prepared).length} files`)
+
+        // Snapshot the mounted files so the sync effect can diff against them
+        prevFilesRef.current = prepared
 
         setStage(1)
         appendLog("Running npm install…")
@@ -331,6 +341,9 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
           if (!cancelled) {
             appendLog(`Server ready at ${url}`)
             setPreviewUrl(url)
+            // Gate the sync effect: only start syncing after the dev server
+            // is live so Vite's file watcher is ready to receive HMR events.
+            bootedRef.current = true
           }
         })
       } catch (err) {
@@ -347,9 +360,69 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
 
     run()
     return () => { cancelled = true }
+  }, [appendLog]) // intentionally omits `files` — boot runs once, sync handles updates
+
+  // ── File sync effect ────────────────────────────────────────────────────────
+  // Runs whenever `files` prop changes AFTER the dev server is live.
+  // Writes only changed/new files via wc.fs.writeFile — this triggers Vite HMR
+  // automatically without restarting npm install or the dev server.
+  useEffect(() => {
+    // Skip until dev server is ready and accepting HMR updates
+    if (!bootedRef.current || !globalWC) return
+
+    const wc = globalWC
+    const prev = prevFilesRef.current ?? {}
+    const current = ensureViteSetup(files)
+
+    // Compute diff: what changed, what was added, what was deleted
+    const toWrite: string[] = []
+    const toRemove: string[] = []
+
+    for (const rawPath of Object.keys(current)) {
+      if (prev[rawPath] !== current[rawPath]) toWrite.push(rawPath)
+    }
+    for (const rawPath of Object.keys(prev)) {
+      if (!(rawPath in current)) toRemove.push(rawPath)
+    }
+
+    if (toWrite.length === 0 && toRemove.length === 0) return
+
+    async function syncFiles() {
+      for (const rawPath of toWrite) {
+        const normalPath = rawPath.replace(/^\/+/, "")
+        // Ensure parent directory exists before writing
+        const parts = normalPath.split("/")
+        if (parts.length > 1) {
+          const dir = parts.slice(0, -1).join("/")
+          try { await wc.fs.mkdir(dir, { recursive: true }) } catch { /* already exists */ }
+        }
+        try {
+          await wc.fs.writeFile(normalPath, current[rawPath], { encoding: "utf-8" })
+          appendLog(`Synced: ${normalPath}`)
+        } catch (err) {
+          console.error(`[WebContainerPreview] writeFile failed: ${normalPath}`, err)
+        }
+      }
+
+      for (const rawPath of toRemove) {
+        const normalPath = rawPath.replace(/^\/+/, "")
+        try {
+          await wc.fs.rm(normalPath)
+          appendLog(`Removed: ${normalPath}`)
+        } catch (err) {
+          console.error(`[WebContainerPreview] rm failed: ${normalPath}`, err)
+        }
+      }
+
+      prevFilesRef.current = current
+    }
+
+    syncFiles()
   }, [files, appendLog])
 
-  // Non-Chromium browser (Safari / Firefox) — WC not supported, use Sandpack
+  // ── Render-time guards (ordered: browser → isolation → error → live) ─────────
+
+  // Non-Chromium browser — WC not supported, fall back to Sandpack
   if (!isChromiumBrowser()) {
     return (
       <SandpackFallback
@@ -361,19 +434,19 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     )
   }
 
-  // crossOriginIsolated=false means WC cannot boot — fall back to Sandpack
+  // Chrome/Edge but COOP/COEP not applied — WC cannot boot, fall back to Sandpack
   if (!window.crossOriginIsolated) {
     return (
       <SandpackFallback
         files={files}
         device={device}
-        notice="Frontend-only preview — fullstack live preview requires a Chromium browser with cross-origin isolation"
+        notice="Frontend-only preview — fullstack live preview requires cross-origin isolation"
         onRetryWC={onRetry}
       />
     )
   }
 
-  // WC boot/runtime error — use Sandpack
+  // WC runtime error — fall back to Sandpack
   if (wcError) {
     return (
       <SandpackFallback

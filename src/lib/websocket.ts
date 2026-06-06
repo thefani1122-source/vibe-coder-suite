@@ -1,16 +1,24 @@
 import { io, Socket } from "socket.io-client";
-import { useAuthStore } from "@/lib/auth";
+import { getAccessToken } from "@/lib/auth";
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? "";
+const BACKEND_URL =
+  (import.meta.env.VITE_BACKEND_URL as string | undefined) ??
+  (import.meta.env.VITE_API_URL as string | undefined) ??
+  (import.meta.env.VITE_WS_URL as string | undefined) ??
+  "";
+
+// Legacy WS_URL export kept for logging
+export const WS_URL = BACKEND_URL;
+
+// ─── Global singleton (used by PlanInterview and other non-build flows) ────────
 
 let socket: Socket | null = null;
 
-/** Returns the singleton socket, creating + connecting it on first call. */
 export function getSocket(): Socket {
   if (socket) return socket;
-  socket = io(WS_URL, {
+  socket = io(BACKEND_URL, {
     autoConnect: false,
-    transports: ["websocket"],
+    transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
@@ -25,38 +33,74 @@ export function getSocket(): Socket {
   return socket;
 }
 
-/** Idempotent connect with the current auth token attached. */
 export function connectSocket(): Socket {
   const s = getSocket();
   if (!s.connected) s.connect();
   return s;
 }
 
-/** Disconnect without destroying the singleton (so listeners survive). */
 export function disconnectSocket(): void {
   if (socket?.connected) socket.disconnect();
 }
 
 export { socket };
 
+// ─── Per-session build socket ──────────────────────────────────────────────────
+
 /**
- * Creates a per-session Socket.IO connection for a build session.
- * Unlike the singleton getSocket(), each call returns a new socket so
- * multiple workspace tabs can coexist without sharing state.
+ * Creates a dedicated Socket.IO socket for a single build session.
+ * Connects to the /build namespace with sessionId in the handshake query
+ * so the backend can immediately route to the right room without waiting
+ * for a join event.
+ *
+ * The caller is responsible for calling socket.disconnect() on cleanup.
  */
-export function createBuildSocket(sessionId: string): Socket {
-  const token = useAuthStore.getState().session?.access_token ?? "";
-  const s = io(WS_URL, {
-    autoConnect: true,
-    transports: ["websocket"],
+export function createBuildSocket(sessionId: string | undefined): Socket {
+  const base = BACKEND_URL;
+  console.log("[WS] createBuildSocket — base:", base || "(empty — check VITE_BACKEND_URL)", "sessionId:", sessionId);
+
+  // Connect to the DEFAULT namespace (the backend exposes /socket.io/ only —
+  // there is no /build namespace). Pass the Supabase JWT via the standard
+  // `auth` handshake field so the backend's auth middleware accepts it; also
+  // mirror in query for backends that read it there.
+  const socket = io(base, {
+    path: "/socket.io",
+    query: { sessionId: sessionId ?? "" },
+    transports: ["websocket", "polling"],
     reconnection: true,
-    reconnectionAttempts: 10,
+    reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     withCredentials: true,
-    auth: { token },
-    extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-    query: sessionId ? { sessionId } : {},
+    autoConnect: false,
   });
-  return s;
+
+  socket.on("connect_error", (err) => {
+    console.error("[Socket] Connection failed:", err.message);
+    window.dispatchEvent(
+      new CustomEvent("socket:connection_failed", { detail: { message: err.message } }),
+    );
+  });
+
+  socket.on("disconnect", (reason) => {
+    if (reason === "io server disconnect") {
+      // Server forcefully disconnected — likely an auth/session issue.
+      console.warn("[Socket] Server disconnected:", reason);
+    }
+  });
+
+  // Resolve the token, attach it, then connect.
+  void getAccessToken().then((token) => {
+    if (token) {
+      socket.auth = { token, sessionId: sessionId ?? "" };
+      // Some backends look at extraHeaders for HTTP-style Bearer.
+      // (Ignored on websocket transport in browsers — harmless on polling.)
+      (socket.io.opts as { extraHeaders?: Record<string, string> }).extraHeaders = {
+        Authorization: `Bearer ${token}`,
+      };
+    }
+    socket.connect();
+  });
+
+  return socket;
 }

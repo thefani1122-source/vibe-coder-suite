@@ -18,7 +18,6 @@ import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DocsRouteImport } from './routes/docs'
-import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceProjectIdRouteImport } from './routes/workspace.$projectId'
@@ -70,11 +69,6 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BillingRoute = BillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -104,7 +98,6 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -115,13 +108,12 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -132,14 +124,13 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/billing': typeof BillingRoute
-  '/dashboard': typeof DashboardRoute
   '/docs': typeof DocsRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -150,15 +141,14 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
   '/plan/$sessionId': typeof PlanSessionIdRoute
+  '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -169,13 +159,12 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -186,13 +175,12 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   id:
     | '__root__'
     | '/'
     | '/billing'
-    | '/dashboard'
     | '/docs'
     | '/login'
     | '/mcp'
@@ -203,14 +191,13 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/workspace/$projectId'
     | '/plan/$sessionId'
+    | '/workspace/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BillingRoute: typeof BillingRoute
-  DashboardRoute: typeof DashboardRoute
   DocsRoute: typeof DocsRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
@@ -221,8 +208,8 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UsageRoute: typeof UsageRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
-  WorkspaceProjectIdRoute: typeof WorkspaceProjectIdRoute
   PlanSessionIdRoute: typeof PlanSessionIdRoute
+  WorkspaceProjectIdRoute: typeof WorkspaceProjectIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -290,13 +277,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/billing': {
       id: '/billing'
       path: '/billing'
@@ -338,7 +318,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BillingRoute: BillingRoute,
-  DashboardRoute: DashboardRoute,
   DocsRoute: DocsRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
@@ -349,8 +328,8 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UsageRoute: UsageRoute,
   AuthCallbackRoute: AuthCallbackRoute,
-  WorkspaceProjectIdRoute: WorkspaceProjectIdRoute,
   PlanSessionIdRoute: PlanSessionIdRoute,
+  WorkspaceProjectIdRoute: WorkspaceProjectIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { WebContainer } from "@webcontainer/api"
 import type { FileSystemTree } from "@webcontainer/api"
 import { cn } from "@/lib/utils"
-import { ExternalLink, RotateCw, Download, Check } from "lucide-react"
-import { toast } from "sonner"
+import { ExternalLink, RotateCw } from "lucide-react"
+import { SandpackPreview } from "@/components/SandpackPreview"
 
 // ─── Browser support detection ────────────────────────────────────────────────
 
@@ -155,131 +155,41 @@ const WC_STAGES = [
 
 type Stage = 0 | 1 | 2
 
-// ─── Shared download helper ───────────────────────────────────────────────────
+// ─── Sandpack fallback (shown when WebContainers can't boot) ──────────────────
 
-function downloadCodebase(files: Record<string, string>) {
-  const entries = Object.entries(files)
-  if (entries.length === 0) { toast("No files to download"); return }
-  const blob = new Blob(
-    [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
-    { type: "text/plain" },
-  )
-  const a = Object.assign(document.createElement("a"), {
-    href: URL.createObjectURL(blob),
-    download: "codebase.txt",
-  })
-  a.click()
-  URL.revokeObjectURL(a.href)
-  toast.success("Codebase downloaded")
-}
-
-// ─── Wrong browser (Safari / Firefox) ────────────────────────────────────────
-
-function UnsupportedScreen({ files }: { files: Record<string, string> }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
-      <div className="w-full max-w-md">
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-5">
-          <p className="text-base font-semibold text-amber-400">Browser not supported</p>
-          <p className="mt-2 text-xs leading-relaxed text-white/50">
-            Live fullstack preview requires Chrome or Edge (Chromium-based).
-            Safari and Firefox do not support the required APIs.
-          </p>
-          <p className="mt-2 text-xs text-white/40">
-            Open in Chrome to see the live preview, or download the code now.
-          </p>
-          <div className="mt-5">
-            <button
-              onClick={() => downloadCodebase(files)}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download Codebase
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Missing COOP/COEP headers (Chrome but not cross-origin isolated) ─────────
-
-function HeadersMissingScreen({ files }: { files: Record<string, string> }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
-      <div className="w-full max-w-md space-y-3">
-        <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.05] p-5">
-          <p className="text-base font-semibold text-orange-400">Preview Security Headers Missing</p>
-          <p className="mt-2 text-xs leading-relaxed text-white/60">
-            Your browser is supported, but the server is not sending the required
-            security headers for WebContainers to run.
-          </p>
-          <div className="mt-3 rounded-lg border border-white/[0.07] bg-black/30 px-3 py-2 font-mono text-[11px] text-white/40 space-y-1">
-            <div><span className="text-white/25">Required: </span>Cross-Origin-Opener-Policy: same-origin</div>
-            <div><span className="text-white/25">Required: </span>Cross-Origin-Embedder-Policy: require-corp</div>
-            <div className="pt-1"><span className="text-white/25">Detected: </span><span className="text-red-400/80">window.crossOriginIsolated = false</span></div>
-          </div>
-          <p className="mt-3 text-xs text-white/40">
-            Add these headers to <span className="font-mono text-white/60">vercel.json</span> under{" "}
-            <span className="font-mono text-white/60">headers</span>.
-          </p>
-          <div className="mt-4">
-            <button
-              onClick={() => downloadCodebase(files)}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download Codebase
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Error screen ─────────────────────────────────────────────────────────────
-
-function ErrorScreen({
-  error, files, onRetry,
+function SandpackFallback({
+  files,
+  device,
+  notice,
+  onRetryWC,
 }: {
-  error: string
   files: Record<string, string>
-  onRetry: () => void
+  device: "desktop" | "mobile" | "tablet"
+  notice: string
+  onRetryWC: () => void
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
-      <div className="w-full max-w-md space-y-4">
-        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/[0.05] p-5">
-          <p className="text-base font-semibold text-yellow-400">Could not start live preview</p>
-          <p className="mt-2 font-mono text-xs text-white/40 break-words">{error}</p>
-          <p className="mt-3 text-xs leading-relaxed text-white/50">
-            Your code is ready. Download and deploy to see the full app.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              onClick={onRetry}
-              className="flex items-center gap-1.5 rounded-lg border border-white/[0.12] px-4 py-2 text-xs text-white/70 transition hover:bg-white/[0.06]"
-            >
-              <RotateCw className="h-3.5 w-3.5" />
-              Retry Preview
-            </button>
-            <button
-              onClick={() => downloadCodebase(files)}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download Codebase
-            </button>
-          </div>
-        </div>
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 flex items-center justify-between gap-3 border-b border-amber-500/20 bg-amber-500/[0.05] px-3 py-1.5">
+        <span className="text-xs text-amber-400/80 truncate">{notice}</span>
+        <button
+          onClick={onRetryWC}
+          className="shrink-0 flex items-center gap-1 rounded border border-amber-500/30 px-2.5 py-0.5 text-xs text-amber-400/70 transition hover:bg-amber-500/10"
+        >
+          <RotateCw className="h-3 w-3" />
+          Retry live
+        </button>
+      </div>
+      <div className="flex-1 min-h-0">
+        <SandpackPreview files={files} isBuilding={false} externalDevice={device} className="h-full w-full" />
       </div>
     </div>
   )
 }
 
 // ─── Loading panel ────────────────────────────────────────────────────────────
+
+import { Check } from "lucide-react"
 
 function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: string[]; framework: Framework }) {
   const logRef = useRef<HTMLDivElement>(null)
@@ -363,10 +273,19 @@ interface WebContainerPreviewProps {
 export function WebContainerPreview({ files, onRetry, device = "desktop", className }: WebContainerPreviewProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [stage, setStage]           = useState<Stage>(0)
-  const [error, setError]           = useState<string | null>(null)
+  const [wcError, setWcError]       = useState<string | null>(null)
   const [logLines, setLogLines]     = useState<string[]>([])
 
   const framework = detectFramework(files)
+
+  // Debug logging — emitted once on mount so devtools always show exact values
+  useEffect(() => {
+    console.log("[WebContainerPreview]", {
+      crossOriginIsolated: window.crossOriginIsolated,
+      userAgent: navigator.userAgent,
+      isChromium: isChromiumBrowser(),
+    })
+  }, [])
 
   const appendLog = useCallback((line: string) => {
     setLogLines(prev => [...prev, line])
@@ -374,28 +293,22 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
 
   useEffect(() => {
     let cancelled = false
-    let wc: WebContainer | null = null
 
     async function run() {
-      // Guard: WebContainers require cross-origin isolation (COOP/COEP headers).
-      // Check this before attempting boot so we never get a cryptic engine error.
+      // WebContainers require cross-origin isolation (COOP/COEP headers).
       if (!window.crossOriginIsolated) return
 
       try {
-        // Stage 0: boot
         setStage(0)
         appendLog("Booting WebContainer…")
-        wc = await getOrBootWC()
+        const wc = await getOrBootWC()
         if (cancelled) return
 
-        // Mount all files
         const prepared = ensureViteSetup(files)
-        const tree = toFileTree(prepared)
-        await wc.mount(tree)
+        await wc.mount(toFileTree(prepared))
         if (cancelled) return
         appendLog(`Mounted ${Object.keys(prepared).length} files`)
 
-        // Stage 1: npm install
         setStage(1)
         appendLog("Running npm install…")
         const install = await wc.spawn("npm", ["install"])
@@ -406,7 +319,6 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
         if (cancelled) return
         if (installCode !== 0) throw new Error(`npm install exited with code ${installCode}`)
 
-        // Stage 2: dev server
         setStage(2)
         appendLog("Starting dev server…")
         const dev = await wc.spawn("npm", ["run", "dev"])
@@ -414,7 +326,6 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
           new WritableStream({ write(data) { if (!cancelled) appendLog(data.trimEnd()) } })
         )
 
-        // Wait for server-ready
         wc.on("server-ready", (_port, url) => {
           if (!cancelled) {
             appendLog(`Server ready at ${url}`)
@@ -424,31 +335,53 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
       } catch (err) {
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err)
-          setError(msg)
+          console.error("[WebContainerPreview] boot failed:", msg, {
+            crossOriginIsolated: window.crossOriginIsolated,
+          })
+          setWcError(msg)
           appendLog(`Error: ${msg}`)
         }
       }
     }
 
     run()
-
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [files, appendLog])
 
-  // Wrong browser (Safari / Firefox)
+  // Non-Chromium browser (Safari / Firefox) — WC not supported, use Sandpack
   if (!isChromiumBrowser()) {
-    return <UnsupportedScreen files={files} />
+    return (
+      <SandpackFallback
+        files={files}
+        device={device}
+        notice="Live preview requires Chrome or Edge — showing frontend-only preview"
+        onRetryWC={onRetry}
+      />
+    )
   }
 
-  // Chrome/Edge but COOP/COEP headers not set — WebContainers cannot boot
+  // Chrome/Edge but COOP/COEP headers missing — WC cannot boot, use Sandpack
   if (!window.crossOriginIsolated) {
-    return <HeadersMissingScreen files={files} />
+    return (
+      <SandpackFallback
+        files={files}
+        device={device}
+        notice="Security headers missing (COOP/COEP) — showing frontend-only preview"
+        onRetryWC={onRetry}
+      />
+    )
   }
 
-  if (error) {
-    return <ErrorScreen error={error} files={files} onRetry={onRetry} />
+  // WC boot/runtime error — use Sandpack
+  if (wcError) {
+    return (
+      <SandpackFallback
+        files={files}
+        device={device}
+        notice={`WebContainer error: ${wcError} — showing frontend-only preview`}
+        onRetryWC={onRetry}
+      />
+    )
   }
 
   const mobile = device === "mobile"

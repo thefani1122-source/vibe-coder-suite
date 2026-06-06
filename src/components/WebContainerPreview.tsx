@@ -9,8 +9,9 @@ import { SandpackPreview } from "@/components/SandpackPreview"
 
 function isChromiumBrowser(): boolean {
   const ua = navigator.userAgent
-  return /Chrome\/|Edg\/|Chromium\//.test(ua) &&
-    !/Safari\/[0-9]/.test(ua.replace(/Chrome\/[0-9]+/, "").replace(/Edg\/[0-9]+/, ""))
+  // Chrome/Edge/Chromium all contain 'Chrome/N' in their UA.
+  // Real Safari only has 'Safari/N' (no 'Chrome/'). Firefox has neither.
+  return /Chrome\/\d/.test(ua) || /Chromium\/\d/.test(ua)
 }
 
 // ─── Framework detection ──────────────────────────────────────────────────────
@@ -360,13 +361,13 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     )
   }
 
-  // Chrome/Edge but COOP/COEP headers missing — WC cannot boot, use Sandpack
+  // crossOriginIsolated=false means WC cannot boot — fall back to Sandpack
   if (!window.crossOriginIsolated) {
     return (
       <SandpackFallback
         files={files}
         device={device}
-        notice="Security headers missing (COOP/COEP) — showing frontend-only preview"
+        notice="Frontend-only preview — fullstack live preview requires a Chromium browser with cross-origin isolation"
         onRetryWC={onRetry}
       />
     )

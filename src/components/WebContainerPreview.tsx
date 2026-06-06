@@ -7,12 +7,10 @@ import { toast } from "sonner"
 
 // ─── Browser support detection ────────────────────────────────────────────────
 
-function isSupportedBrowser(): boolean {
-  // WebContainers require SharedArrayBuffer (cross-origin isolation) and
-  // only run in Chromium-based browsers (Chrome 89+, Edge 89+).
-  if (typeof SharedArrayBuffer === "undefined") return false
+function isChromiumBrowser(): boolean {
   const ua = navigator.userAgent
-  return /Chrome\/|Edg\/|Chromium\//.test(ua) && !/Safari\/[0-9]/.test(ua.replace(/Chrome\/[0-9]+/, "").replace(/Edg\/[0-9]+/, ""))
+  return /Chrome\/|Edg\/|Chromium\//.test(ua) &&
+    !/Safari\/[0-9]/.test(ua.replace(/Chrome\/[0-9]+/, "").replace(/Edg\/[0-9]+/, ""))
 }
 
 // ─── Framework detection ──────────────────────────────────────────────────────
@@ -157,28 +155,30 @@ const WC_STAGES = [
 
 type Stage = 0 | 1 | 2
 
-// ─── Unsupported browser screen ───────────────────────────────────────────────
+// ─── Shared download helper ───────────────────────────────────────────────────
+
+function downloadCodebase(files: Record<string, string>) {
+  const entries = Object.entries(files)
+  if (entries.length === 0) { toast("No files to download"); return }
+  const blob = new Blob(
+    [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
+    { type: "text/plain" },
+  )
+  const a = Object.assign(document.createElement("a"), {
+    href: URL.createObjectURL(blob),
+    download: "codebase.txt",
+  })
+  a.click()
+  URL.revokeObjectURL(a.href)
+  toast.success("Codebase downloaded")
+}
+
+// ─── Wrong browser (Safari / Firefox) ────────────────────────────────────────
 
 function UnsupportedScreen({ files }: { files: Record<string, string> }) {
-  const handleDownload = () => {
-    const entries = Object.entries(files)
-    if (entries.length === 0) { toast("No files to download"); return }
-    const blob = new Blob(
-      [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
-      { type: "text/plain" },
-    )
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob),
-      download: "codebase.txt",
-    })
-    a.click()
-    URL.revokeObjectURL(a.href)
-    toast.success("Codebase downloaded")
-  }
-
   return (
     <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
-      <div className="w-full max-w-md space-y-4">
+      <div className="w-full max-w-md">
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-5">
           <p className="text-base font-semibold text-amber-400">Browser not supported</p>
           <p className="mt-2 text-xs leading-relaxed text-white/50">
@@ -186,11 +186,47 @@ function UnsupportedScreen({ files }: { files: Record<string, string> }) {
             Safari and Firefox do not support the required APIs.
           </p>
           <p className="mt-2 text-xs text-white/40">
-            Your code is ready — open in Chrome to see the live preview, or download now.
+            Open in Chrome to see the live preview, or download the code now.
           </p>
-          <div className="mt-5 flex gap-2">
+          <div className="mt-5">
             <button
-              onClick={handleDownload}
+              onClick={() => downloadCodebase(files)}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Codebase
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Missing COOP/COEP headers (Chrome but not cross-origin isolated) ─────────
+
+function HeadersMissingScreen({ files }: { files: Record<string, string> }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
+      <div className="w-full max-w-md space-y-3">
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.05] p-5">
+          <p className="text-base font-semibold text-orange-400">Preview Security Headers Missing</p>
+          <p className="mt-2 text-xs leading-relaxed text-white/60">
+            Your browser is supported, but the server is not sending the required
+            security headers for WebContainers to run.
+          </p>
+          <div className="mt-3 rounded-lg border border-white/[0.07] bg-black/30 px-3 py-2 font-mono text-[11px] text-white/40 space-y-1">
+            <div><span className="text-white/25">Required: </span>Cross-Origin-Opener-Policy: same-origin</div>
+            <div><span className="text-white/25">Required: </span>Cross-Origin-Embedder-Policy: require-corp</div>
+            <div className="pt-1"><span className="text-white/25">Detected: </span><span className="text-red-400/80">window.crossOriginIsolated = false</span></div>
+          </div>
+          <p className="mt-3 text-xs text-white/40">
+            Add these headers to <span className="font-mono text-white/60">vercel.json</span> under{" "}
+            <span className="font-mono text-white/60">headers</span>.
+          </p>
+          <div className="mt-4">
+            <button
+              onClick={() => downloadCodebase(files)}
               className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500"
             >
               <Download className="h-3.5 w-3.5" />
@@ -212,22 +248,6 @@ function ErrorScreen({
   files: Record<string, string>
   onRetry: () => void
 }) {
-  const handleDownload = () => {
-    const entries = Object.entries(files)
-    if (entries.length === 0) { toast("No files to download"); return }
-    const blob = new Blob(
-      [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
-      { type: "text/plain" },
-    )
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob),
-      download: "codebase.txt",
-    })
-    a.click()
-    URL.revokeObjectURL(a.href)
-    toast.success("Codebase downloaded")
-  }
-
   return (
     <div className="flex h-full flex-col items-center justify-center bg-[#080808] p-6">
       <div className="w-full max-w-md space-y-4">
@@ -246,7 +266,7 @@ function ErrorScreen({
               Retry Preview
             </button>
             <button
-              onClick={handleDownload}
+              onClick={() => downloadCodebase(files)}
               className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
             >
               <Download className="h-3.5 w-3.5" />
@@ -413,8 +433,14 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     }
   }, [files, appendLog])
 
-  if (!isSupportedBrowser()) {
+  // Wrong browser (Safari / Firefox)
+  if (!isChromiumBrowser()) {
     return <UnsupportedScreen files={files} />
+  }
+
+  // Chrome/Edge but COOP/COEP headers not set — WebContainers cannot boot
+  if (!window.crossOriginIsolated) {
+    return <HeadersMissingScreen files={files} />
   }
 
   if (error) {

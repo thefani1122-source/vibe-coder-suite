@@ -61,8 +61,13 @@ const AGENT_LABELS: Record<string, string> = {
   connection: "Working on it…",
 };
 
-// System messages injected by the backend pipeline — never real AI thinking.
-// Matched against the trimmed text of each build:thinking event.
+// Pipeline status messages emitted by the backend — never real AI thinking.
+// Matched against the trimmed text of each build:thinking event to route them
+// to the activity status chip instead of the chat panel.
+//
+// FRAGILE: These patterns must stay in sync with stream-handler.ts on the backend.
+// TODO: Replace with an { internal: true } flag on the build:thinking event so
+// the frontend doesn't need to pattern-match message content.
 const HARDCODED_PATTERNS: RegExp[] = [
   /^Building:/i,
   /^Starting new build/i,
@@ -105,10 +110,11 @@ function WorkspacePage() {
   const [isFullstack, setIsFullstack] = useState(false);
   const [wcKey,       setWcKey]       = useState(0);
 
-  const socketRef    = useRef<Socket | null>(null);
-  const completedRef = useRef(false);
-  const filesRef     = useRef<Record<string, string>>({});
-  const chatPanelRef   = usePanelRef();
+  const socketRef          = useRef<Socket | null>(null);
+  const completedRef       = useRef(false);
+  const filesRef           = useRef<Record<string, string>>({});
+  const currentSessionIdRef = useRef<string | undefined>(sessionId);
+  const chatPanelRef        = usePanelRef();
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -123,6 +129,28 @@ function WorkspacePage() {
       })
       .catch(() => {});
   }, [projectId]);
+
+  // F3: Show a toast when the build socket fails to connect at all.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ message: string }>).detail;
+      console.error("[Workspace] Socket connection failed:", detail.message);
+      toast.error("Build server connection failed. Check your connection and try again.");
+    };
+    window.addEventListener("socket:connection_failed", handler);
+    return () => window.removeEventListener("socket:connection_failed", handler);
+  }, []);
+
+  // F5: Emit cancel-build to the backend and wait for build:cancelled confirmation.
+  const handleStopBuild = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket?.connected) {
+      toast.error("No active build connection to stop");
+      return;
+    }
+    socket.emit("cancel-build", { sessionId: currentSessionIdRef.current });
+    toast("Stopping build…");
+  }, []);
 
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
@@ -273,6 +301,17 @@ function WorkspacePage() {
       console.log("[FRONTEND] build:backend_ready received — switching to WebContainers");
       setIsFullstack(true);
       setActiveTab("preview");
+    });
+
+    socket.on("build:cancelled", () => {
+      setActivityStatus(null);
+      setBuildStatus("error");
+      setCurrentAgent(undefined);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "Build stopped." }),
+      ]);
+      toast.success("Build stopped");
     });
   }, []);
 
@@ -450,6 +489,7 @@ function WorkspacePage() {
       return;
     }
 
+    currentSessionIdRef.current = newSessionId;
     socketRef.current?.disconnect();
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
@@ -512,6 +552,7 @@ function WorkspacePage() {
                 isBuilding={isBuilding}
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
+                onStop={handleStopBuild}
                 projectName={projectName}
                 activityStatus={activityStatus}
               />
@@ -796,12 +837,13 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend, projectName, activityStatus,
+  messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
   onSend?: (prompt: string) => void;
+  onStop?: () => void;
   projectName?: string;
   activityStatus?: string | null;
 }) {
@@ -895,9 +937,9 @@ function ChatColumn({
               </span>
               {isBuilding ? (
                 <button
-                  className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13]"
+                  className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13] active:bg-red-500/20"
                   title="Stop build"
-                  onClick={() => toast("Stop not yet implemented")}
+                  onClick={onStop}
                 >
                   <Square className="h-3.5 w-3.5" />
                 </button>

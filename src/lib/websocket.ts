@@ -75,6 +75,20 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
     autoConnect: false,
   });
 
+  socket.on("connect_error", (err) => {
+    console.error("[Socket] Connection failed:", err.message);
+    window.dispatchEvent(
+      new CustomEvent("socket:connection_failed", { detail: { message: err.message } }),
+    );
+  });
+
+  socket.on("disconnect", (reason) => {
+    if (reason === "io server disconnect") {
+      // Server forcefully disconnected — likely an auth/session issue.
+      console.warn("[Socket] Server disconnected:", reason);
+    }
+  });
+
   // Resolve the token, attach it, then connect.
   void getAccessToken().then((token) => {
     if (token) {

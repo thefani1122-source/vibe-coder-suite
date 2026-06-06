@@ -377,6 +377,10 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     let wc: WebContainer | null = null
 
     async function run() {
+      // Guard: WebContainers require cross-origin isolation (COOP/COEP headers).
+      // Check this before attempting boot so we never get a cryptic engine error.
+      if (!window.crossOriginIsolated) return
+
       try {
         // Stage 0: boot
         setStage(0)

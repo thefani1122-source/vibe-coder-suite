@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react"
-import { WebContainer } from "@webcontainer/api"
-import type { FileSystemTree } from "@webcontainer/api"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Check, ExternalLink, RotateCw } from "lucide-react"
 import { SandpackPreview } from "@/components/SandpackPreview"
+import type { WCStage } from "@/lib/webcontainer"
 
 // ─── Browser support detection ────────────────────────────────────────────────
 
@@ -39,113 +38,6 @@ const FRAMEWORK_LABEL: Record<Framework, string> = {
   react: "React + Vite",
 }
 
-// ─── File tree conversion ─────────────────────────────────────────────────────
-
-function toFileTree(files: Record<string, string>): FileSystemTree {
-  const tree: FileSystemTree = {}
-
-  for (const [rawPath, content] of Object.entries(files)) {
-    const parts = rawPath.replace(/^\/+/, "").split("/")
-    let node = tree
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const dir = parts[i]
-      if (!node[dir]) {
-        node[dir] = { directory: {} }
-      }
-      node = (node[dir] as { directory: FileSystemTree }).directory
-    }
-
-    const filename = parts[parts.length - 1]
-    node[filename] = { file: { contents: content } }
-  }
-
-  return tree
-}
-
-// Inject a minimal package.json and vite config if not already present.
-function ensureViteSetup(files: Record<string, string>): Record<string, string> {
-  const out = { ...files }
-
-  if (!out["package.json"]) {
-    out["package.json"] = JSON.stringify({
-      name: "app",
-      private: true,
-      version: "0.0.0",
-      type: "module",
-      scripts: {
-        dev: "vite --host",
-        build: "vite build",
-        preview: "vite preview --host",
-      },
-      dependencies: {
-        react: "^18.2.0",
-        "react-dom": "^18.2.0",
-      },
-      devDependencies: {
-        "@types/react": "^18.2.0",
-        "@types/react-dom": "^18.2.0",
-        "@vitejs/plugin-react": "^4.0.0",
-        vite: "^5.0.0",
-      },
-    }, null, 2)
-  } else {
-    // Ensure dev script uses --host flag so WebContainers can expose the port
-    try {
-      const pkg = JSON.parse(out["package.json"])
-      if (pkg.scripts?.dev && !pkg.scripts.dev.includes("--host")) {
-        pkg.scripts.dev = pkg.scripts.dev + " --host"
-      }
-      if (!pkg.scripts?.dev) {
-        pkg.scripts = { ...(pkg.scripts ?? {}), dev: "vite --host" }
-      }
-      out["package.json"] = JSON.stringify(pkg, null, 2)
-    } catch { /* leave as-is */ }
-  }
-
-  if (!out["vite.config.ts"] && !out["vite.config.js"]) {
-    out["vite.config.ts"] = [
-      "import { defineConfig } from 'vite'",
-      "import react from '@vitejs/plugin-react'",
-      "export default defineConfig({ plugins: [react()] })",
-    ].join("\n")
-  }
-
-  // Bootstrap index.html for Vite
-  if (!out["index.html"] && !out["public/index.html"]) {
-    out["index.html"] = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>App</title>
-</head>
-<body style="margin:0;padding:0">
-  <div id="root"></div>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
-</html>`
-  }
-
-  // Bootstrap entry if only App.tsx exists
-  if (!out["src/index.tsx"] && !out["src/index.jsx"] && !out["src/main.tsx"]) {
-    const app = out["src/App.tsx"] ?? out["src/App.jsx"]
-    if (app) {
-      out["src/main.tsx"] = [
-        "import React from 'react'",
-        "import ReactDOM from 'react-dom/client'",
-        "import App from './App'",
-        "",
-        "ReactDOM.createRoot(document.getElementById('root')!).render(",
-        "  <React.StrictMode><App /></React.StrictMode>",
-        ")",
-      ].join("\n")
-    }
-  }
-
-  return out
-}
-
 // ─── Loading stages ───────────────────────────────────────────────────────────
 
 const WC_STAGES = [
@@ -153,8 +45,6 @@ const WC_STAGES = [
   "Installing dependencies",
   "Starting dev server",
 ] as const
-
-type Stage = 0 | 1 | 2
 
 // ─── Sandpack fallback (shown when WebContainers can't boot) ──────────────────
 
@@ -190,7 +80,7 @@ function SandpackFallback({
 
 // ─── Loading panel ────────────────────────────────────────────────────────────
 
-function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: string[]; framework: Framework }) {
+function LoadingPanel({ stage, logLines, framework }: { stage: WCStage; logLines: string[]; framework: Framework }) {
   const logRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -250,40 +140,26 @@ function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: 
   )
 }
 
-// ─── WebContainer singleton ───────────────────────────────────────────────────
-
-let globalWC: WebContainer | null = null
-let bootPromise: Promise<WebContainer> | null = null
-
-// coep: 'credentialless' matches our Vercel COEP header and tells the WC
-// runtime (a hidden StackBlitz iframe) to generate `local-credentialless.
-// webcontainer.io` server-ready URLs that load directly inline, instead of
-// `*.webcontainer-api.io` gateway URLs that show a "Connect to Project" gate.
-async function getOrBootWC(): Promise<WebContainer> {
-  if (globalWC) return globalWC
-  if (!bootPromise) {
-    bootPromise = WebContainer.boot({ coep: "credentialless" }).then(wc => {
-      globalWC = wc
-      return wc
-    })
-  }
-  return bootPromise
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
+// Purely presentational — WebContainer lifecycle (boot, incremental file
+// writes, npm install, dev server) is owned by the workspace route so it can
+// run in parallel with AI generation. This component just renders whatever
+// stage/log/url state it's handed.
 
 interface WebContainerPreviewProps {
   files: Record<string, string>
+  previewUrl: string | null
+  stage: WCStage
+  logLines: string[]
+  wcError: string | null
   onRetry: () => void
   device?: "desktop" | "mobile" | "tablet"
   className?: string
 }
 
-export function WebContainerPreview({ files, onRetry, device = "desktop", className }: WebContainerPreviewProps) {
-  const [previewUrl, setPreviewUrl]             = useState<string | null>(null)
-  const [stage, setStage]                       = useState<Stage>(0)
-  const [wcError, setWcError]                   = useState<string | null>(null)
-  const [logLines, setLogLines]                 = useState<string[]>([])
+export function WebContainerPreview({
+  files, previewUrl, stage, logLines, wcError, onRetry, device = "desktop", className,
+}: WebContainerPreviewProps) {
   const [iframeLoaded, setIframeLoaded]         = useState(false)
   const [showFallbackLink, setShowFallbackLink] = useState(false)
 
@@ -297,10 +173,11 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
     return () => clearTimeout(timer)
   }, [previewUrl, iframeLoaded])
 
-  // bootedRef: true once dev server is live and accepting HMR updates
-  const bootedRef    = useRef(false)
-  // prevFilesRef: snapshot of files after the last successful mount/sync
-  const prevFilesRef = useRef<Record<string, string> | null>(null)
+  // Reset fade state when the preview URL changes (e.g. after a retry).
+  useEffect(() => {
+    setIframeLoaded(false)
+    setShowFallbackLink(false)
+  }, [previewUrl])
 
   // Debug logging — emitted once on mount so devtools always show exact values
   useEffect(() => {
@@ -310,135 +187,6 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
       isChromium: isChromiumBrowser(),
     })
   }, [])
-
-  const appendLog = useCallback((line: string) => {
-    setLogLines(prev => [...prev, line])
-  }, [])
-
-  // ── Boot effect ─────────────────────────────────────────────────────────────
-  // Runs ONCE per component lifetime (key-based retry resets everything).
-  // Does NOT include `files` in deps — initial files are captured at mount time.
-  // Follow-up file changes are handled by the sync effect below.
-  useEffect(() => {
-    let cancelled = false
-
-    async function run() {
-      // WebContainers require cross-origin isolation (COOP + COEP headers).
-      if (!window.crossOriginIsolated) return
-
-      try {
-        setStage(0)
-        appendLog("Booting WebContainer…")
-        const wc = await getOrBootWC()
-        if (cancelled) return
-
-        const prepared = ensureViteSetup(files)
-        await wc.mount(toFileTree(prepared))
-        if (cancelled) return
-        appendLog(`Mounted ${Object.keys(prepared).length} files`)
-
-        // Snapshot the mounted files so the sync effect can diff against them
-        prevFilesRef.current = prepared
-
-        setStage(1)
-        appendLog("Running npm install…")
-        const install = await wc.spawn("npm", ["install"])
-        install.output.pipeTo(
-          new WritableStream({ write(data) { if (!cancelled) appendLog(data.trimEnd()) } })
-        )
-        const installCode = await install.exit
-        if (cancelled) return
-        if (installCode !== 0) throw new Error(`npm install exited with code ${installCode}`)
-
-        setStage(2)
-        appendLog("Starting dev server…")
-        const dev = await wc.spawn("npm", ["run", "dev"])
-        dev.output.pipeTo(
-          new WritableStream({ write(data) { if (!cancelled) appendLog(data.trimEnd()) } })
-        )
-
-        wc.on("server-ready", (_port, url) => {
-          if (!cancelled) {
-            appendLog(`Server ready at ${url}`)
-            setPreviewUrl(url)
-            // Gate the sync effect: only start syncing after the dev server
-            // is live so Vite's file watcher is ready to receive HMR events.
-            bootedRef.current = true
-          }
-        })
-      } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error ? err.message : String(err)
-          console.error("[WebContainerPreview] boot failed:", msg, {
-            crossOriginIsolated: window.crossOriginIsolated,
-          })
-          setWcError(msg)
-          appendLog(`Error: ${msg}`)
-        }
-      }
-    }
-
-    run()
-    return () => { cancelled = true }
-  }, [appendLog]) // intentionally omits `files` — boot runs once, sync handles updates
-
-  // ── File sync effect ────────────────────────────────────────────────────────
-  // Runs whenever `files` prop changes AFTER the dev server is live.
-  // Writes only changed/new files via wc.fs.writeFile — this triggers Vite HMR
-  // automatically without restarting npm install or the dev server.
-  useEffect(() => {
-    // Skip until dev server is ready and accepting HMR updates
-    if (!bootedRef.current || !globalWC) return
-
-    const wc = globalWC
-    const prev = prevFilesRef.current ?? {}
-    const current = ensureViteSetup(files)
-
-    // Compute diff: what changed, what was added, what was deleted
-    const toWrite: string[] = []
-    const toRemove: string[] = []
-
-    for (const rawPath of Object.keys(current)) {
-      if (prev[rawPath] !== current[rawPath]) toWrite.push(rawPath)
-    }
-    for (const rawPath of Object.keys(prev)) {
-      if (!(rawPath in current)) toRemove.push(rawPath)
-    }
-
-    if (toWrite.length === 0 && toRemove.length === 0) return
-
-    async function syncFiles() {
-      for (const rawPath of toWrite) {
-        const normalPath = rawPath.replace(/^\/+/, "")
-        // Ensure parent directory exists before writing
-        const parts = normalPath.split("/")
-        if (parts.length > 1) {
-          const dir = parts.slice(0, -1).join("/")
-          try { await wc.fs.mkdir(dir, { recursive: true }) } catch { /* already exists */ }
-        }
-        try {
-          await wc.fs.writeFile(normalPath, current[rawPath], { encoding: "utf-8" })
-          appendLog(`Synced: ${normalPath}`)
-        } catch (err) {
-          console.error(`[WebContainerPreview] writeFile failed: ${normalPath}`, err)
-        }
-      }
-
-      for (const rawPath of toRemove) {
-        const normalPath = rawPath.replace(/^\/+/, "")
-        try {
-          await wc.fs.rm(normalPath)
-          appendLog(`Removed: ${normalPath}`)
-        } catch (err) {
-          console.error(`[WebContainerPreview] rm failed: ${normalPath}`, err)
-        }
-      }
-
-      prevFilesRef.current = current
-    }
-
-    syncFiles()
-  }, [files, appendLog])
 
   // ── Render-time guards (ordered: browser → isolation → error → live) ─────────
 

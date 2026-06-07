@@ -10,6 +10,7 @@ import { SandpackPreview } from "@/components/SandpackPreview";
 import { WebContainerPreview } from "@/components/WebContainerPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { createBuildSocket } from "@/lib/websocket";
+import { bootWebContainer, writeFileToWC, startDevServer, resetDevServer, type WCStage } from "@/lib/webcontainer";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
@@ -110,11 +111,80 @@ function WorkspacePage() {
   const [isFullstack, setIsFullstack] = useState(false);
   const [wcKey,       setWcKey]       = useState(0);
 
+  // WebContainer preview state — orchestrated here (not inside WebContainerPreview)
+  // so boot + incremental file writes can run in parallel with AI generation.
+  const [wcPreviewUrl, setWcPreviewUrl] = useState<string | null>(null);
+  const [wcStage,      setWcStage]      = useState<WCStage>(0);
+  const [wcLogLines,   setWcLogLines]   = useState<string[]>([]);
+  const [wcError,      setWcError]      = useState<string | null>(null);
+
   const socketRef          = useRef<Socket | null>(null);
   const completedRef       = useRef(false);
   const filesRef           = useRef<Record<string, string>>({});
   const currentSessionIdRef = useRef<string | undefined>(sessionId);
+  const wcDevServerStartedRef = useRef(false);
   const chatPanelRef        = usePanelRef();
+
+  const appendWcLog = useCallback((line: string) => {
+    setWcLogLines(prev => (prev.length > 300 ? [...prev.slice(-200), line] : [...prev, line]));
+  }, []);
+
+  // Pre-warm WebContainer: boot + write each file as it streams in from the AI,
+  // so by the time build:complete fires, the FS is already populated and the
+  // runtime is already booted — only npm install + dev server remain.
+  const prewarmWC = useCallback((path: string, content: string) => {
+    if (!window.crossOriginIsolated) return;
+    void bootWebContainer()
+      .then(() => writeFileToWC(path, content))
+      .catch(err => console.warn("[WC] pre-warm write failed:", path, err));
+  }, []);
+
+  // Run npm install + dev server once the build is finished and the project
+  // looks fullstack. Idempotent — guarded by wcDevServerStartedRef.
+  const launchFullstackPreview = useCallback((allFiles: Record<string, string>) => {
+    if (wcDevServerStartedRef.current) return;
+    if (!window.crossOriginIsolated) return;
+    if (Object.keys(allFiles).length === 0) return;
+
+    wcDevServerStartedRef.current = true;
+    setWcError(null);
+    setWcStage(1);
+
+    startDevServer(allFiles, {
+      onStage: setWcStage,
+      onLog: appendWcLog,
+      onServerReady: setWcPreviewUrl,
+    }).catch(err => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[WC] failed to launch dev server:", msg);
+      setWcError(msg);
+      appendWcLog(`Error: ${msg}`);
+      wcDevServerStartedRef.current = false;
+    });
+  }, [appendWcLog]);
+
+  // Reset and relaunch the fullstack preview (used by the Retry button).
+  const handleRetryWC = useCallback(() => {
+    wcDevServerStartedRef.current = false;
+    resetDevServer();
+    setWcError(null);
+    setWcPreviewUrl(null);
+    setWcStage(0);
+    setWcLogLines([]);
+    setWcKey(k => k + 1);
+    launchFullstackPreview(filesRef.current);
+  }, [launchFullstackPreview]);
+
+  // Trigger the fullstack dev server once the build has actually finished
+  // generating files — covers both live builds (build:complete sets isFullstack)
+  // and historical sessions restored from cache/API (isFullstack derived from
+  // hasBackendFiles, buildStatus already "complete").
+  useEffect(() => {
+    if (!isFullstack) return;
+    if (buildStatus === "running") return;
+    if (Object.keys(files).length === 0) return;
+    launchFullstackPreview(files);
+  }, [isFullstack, buildStatus, files, launchFullstackPreview]);
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -232,6 +302,9 @@ function WorkspacePage() {
         console.log(`[FRONTEND] ${isUpdate ? "Updating" : "Adding"} file:`, path);
         filesRef.current = { ...filesRef.current, [path]: code };
         setFiles(prev => ({ ...prev, [path]: code }));
+        // Boot WebContainer + write the file immediately, in parallel with
+        // generation — by build:complete the FS is already populated.
+        prewarmWC(path, code);
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
         setCurrentAgent("frontend");
@@ -313,7 +386,7 @@ function WorkspacePage() {
       ]);
       toast.success("Build stopped");
     });
-  }, []);
+  }, [prewarmWC]);
 
   // 1. Restore from sessionStorage THEN connect socket in one effect so they
   //    never race. If cache exists, skip the "blank slate" setMessages(initial).
@@ -470,7 +543,6 @@ function WorkspacePage() {
     completedRef.current = false;
     filesRef.current = {};
     setIsFullstack(false);
-    setWcKey(k => k + 1);
 
     let newSessionId: string;
     try {
@@ -626,7 +698,11 @@ function WorkspacePage() {
                     <WebContainerPreview
                       key={wcKey}
                       files={files}
-                      onRetry={() => setWcKey(k => k + 1)}
+                      previewUrl={wcPreviewUrl}
+                      stage={wcStage}
+                      logLines={wcLogLines}
+                      wcError={wcError}
+                      onRetry={handleRetryWC}
                       device={device}
                     />
                   ) : (

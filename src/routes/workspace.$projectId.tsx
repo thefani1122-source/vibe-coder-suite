@@ -700,7 +700,6 @@ function WorkspacePage() {
                       files={files}
                       previewUrl={wcPreviewUrl}
                       stage={wcStage}
-                      logLines={wcLogLines}
                       wcError={wcError}
                       onRetry={handleRetryWC}
                       device={device}

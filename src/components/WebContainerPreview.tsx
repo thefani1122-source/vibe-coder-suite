@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Check, ExternalLink, RotateCw } from "lucide-react"
 import { SandpackPreview } from "@/components/SandpackPreview"
@@ -80,15 +80,7 @@ function SandpackFallback({
 
 // ─── Loading panel ────────────────────────────────────────────────────────────
 
-function LoadingPanel({ stage, logLines, framework }: { stage: WCStage; logLines: string[]; framework: Framework }) {
-  const logRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight
-    }
-  }, [logLines])
-
+function LoadingPanel({ stage, framework }: { stage: WCStage; framework: Framework }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6">
       <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.04]">
@@ -124,18 +116,6 @@ function LoadingPanel({ stage, logLines, framework }: { stage: WCStage; logLines
           </div>
         ))}
       </div>
-
-      {/* Terminal output log */}
-      {logLines.length > 0 && (
-        <div
-          ref={logRef}
-          className="w-full max-w-md rounded-lg border border-white/[0.06] bg-black/30 p-3 font-mono text-[10px] text-white/40 max-h-[120px] overflow-y-auto space-y-px"
-        >
-          {logLines.slice(-30).map((line, i) => (
-            <div key={i} className="whitespace-pre-wrap break-words">{line}</div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -150,7 +130,6 @@ interface WebContainerPreviewProps {
   files: Record<string, string>
   previewUrl: string | null
   stage: WCStage
-  logLines: string[]
   wcError: string | null
   onRetry: () => void
   device?: "desktop" | "mobile" | "tablet"
@@ -158,7 +137,7 @@ interface WebContainerPreviewProps {
 }
 
 export function WebContainerPreview({
-  files, previewUrl, stage, logLines, wcError, onRetry, device = "desktop", className,
+  files, previewUrl, stage, wcError, onRetry, device = "desktop", className,
 }: WebContainerPreviewProps) {
   const [iframeLoaded, setIframeLoaded]         = useState(false)
   const [showFallbackLink, setShowFallbackLink] = useState(false)
@@ -257,7 +236,7 @@ export function WebContainerPreview({
               background: "#080808",
             }}
           >
-            <LoadingPanel stage={stage} logLines={logLines} framework={framework} />
+            <LoadingPanel stage={stage} framework={framework} />
           </div>
 
           {/* Preview iframe — fades in directly, no URL bar */}
@@ -265,7 +244,11 @@ export function WebContainerPreview({
             <iframe
               src={previewUrl}
               title="WebContainer Preview"
-              onLoad={() => setIframeLoaded(true)}
+              onLoad={(e) => {
+                console.log("[iframe] loaded src:", e.currentTarget.src)
+                setIframeLoaded(true)
+              }}
+              onError={() => console.log("[iframe] LOAD ERROR")}
               style={{
                 position: "absolute",
                 inset: 0,

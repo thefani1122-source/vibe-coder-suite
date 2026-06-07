@@ -13,6 +13,8 @@ let bootPromise: Promise<WebContainer> | null = null
 export function bootWebContainer(): Promise<WebContainer> {
   if (instance) return Promise.resolve(instance)
   if (!bootPromise) {
+    console.log("[WC boot] starting boot...")
+    console.log("[WC boot] crossOriginIsolated:", window.crossOriginIsolated)
     bootPromise = WebContainer.boot({ coep: "credentialless" }).then(wc => {
       instance = wc
       return wc
@@ -151,6 +153,30 @@ export function startDevServer(allFiles: Record<string, string>, handlers: DevSe
   devServerPromise = (async () => {
     const wc = await bootWebContainer()
 
+    // Register the server-ready listener BEFORE spawning anything — the dev
+    // server can start listening faster than we can attach a listener after
+    // `spawn()` resolves, which would silently drop the very first event and
+    // leave `previewUrl` stuck at null forever.
+    let firstServerUrl: string | null = null
+    wc.on("server-ready", (port, url) => {
+      console.log("[WC server-ready] port:", port)
+      console.log("[WC server-ready] url:", url)
+      console.log(
+        "[WC server-ready] url format:",
+        url.includes("local-corp") ? "local-corp (OLD - needs SW)" :
+        url.includes("local-credentialless") ? "local-credentialless (GOOD)" :
+        `unknown: ${url}`,
+      )
+      console.log("[WC crossOriginIsolated]:", window.crossOriginIsolated)
+      if (firstServerUrl) {
+        console.warn("[WC server-ready] additional event ignored (already showing first):", url)
+        return
+      }
+      firstServerUrl = url
+      handlers.onLog(`Server ready at ${url}`)
+      handlers.onServerReady(url)
+    })
+
     handlers.onStage(1)
     handlers.onLog("Preparing project files…")
     const prepared = ensureViteSetup(allFiles)
@@ -169,11 +195,6 @@ export function startDevServer(allFiles: Record<string, string>, handlers: DevSe
     handlers.onLog("Starting dev server…")
     const dev = await wc.spawn("npm", ["run", "dev"])
     dev.output.pipeTo(new WritableStream({ write: d => handlers.onLog(d.trimEnd()) }))
-
-    wc.on("server-ready", (_port, url) => {
-      handlers.onLog(`Server ready at ${url}`)
-      handlers.onServerReady(url)
-    })
   })()
 
   devServerPromise.catch(() => {

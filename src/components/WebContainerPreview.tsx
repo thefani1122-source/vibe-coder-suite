@@ -253,11 +253,21 @@ function LoadingPanel({ stage, logLines, framework }: { stage: Stage; logLines: 
 // ─── WebContainer singleton ───────────────────────────────────────────────────
 
 let globalWC: WebContainer | null = null
+let bootPromise: Promise<WebContainer> | null = null
 
+// coep: 'credentialless' matches our Vercel COEP header and tells the WC
+// runtime (a hidden StackBlitz iframe) to generate `local-credentialless.
+// webcontainer.io` server-ready URLs that load directly inline, instead of
+// `*.webcontainer-api.io` gateway URLs that show a "Connect to Project" gate.
 async function getOrBootWC(): Promise<WebContainer> {
   if (globalWC) return globalWC
-  globalWC = await WebContainer.boot()
-  return globalWC
+  if (!bootPromise) {
+    bootPromise = WebContainer.boot({ coep: "credentialless" }).then(wc => {
+      globalWC = wc
+      return wc
+    })
+  }
+  return bootPromise
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -270,12 +280,22 @@ interface WebContainerPreviewProps {
 }
 
 export function WebContainerPreview({ files, onRetry, device = "desktop", className }: WebContainerPreviewProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [stage, setStage]           = useState<Stage>(0)
-  const [wcError, setWcError]       = useState<string | null>(null)
-  const [logLines, setLogLines]     = useState<string[]>([])
+  const [previewUrl, setPreviewUrl]             = useState<string | null>(null)
+  const [stage, setStage]                       = useState<Stage>(0)
+  const [wcError, setWcError]                   = useState<string | null>(null)
+  const [logLines, setLogLines]                 = useState<string[]>([])
+  const [iframeLoaded, setIframeLoaded]         = useState(false)
+  const [showFallbackLink, setShowFallbackLink] = useState(false)
 
   const framework = detectFramework(files)
+
+  // Fallback external link: shown after 4 seconds if the iframe hasn't loaded.
+  // Lets users open the preview in a new tab when the inline iframe is slow/blank.
+  useEffect(() => {
+    if (!previewUrl || iframeLoaded) return
+    const timer = setTimeout(() => setShowFallbackLink(true), 4000)
+    return () => clearTimeout(timer)
+  }, [previewUrl, iframeLoaded])
 
   // bootedRef: true once dev server is live and accepting HMR updates
   const bootedRef    = useRef(false)
@@ -466,41 +486,75 @@ export function WebContainerPreview({ files, onRetry, device = "desktop", classN
       <div className="flex h-full justify-center">
         <div
           style={{
+            position: "relative",
             width: "100%",
             height: "100%",
             maxWidth: mobile ? 420 : tablet ? 768 : "none",
             borderRadius: 12,
             border: "1px solid rgba(255,255,255,0.08)",
             overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
           }}
         >
-          {/* Toolbar — only when server is live */}
-          {previewUrl && (
-            <div className="shrink-0 flex items-center gap-2 border-b border-white/[0.08] bg-[#0d0d0d] px-3 py-1.5">
-              <span className="font-mono text-[11px] text-white/35 truncate">{previewUrl}</span>
-              <div className="flex-1" />
-              <button
-                onClick={() => window.open(previewUrl, "_blank", "noopener,noreferrer")}
-                className="flex items-center gap-1.5 rounded-md border border-white/[0.10] px-2.5 py-1 text-xs text-white/70 transition hover:bg-white/[0.06]"
-              >
-                <ExternalLink className="h-3 w-3" />
-                Open in New Tab
-              </button>
-            </div>
-          )}
+          {/* Loading panel — fades out once the iframe has loaded */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 10,
+              display: "flex",
+              flexDirection: "column",
+              opacity: iframeLoaded ? 0 : 1,
+              transition: "opacity 500ms ease",
+              pointerEvents: iframeLoaded ? "none" : "auto",
+              background: "#080808",
+            }}
+          >
+            <LoadingPanel stage={stage} logLines={logLines} framework={framework} />
+          </div>
 
-          {/* Content */}
-          {previewUrl ? (
+          {/* Preview iframe — fades in directly, no URL bar */}
+          {previewUrl && (
             <iframe
               src={previewUrl}
               title="WebContainer Preview"
-              style={{ flex: 1, width: "100%", height: "100%", border: "none", display: "block" }}
+              onLoad={() => setIframeLoaded(true)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                border: "none",
+                opacity: iframeLoaded ? 1 : 0,
+                transition: "opacity 500ms ease",
+              }}
               allow="cross-origin-isolated; clipboard-write; clipboard-read"
             />
-          ) : (
-            <LoadingPanel stage={stage} logLines={logLines} framework={framework} />
+          )}
+
+          {/* Tiny "open in new tab" icon — top-right corner, unobtrusive */}
+          {previewUrl && iframeLoaded && (
+            <button
+              onClick={() => window.open(previewUrl, "_blank", "noopener,noreferrer")}
+              title="Open in new tab"
+              style={{ position: "absolute", top: 10, right: 10, zIndex: 20 }}
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.10] bg-black/50 text-white/50 backdrop-blur transition hover:text-white/90"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Fallback link — appears after 4s if the iframe stays blank */}
+          {showFallbackLink && !iframeLoaded && previewUrl && (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ position: "absolute", bottom: 12, right: 12, zIndex: 20 }}
+              className="flex items-center gap-1.5 rounded-lg border border-white/[0.12] bg-black/70 px-3 py-1.5 text-xs text-white/60 backdrop-blur transition hover:text-white/90"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Preview not loading? Open in new tab
+            </a>
           )}
         </div>
       </div>

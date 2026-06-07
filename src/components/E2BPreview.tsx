@@ -4,12 +4,13 @@ import { SandpackPreview } from "@/components/SandpackPreview"
 interface E2BPreviewProps {
   url: string | null
   loading: boolean
+  error?: string | null
   isFullstack: boolean
   files: Record<string, string>
   device?: "desktop" | "mobile" | "tablet"
 }
 
-export function E2BPreview({ url, loading, isFullstack, files, device = "desktop" }: E2BPreviewProps) {
+export function E2BPreview({ url, loading, error, isFullstack, files, device = "desktop" }: E2BPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [, setIframeError] = useState(false)
 
@@ -38,8 +39,31 @@ export function E2BPreview({ url, loading, isFullstack, files, device = "desktop
         flexDirection: "column",
       }}
     >
+      {/* Error state — shows WHY the preview failed instead of an infinite spinner */}
+      {error && (
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            padding: 24,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(248,113,113,0.9)" }}>
+            Preview failed: {error}
+          </div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+            Check Railway logs for details
+          </div>
+        </div>
+      )}
+
       {/* Loading state */}
-      {loading && !url && (
+      {loading && !url && !error && (
         <div
           style={{
             flex: 1,
@@ -147,7 +171,7 @@ export function E2BPreview({ url, loading, isFullstack, files, device = "desktop
       )}
 
       {/* No preview yet and not loading */}
-      {!url && !loading && (
+      {!url && !loading && !error && (
         <div
           style={{
             flex: 1,

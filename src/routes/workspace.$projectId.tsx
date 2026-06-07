@@ -114,6 +114,7 @@ function WorkspacePage() {
   // Workers, no COEP headers, no cross-origin isolation required.
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError,   setPreviewError]   = useState<string | null>(null);
 
   const socketRef          = useRef<Socket | null>(null);
   const completedRef       = useRef(false);
@@ -312,14 +313,22 @@ function WorkspacePage() {
     // dev server is live. The iframe loads it directly, no SW required.
     socket.on("build:preview_url", ({ url }: { url: string }) => {
       console.log("[Preview] E2B URL received:", url);
+      setPreviewError(null);
       setPreviewUrl(url);
       setPreviewLoading(false);
     });
 
     socket.on("build:preview_loading", () => {
       console.log("[Preview] E2B sandbox starting…");
+      setPreviewError(null);
       setPreviewLoading(true);
       setPreviewUrl(null);
+    });
+
+    socket.on("build:preview_error", ({ message }: { message: string }) => {
+      console.error("[Preview] E2B sandbox error:", message);
+      setPreviewLoading(false);
+      setPreviewError(message);
     });
 
     socket.on("build:cancelled", () => {
@@ -491,6 +500,7 @@ function WorkspacePage() {
     setIsFullstack(false);
     setPreviewUrl(null);
     setPreviewLoading(false);
+    setPreviewError(null);
 
     let newSessionId: string;
     try {
@@ -646,6 +656,7 @@ function WorkspacePage() {
                     <E2BPreview
                       url={previewUrl}
                       loading={previewLoading}
+                      error={previewError}
                       isFullstack={isFullstack}
                       files={files}
                       device={device}

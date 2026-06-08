@@ -316,6 +316,11 @@ function WorkspacePage() {
       }
     });
 
+    socket.on("build:warning", ({ message }: { message: string }) => {
+      toast.warning(message, { duration: 6000 });
+      console.warn("[Build Warning]", message);
+    });
+
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
       setActivityStatus(null);
       setBuildStatus("error");

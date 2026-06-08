@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
 import { apiPost, ApiError } from "@/lib/api";
@@ -15,9 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   ArrowUp,
-  Plus,
   Sparkles,
-  Image as ImageIcon,
   Link2,
   ChevronDown,
   Zap,
@@ -43,11 +41,8 @@ export function PromptComposer() {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const screenshotRef = useRef<HTMLInputElement>(null);
-  const { user, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  void user;
 
   const submit = async () => {
     if (!value.trim() || submitting) return;
@@ -166,30 +161,6 @@ export function PromptComposer() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Attach file</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => screenshotRef.current?.click()}
-                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-                >
-                  <ImageIcon className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Screenshot</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
                   onClick={() => toast("Import from URL — coming soon!")}
                   className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
@@ -210,8 +181,6 @@ export function PromptComposer() {
               </TooltipTrigger>
               <TooltipContent>Figma</TooltipContent>
             </Tooltip>
-            <input ref={fileRef} type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
-            <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
           </div>
           <div className="flex items-center gap-2">
           <DropdownMenu>

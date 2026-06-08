@@ -17,7 +17,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
-  Square, Plus, ExternalLink, Image as ImageIcon, Link2, Figma, X,
+  Square, ExternalLink, Link2, Figma, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,12 +62,15 @@ const AGENT_LABELS: Record<string, string> = {
 };
 
 // Pipeline status messages emitted by the backend — never real AI thinking.
-// Matched against the trimmed text of each build:thinking event to route them
-// to the activity status chip instead of the chat panel.
+// FALLBACK ONLY: classifies a build:thinking event when the backend hasn't
+// sent the `internal` boolean flag yet (see the build:thinking handler below,
+// which prefers `data.internal` and only falls back to these patterns when
+// that field is absent).
 //
 // FRAGILE: These patterns must stay in sync with stream-handler.ts on the backend.
-// TODO: Replace with an { internal: true } flag on the build:thinking event so
-// the frontend doesn't need to pattern-match message content.
+// TODO(backend): Always send `internal: true` on pipeline/status messages and
+// `internal: false` on real AI thinking — once every event carries the flag,
+// this regex list can be deleted entirely.
 const HARDCODED_PATTERNS: RegExp[] = [
   /^Building:/i,
   /^Starting new build/i,
@@ -83,6 +86,15 @@ const HARDCODED_PATTERNS: RegExp[] = [
 const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
 function hasBackendFiles(files: Record<string, string>): boolean {
   return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+}
+
+// Heuristic truncation check — flags code files that don't end with a closing
+// brace or JSX tag, a strong signal the AI was cut off mid-file (e.g. token limit).
+const CODE_FILE_RE = /\.(tsx?|jsx?|css|json)$/;
+function looksTruncated(path: string, content: string): boolean {
+  if (!CODE_FILE_RE.test(path)) return false;
+  const trimmed = content.trimEnd();
+  return trimmed.length > 0 && !/[}>]$/.test(trimmed);
 }
 
 
@@ -169,14 +181,19 @@ function WorkspacePage() {
       );
     });
 
-    socket.on("build:thinking", (data: { text?: string; content?: string }) => {
+    socket.on("build:thinking", (data: { text?: string; content?: string; internal?: boolean }) => {
       completedRef.current = false;
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
 
       // Route system/pipeline messages to activityStatus; real AI thinking goes to chat.
-      if (HARDCODED_PATTERNS.some(p => p.test(chunk.trim()))) {
+      // Prefer the explicit `internal` flag from the backend; only fall back to
+      // pattern-matching when the backend hasn't sent the flag yet.
+      const isInternal = typeof data.internal === "boolean"
+        ? data.internal
+        : HARDCODED_PATTERNS.some(p => p.test(chunk.trim()));
+      if (isInternal) {
         setActivityStatus(chunk.trim());
         return;
       }
@@ -291,6 +308,12 @@ function WorkspacePage() {
       ]);
       // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
       if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
+
+      // Warn if any code file looks like it was cut off mid-generation.
+      const truncated = Object.entries(mergedFiles).some(([path, content]) => looksTruncated(path, content));
+      if (truncated) {
+        toast.warning("Some files may be incomplete — try rebuilding.");
+      }
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
@@ -358,6 +381,7 @@ function WorkspacePage() {
             messages?: BuildMessage[];
             buildStatus?: BuildStatus;
             activeTab?: ActiveTab;
+            previewUrl?: string | null;
           };
           if (data.files && Object.keys(data.files).length > 0) {
             setFiles(data.files);
@@ -368,6 +392,10 @@ function WorkspacePage() {
             setMessages(clean);
             setBuildStatus(data.buildStatus ?? "complete");
             setActiveTab(data.activeTab ?? "preview");
+            // Restore fullstack detection + E2B preview URL — without this, reloading
+            // a fullstack session silently downgrades to the Sandpack preview.
+            if (hasBackendFiles(data.files)) setIsFullstack(true);
+            if (data.previewUrl) setPreviewUrl(data.previewUrl);
             hadCache = true;
           }
         }
@@ -444,6 +472,9 @@ function WorkspacePage() {
         setFiles(filesMap);
         setBuildStatus("complete");
         setActiveTab("preview");
+        // Same fullstack detection as the live build:complete handler — otherwise
+        // historical fullstack sessions render Sandpack instead of E2B.
+        if (hasBackendFiles(filesMap)) setIsFullstack(true);
         // Use functional updater — never overwrite messages that already exist
         // (e.g. live build messages). Only set the restore note when chat is empty.
         setMessages(prev =>
@@ -465,10 +496,10 @@ function WorkspacePage() {
     if (!sessionId || Object.keys(files).length === 0) return;
     try {
       sessionStorage.setItem(`build_${sessionId}`, JSON.stringify({
-        files, messages, buildStatus, activeTab,
+        files, messages, buildStatus, activeTab, previewUrl,
       }));
     } catch { /* ignore quota errors */ }
-  }, [files, messages, buildStatus, activeTab, sessionId]);
+  }, [files, messages, buildStatus, activeTab, previewUrl, sessionId]);
 
   // 3. Reconnect the socket when the user returns to this tab mid-build.
   useEffect(() => {
@@ -880,8 +911,6 @@ function ChatColumn({
   activityStatus?: string | null;
 }) {
   const [draft, setDraft] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
-  const screenshotRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
     const text = draft.trim();
@@ -947,20 +976,12 @@ function ChatColumn({
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
-              <button onClick={() => fileRef.current?.click()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Attach">
-                <Plus className="h-4 w-4" />
-              </button>
-              <button onClick={() => screenshotRef.current?.click()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Screenshot">
-                <ImageIcon className="h-4 w-4" />
-              </button>
               <button onClick={() => toast("Import from URL — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>
               <button onClick={() => toast("Figma import — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
                 <Figma className="h-4 w-4" />
               </button>
-              <input ref={fileRef} type="file" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
-              <input ref={screenshotRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) toast.success(`Attached ${f.name}`); }} />
             </div>
             <div className="flex items-center gap-1.5">
               <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75">

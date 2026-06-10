@@ -1,7 +1,13 @@
 # Lampcode — Systematic Build Task List
 
-**Status:** Setup cleanup ✅ | Awaiting backend review  
-**Generated:** 2026-06-10
+**Status:** Setup cleanup ✅ | Backend review ✅ (2026-06-10)  
+**Generated:** 2026-06-10 | **Updated:** 2026-06-10 (post backend review)
+
+> **Backend review done.** See `Lampcode/REVIEW_BACKEND_HONEST.md`.
+> **Headline:** the backend is more complete than the frontend. Stripe billing and Plan
+> mode are **fully built on the backend** — the frontend just doesn't call them. The real
+> blockers are (a) a WebSocket event-contract mismatch that hangs failed/cancelled builds
+> in the UI, (b) a handful of concrete backend bugs, and (c) frontend wiring.
 
 ---
 
@@ -20,27 +26,51 @@
 
 ---
 
-## PHASE 1: Backend Review & Integration (PENDING)
+## PHASE 1: Backend Review & Integration ✅ REVIEW DONE
 
-**Deliverable:** Honest review of backend repo + integration contract assessment
+**Deliverable:** `Lampcode/REVIEW_BACKEND_HONEST.md` — full pipeline, API, WS, sandbox, plan, billing, auth.
 
-### 1.1 Backend Code Review
-- [ ] Review backend directory structure + architecture
-- [ ] Document all API endpoints (`/api/build/*`, `/api/projects`, `/api/users/*`, etc.)
-- [ ] Document Socket.IO events emitted (build:*, file_write, etc.)
-- [ ] Check response shapes vs. frontend expectations
-- [ ] Identify response-shape mismatches causing frontend defensive probing
+### 1.1 Backend Code Review ✅
+- [x] Reviewed backend structure + architecture (Hono + Socket.IO + E2B + Drizzle + Supabase + OpenRouter)
+- [x] Documented API endpoints + Socket.IO events
+- [x] Checked response shapes vs frontend expectations (see cross-check table in review)
+- [x] Identified response-shape mismatches
 
-### 1.2 Stabilize Backend-Frontend Contract
-- [ ] Pin response shapes for all endpoints (document in `/backend_contract.md`)
-- [ ] Remove hardcoded response-shape variants in frontend (replace `project.id ?? id ?? projectId` patterns)
-- [ ] Remove `HARDCODED_PATTERNS` fragility — backend should emit clean event types
-- [ ] Define fullstack detection clearly (document which file paths trigger E2B)
+### 1.2 🔴 CRITICAL — WebSocket event-contract mismatch (HIGH)
+The frontend workspace listens for `build:error` and `build:cancelled`, but the backend's
+terminal-failure path emits `build_failed` (underscore) and **never emits `build:cancelled`**.
+Result: **failed and cancelled builds hang in the UI** with no terminal state.
+- [ ] **Backend:** emit `build:error` on every terminal failure (validation, missing App.tsx, dispatch error, unsupported runtime), not just stream exceptions
+- [ ] **Backend:** emit `build:cancelled` on cancel (currently sends `build_failed`)
+- [ ] **Frontend:** also handle `build_failed` as a fallback terminal event (defensive)
+- [ ] Decide on `build:token`/`build:prompt` — backend never emits them; either remove the listeners or add real token streaming (`stream-handler` already has the content)
+- [ ] Remove unused underscore emits (`progress`/`phase_complete`/`file_update`/`agent_*`) once confirmed dead, OR start consuming them
+- [ ] Document the canonical event contract in `Lampcode/BACKEND_CONTRACT.md`
 
-### 1.3 Environment & Secrets
-- [ ] Verify backend env vars are documented
-- [ ] Confirm `VITE_BACKEND_URL` and `VITE_WS_URL` are set on Vercel
+### 1.3 🔴 Concrete backend bugs
+- [ ] **`plan.ts:986`** writes `projects.status = "completed"` — not a valid `project_status` enum value → **Postgres rejects the write**. Use `"idle"`/`"archived"`.
+- [ ] **Credit accounting** is dual/unreconciled: flat `deductCredits(20)` at request vs cost-based `buildSessions.creditsUsed` at completion (never added to `userBilling`). Pick one model.
+- [ ] **Starter credits** disagree: schema/`PLAN_CREDITS.free`/`billing.ts` say **100**; `credits.ts`/`users.ts` say **500** (race-dependent which wins). Make every path agree.
+
+### 1.4 🟡 Response-shape stabilization
+- [ ] `GET /api/build/:sessionId/files` returns `{ totalFiles, groups }` (grouped by dir) but frontend hydrate wants a flat `{ files: {...} }` map — **fix one side**
+- [ ] `POST /api/projects` returns `{ project: {id} }`; `last-session` returns `{ sessionId }` not `{ id }`; `billing` wraps in `{ billing }` — confirm frontend reads the wrapped/renamed fields, then remove `id ?? projectId ?? project_id` probing
+- [ ] `GET /api/users/me/settings` is **preferences** (theme/notifications), NOT profile. **No `username`/`bio` columns exist** → those settings fields can never persist. Drop them or add columns + wire `PATCH /api/users/me` for name/image.
+- [ ] Two usage endpoints (`/me/usage` vs `/me/billing/usage`) with different shapes — frontend uses `/me/usage`; consider removing the duplicate.
+
+### 1.5 Dead / unwired subsystems
+- [ ] **ContextManager** (`context/manager.ts`) — sophisticated relevance selector, but only reachable via `/api/context`; the build/plan dispatch never feeds its output into `contextFiles`. Wire it in or delete.
+- [ ] `dispatcher.ts:244-245` hardcodes `reasoning:""`/`toolCalls:[]` — drops real stream data.
+- [ ] Better-Auth `session`/`account`/`verification` tables are unused (Supabase owns sessions) — drop or document.
+
+### 1.6 Model catalogue freshness (`model-gateway.ts`)
+- [ ] Planning tier-1 uses `anthropic/claude-opus-4-6` — refresh to **Opus 4.8** (planning is highest-leverage; its contract propagates to all agents)
+- [ ] Verify ALL OpenRouter slugs resolve (`deepseek-v4-pro/flash`, `kimi-k2.6`, `gemini-2.5-pro`, and Claude slug punctuation — OpenRouter has used dotted versions)
+
+### 1.7 Environment & Secrets
+- [ ] Confirm `VITE_BACKEND_URL` (REST + WS) is set on Vercel
 - [ ] Verify Supabase RLS rules for `integrations` and `audit_log` tables
+- [ ] Confirm WS auth middleware reads token from `handshake.auth.token` (frontend sends it there)
 
 ---
 
@@ -82,20 +112,22 @@
 ### 3.1 Pricing / Billing (ZERO PAYMENT INTEGRATION)
 **Files:** `src/routes/pricing.tsx`, `src/routes/billing.tsx`
 
-**Status:** 100% non-functional. No Stripe, no payment path.
+**Status:** Frontend is 100% non-functional — BUT **the backend Stripe integration is already built**
+(`billing.ts`: customers, checkout sessions, invoices, upgrade). This is now mostly a **frontend wiring job**.
+
+**Revised scope: MEDIUM (frontend wiring), not Large.**
 
 **Options:**
-- **(A) Implement real payments:** Wire Stripe, implement checkout, add card management. (Scope: Large)
-- **(B) Remove pricing page:** Delete route, simplify to usage view only. (Scope: Small)
-- **(C) Keep mock:** Clearly label as "mock pricing" for demo. (Scope: Tiny, but misleading)
+- **(A) Wire the existing backend:** point the "Buy"/"Upgrade" buttons at `POST /api/users/me/billing/upgrade` (returns `{ checkoutUrl }`), redirect to Stripe Checkout, read state from `GET /api/users/me/billing`. (Scope: Medium)
+- **(B) Remove pricing page:** if no revenue path yet. (Scope: Small)
 
-**Recommendation:** Decide before implementing. If revenue path exists, do (A) + create `/backend_payment_integration.md`. If freemium only, do (B).
+**Recommendation:** (A) — the hard part (Stripe REST, checkout, invoices) is done. Just needs `STRIPE_SECRET_KEY` + `STRIPE_PRICE_PRO`/`STRIPE_PRICE_ENTERPRISE` env vars and frontend buttons.
 
 **Subtasks (if A):**
-- [ ] Integrate Stripe API + webhook handling on backend
-- [ ] Create checkout flow (upgrade to Pro, add credits)
-- [ ] Implement card management page
-- [ ] Handle billing data in `GET /api/users/me/billing` (ensure it includes Stripe customer/subscription state)
+- [ ] Wire pricing CTAs → `POST /api/users/me/billing/upgrade` { plan, successUrl, cancelUrl } → redirect to `checkoutUrl`
+- [ ] Billing page: render `GET /api/users/me/billing` (plan, credits, period) + `GET /api/users/me/billing/invoices`
+- [ ] Set Stripe env vars on backend (`STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ENTERPRISE`)
+- [ ] Add a Stripe **webhook** handler to flip `userBilling.plan` on `checkout.session.completed` (check `webhooks.ts` — verify it exists/handles this)
 
 **Subtasks (if B):**
 - [ ] Delete `src/routes/pricing.tsx`
@@ -107,21 +139,27 @@
 ### 3.2 Build Modes (Plan & Editor)
 **Files:** `src/routes/plan.$sessionId.tsx`, `src/components/PromptComposer.tsx`
 
-**Plan Mode Status:** Stub page ("Interview coming soon"). Creates project but then dead-end.  
-**Editor Mode Status:** Permanently disabled (`soon: true`).
+**Plan Mode Status:** Frontend `/plan/$sessionId` is a stub ("Interview coming soon") — BUT
+**the backend plan pipeline is fully built** (`plan.ts`): interview-question generation →
+contract + task breakdown → FOUNDATION→BUILD→VERIFY→DEPLOY with a verify→fix loop, per-phase
+approval gates, freeze contracts, and brain versioning. **This is a frontend wiring job, not a build-from-scratch.**
+**Editor Mode Status:** Permanently disabled (`soon: true`) — no backend; still a real decision.
+
+**Revised scope for Plan mode: MEDIUM (frontend wiring), not Large.**
 
 **Options:**
-- **(A) Implement Plan mode:** Real interview flow (multi-step prompt refinement) before build. (Scope: Large)
-- **(A-alt) Implement Editor mode:** Let users edit generated code before build. (Scope: Medium)
-- **(B) Remove both:** Keep Fast Mode as the only build path. (Scope: Small)
+- **(A) Wire the existing backend plan flow:** (Scope: Medium)
+- **(B) Remove plan mode UI** if you want Fast Mode only for MVP. (Scope: Small)
+- Editor mode: keep removed (no backend).
 
-**Recommendation:** Talk to product. For MVP, (B) is cleanest. Plan/Editor need backend support.
+**Recommendation:** (A) if plan mode is a product priority — the backend is done. Otherwise (B) and revisit later.
 
-**Subtasks (if A):**
-- [ ] Design plan/interview flow (what questions?)
-- [ ] Implement multi-step form on `/plan/$sessionId`
-- [ ] Wire form submit to build kickoff
-- [ ] Document backend expectations
+**Subtasks (if A) — map to existing backend endpoints:**
+- [ ] `POST /api/plan/start` returns `{ sessionId, questions }` — render the interview form from `questions`
+- [ ] Submit answers → `POST /api/plan/interview` → render returned `{ contract, tasks }`
+- [ ] Approve → `POST /api/plan/approve { approved:true }` → poll `GET /api/plan/:sessionId/status`
+- [ ] Per-phase approval → `POST /api/plan/:sessionId/phase/:phase/approve { approved:true }`
+- [ ] Note: plan WS events use the **/interview namespace** + underscore events (`plan_phase_start`, `phase_complete`, `verify_result`, `fix_required`) — frontend must subscribe to these (same event-contract caveat as Phase 1.2)
 
 **Subtasks (if B):**
 - [ ] Remove Plan Mode: delete route, remove PromptComposer mode dropdown
@@ -284,15 +322,19 @@
 
 ```
 ┌─────────────────────────────────────────┐
-│ PHASE 1: Backend Review (BLOCKING)      │ ← User must provide backend repo
+│ PHASE 1: Backend Review ✅ DONE         │
+├─────────────────────────────────────────┤
+│ 🔴 NEW BLOCKER → Phase 1.2 WS events    │ ← failed/cancelled builds hang the UI
+│    + Phase 1.3 backend bugs (enum write)│
 ├─────────────────────────────────────────┤
 │ PHASE 0: Setup ✅ + PHASE 2: Core Fixes │ (can start in parallel)
 ├─────────────────────────────────────────┤
-│ PHASE 3: Shell Features (DECISIONS)     │ ← Need product input (A/B/C for each)
+│ PHASE 3: Shells — Stripe + Plan now     │ ← backend READY, frontend wiring only
+│          MEDIUM scope (were Large)      │
 ├─────────────────────────────────────────┤
 │ PHASE 4: Code Quality                   │ (after PHASE 2)
 ├─────────────────────────────────────────┤
-│ PHASE 5: Testing (after PHASE 1 + 3)    │
+│ PHASE 5: Testing (after 1.2/1.3 fixed)  │
 ├─────────────────────────────────────────┤
 │ PHASE 6: Deploy (after all)             │
 └─────────────────────────────────────────┘
@@ -302,15 +344,19 @@
 
 ## Summary: What You Need to Do
 
-**Immediate:**
-1. Backend repo link bhejo → main Phase 1 karunga
-2. Decide for Phase 3 features (Pricing/Billing, Plan Mode, MCP, etc.) — A/B/C options above
+**Immediate (highest impact, fixes broken UX):**
+1. **Phase 1.2** — fix WS terminal-failure + cancel events (`build:error`/`build:cancelled`). Without this, every failed or cancelled build hangs in the UI.
+2. **Phase 1.3** — fix the `plan.ts:986` invalid-enum write + reconcile credit accounting.
+
+**Then decide (scope dropped — backend is ready):**
+3. Phase 3.1 Stripe — wire frontend buttons to the existing `/billing/upgrade` (MEDIUM)
+4. Phase 3.2 Plan mode — wire frontend to the existing `/api/plan/*` flow (MEDIUM), or remove for MVP
+5. Remaining Phase 3 shells (MCP, import, top-bar) — A/B/C decisions as before
 
 **Then:**
-- Main Phase 2 (preview + settings bugs) karunga
-- Phase 4 (cleanup) karunga
-- Phase 5 (testing) karunga
-- Deploy on Vercel
+- Phase 2 (preview + settings bugs), Phase 4 (cleanup), Phase 5 (testing), Phase 6 (deploy)
+
+> Full backend findings + file:line references: `Lampcode/REVIEW_BACKEND_HONEST.md`
 
 ---
 

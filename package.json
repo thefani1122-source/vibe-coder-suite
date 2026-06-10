@@ -1,5 +1,6 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "lampcode",
+  "packageManager": "bun@1.x",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -12,7 +13,6 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@cloudflare/vite-plugin": "^1.25.5",
     "@codesandbox/sandpack-react": "^2.20.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",

@@ -895,6 +895,7 @@ function ChatColumn({
   activityStatus?: string | null;
 }) {
   const [draft, setDraft] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
     const text = draft.trim();
@@ -960,6 +961,24 @@ function ChatColumn({
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
+                title="Attach image or file"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                hidden
+                multiple
+                accept="image/*,.pdf,.txt,.md,.json,.csv"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) toast.success(`Attached ${f.name}`);
+                }}
+              />
               <button onClick={() => toast("Import from URL — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>

@@ -13,7 +13,7 @@ import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Lamp, Zap,
+  ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
@@ -112,7 +112,7 @@ function WorkspacePage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
   const [currentAgent, setCurrentAgent] = useState<string | undefined>();
-  const [activeTab,    setActiveTab]    = useState<ActiveTab>("code");
+  const [activeTab,    setActiveTab]    = useState<ActiveTab>("preview");
   const [device,       setDevice]       = useState<Device>("desktop");
   const [reloadKey,    setReloadKey]    = useState(0);
   const [projectName,  setProjectName]  = useState<string>("");
@@ -574,10 +574,6 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  const previewMode =
-    buildStatus !== "complete" ? "idle" :
-    isFullstack                ? "e2b"  : "sandpack";
-
   return (
     <RequireAuth>
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
@@ -650,23 +646,6 @@ function WorkspacePage() {
           {/* Right: preview / code — takes remaining space */}
           <Panel defaultSize={75} minSize={30}>
             <div className="relative flex min-h-0 h-full bg-[#080808]">
-              {/* ── Preview debug overlay ── */}
-              <div className="absolute bottom-4 right-4 z-50 max-w-[240px] rounded-xl border border-white/[0.10] bg-black/85 p-3 backdrop-blur-sm font-mono text-[11px] text-white/70 space-y-1 pointer-events-none">
-                <p className="font-sans text-[10px] font-semibold uppercase tracking-widest text-white/40 mb-1.5">Preview Debug</p>
-                <div className="flex gap-2">
-                  <span className="text-white/35 shrink-0">Mode:</span>
-                  <span className={cn(
-                    "font-medium",
-                    previewMode === "e2b"      && "text-violet-400",
-                    previewMode === "sandpack" && "text-blue-400",
-                    previewMode === "idle"     && "text-white/40",
-                  )}>{previewMode}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-white/35 shrink-0">Files:</span>
-                  <span>{Object.keys(files).length}</span>
-                </div>
-              </div>
               {activeTab === "code" && (
                 <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
                   <div style={{
@@ -916,6 +895,7 @@ function ChatColumn({
   activityStatus?: string | null;
 }) {
   const [draft, setDraft] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
     const text = draft.trim();
@@ -981,6 +961,24 @@ function ChatColumn({
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
+                title="Attach image or file"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                hidden
+                multiple
+                accept="image/*,.pdf,.txt,.md,.json,.csv"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) toast.success(`Attached ${f.name}`);
+                }}
+              />
               <button onClick={() => toast("Import from URL — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>

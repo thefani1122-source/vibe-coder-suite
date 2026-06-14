@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, Lamp, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
 
 export interface BuildMessage {
   id: string
@@ -46,20 +46,6 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
-      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b shrink-0">
-        <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
-          <Lamp className="h-4 w-4 text-primary-foreground" />
-        </div>
-        <div className="flex flex-col leading-tight">
-          <span className="text-sm font-bold tracking-tight">Lampcode</span>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">vibe coder</span>
-        </div>
-        <div className={cn(
-          "ml-auto h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
-          isBuilding ? "bg-green-400 animate-pulse" : "bg-white/20",
-        )} />
-      </div>
-
       <div
         ref={containerRef}
         onScroll={handleScroll}

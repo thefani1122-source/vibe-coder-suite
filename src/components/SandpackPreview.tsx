@@ -335,18 +335,21 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
   // ── Skeleton while no files have arrived ───────────────────────────────────
   if (fileCount === 0) {
     return (
-      <div className={cn("flex flex-col h-full bg-[#080808]", className)}>
-        <div className="flex flex-1 flex-col gap-4 p-6">
-          <div className="h-7 w-2/5 animate-pulse rounded-md bg-white/[0.06]" />
-          <div className="flex-1 animate-pulse rounded-xl bg-white/[0.04]" />
-          <div className="grid grid-cols-3 gap-3">
-            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
-            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
-            <div className="h-16 animate-pulse rounded-md bg-white/[0.06]" />
+      <div className={cn("flex flex-col h-full bg-[#080808] p-6", className)}>
+        <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-xl border border-white/[0.06] bg-[#0c0c10]">
+          {isBuilding && (
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.02] via-transparent to-white/[0.02] animate-pulse" />
+          )}
+          <div className="relative flex flex-col items-center gap-3">
+            {isBuilding ? (
+              <>
+                <div className="h-8 w-8 rounded-full border-2 border-white/10 border-t-white/60 animate-spin" />
+                <p className="text-xs text-white/45">Preview will appear when build completes…</p>
+              </>
+            ) : (
+              <p className="text-xs text-white/40">No preview yet</p>
+            )}
           </div>
-          <p className="text-center text-xs text-white/40">
-            {isBuilding ? "Preview appears as files generate…" : "No files generated yet"}
-          </p>
         </div>
       </div>
     )

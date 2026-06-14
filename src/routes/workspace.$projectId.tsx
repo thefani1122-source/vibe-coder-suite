@@ -13,7 +13,7 @@ import { createBuildSocket } from "@/lib/websocket";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Lamp, Zap,
+  ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
@@ -112,7 +112,7 @@ function WorkspacePage() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
   const [currentAgent, setCurrentAgent] = useState<string | undefined>();
-  const [activeTab,    setActiveTab]    = useState<ActiveTab>("code");
+  const [activeTab,    setActiveTab]    = useState<ActiveTab>("preview");
   const [device,       setDevice]       = useState<Device>("desktop");
   const [reloadKey,    setReloadKey]    = useState(0);
   const [projectName,  setProjectName]  = useState<string>("");

@@ -123,18 +123,19 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
             >
               ↺
             </button>
+            {/* Neutral label — the raw E2B sandbox URL is intentionally hidden
+                (it's an internal preview host the end user shouldn't see). */}
             <div
               style={{
                 flex: 1,
                 fontSize: 11,
-                color: "rgba(255,255,255,0.5)",
-                fontFamily: "monospace",
+                color: "rgba(255,255,255,0.4)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
-              {url}
+              Live Preview
             </div>
             <a
               href={url}

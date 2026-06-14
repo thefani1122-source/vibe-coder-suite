@@ -20,8 +20,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/mcp")({ component: McpPage });
 
@@ -103,6 +103,42 @@ function McpPage() {
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customDesc, setCustomDesc] = useState("");
+
+  // Supabase connection comes from the BACKEND (user_integrations via the MCP
+  // server), not the local `integrations` table — its PAT is encrypted server
+  // side and verified against https://mcp.supabase.com/mcp.
+  const [supa, setSupa] = useState<{ id: string; projectRef: string | null; supabaseUrl: string | null } | null>(null);
+
+  const loadSupabase = async () => {
+    try {
+      const res = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string; meta: { supabaseUrl: string | null; projectRef: string | null } }> }>(
+        "/api/integrations",
+        { silent: true },
+      );
+      const row = res.integrations.find((i) => i.provider === "supabase" && i.status === "connected");
+      setSupa(row ? { id: row.id, projectRef: row.meta.projectRef, supabaseUrl: row.meta.supabaseUrl } : null);
+    } catch {
+      /* not connected / not signed in */
+    }
+  };
+  useEffect(() => { if (user?.id) void loadSupabase(); }, [user?.id]);
+
+  const connectSupabaseMcp = async (accessToken: string, projectRef: string) => {
+    const res = await apiPost<{ toolCount: number; supabaseUrl: string | null; anonKeyResolved: boolean }>(
+      "/api/integrations/supabase/mcp",
+      { accessToken, projectRef: projectRef || undefined },
+      { silent: true },
+    );
+    await loadSupabase();
+    return res;
+  };
+
+  const disconnectSupabaseMcp = async () => {
+    if (!supa) return;
+    await apiDelete(`/api/integrations/${supa.id}`, { silent: true });
+    setSupa(null);
+    toast.success("Supabase disconnected");
+  };
 
   // Load all MCP integrations for this user from the DB
   useEffect(() => {
@@ -264,15 +300,25 @@ function McpPage() {
                 ) : (
                   <>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {filtered(c).map(s => (
-                        <McpCard
-                          key={s.name}
-                          def={s}
-                          row={rows[s.provider] ?? null}
-                          onConnect={connectMcp}
-                          onDisconnect={disconnectMcp}
-                        />
-                      ))}
+                      {filtered(c).map(s =>
+                        s.provider === "supabase" ? (
+                          <SupabaseMcpCard
+                            key={s.name}
+                            def={s}
+                            connected={supa}
+                            onConnect={connectSupabaseMcp}
+                            onDisconnect={disconnectSupabaseMcp}
+                          />
+                        ) : (
+                          <McpCard
+                            key={s.name}
+                            def={s}
+                            row={rows[s.provider] ?? null}
+                            onConnect={connectMcp}
+                            onDisconnect={disconnectMcp}
+                          />
+                        ),
+                      )}
                     </div>
                     {filtered(c).length === 0 && (
                       <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
@@ -304,7 +350,6 @@ function McpCard({
   onDisconnect: (provider: string) => Promise<void>;
 }) {
   const isConnected = row?.status === "connected";
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
   const handleDisconnect = async () => {
@@ -345,16 +390,6 @@ function McpCard({
         >
           {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Disconnect"}
         </Button>
-      ) : def.connectMode === "supabase_form" ? (
-        <SupabaseConnectDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          onSave={async (url, key) => {
-            await onConnect(def, { url, key });
-            setDialogOpen(false);
-            toast.success("Supabase connected");
-          }}
-        />
       ) : (
         <Button
           size="sm"
@@ -369,29 +404,34 @@ function McpCard({
   );
 }
 
-/* ─── Supabase connect dialog ─────────────────────────────────────────────── */
+/* ─── Supabase MCP card (backend-wired, PAT-based) ────────────────────────── */
 
-function SupabaseConnectDialog({
-  open,
-  onOpenChange,
-  onSave,
+function SupabaseMcpCard({
+  def,
+  connected,
+  onConnect,
+  onDisconnect,
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onSave: (url: string, key: string) => Promise<void>;
+  def: McpDef;
+  connected: { id: string; projectRef: string | null; supabaseUrl: string | null } | null;
+  onConnect: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
+  onDisconnect: () => Promise<void>;
 }) {
-  const [url, setUrl] = useState("");
-  const [key, setKey] = useState("");
+  const isConnected = !!connected;
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const [projectRef, setProjectRef] = useState("");
   const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const handleSave = async () => {
-    if (!url.trim()) { toast.error("Project URL is required"); return; }
-    if (!key.trim()) { toast.error("Service role key is required"); return; }
-    if (!url.startsWith("https://")) { toast.error("URL must start with https://"); return; }
+    if (!token.trim()) { toast.error("Access token is required"); return; }
     setSaving(true);
     try {
-      await onSave(url.trim(), key.trim());
-      setUrl(""); setKey("");
+      const res = await onConnect(token.trim(), projectRef.trim());
+      setToken(""); setProjectRef("");
+      setOpen(false);
+      toast.success(`Supabase connected — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to connect";
       toast.error(msg);
@@ -400,64 +440,77 @@ function SupabaseConnectDialog({
     }
   };
 
+  const handleDisconnect = async () => {
+    setBusy(true);
+    try { await onDisconnect(); } finally { setBusy(false); }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="default" className="mt-auto w-full">
-          Connect
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="text-lg">⚡</span> Connect Supabase MCP
-          </DialogTitle>
-          <DialogDescription>
-            Enter your Supabase project URL and service role key. These are stored securely and only visible to you.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="sb-url">Project URL</Label>
-            <Input
-              id="sb-url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="https://xxxxxxxxxxxx.supabase.co"
-            />
-            <p className="text-xs text-muted-foreground">
-              Found in your Supabase dashboard → Project Settings → API.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="sb-key">Service Role Key</Label>
-            <Input
-              id="sb-key"
-              type="password"
-              value={key}
-              onChange={e => setKey(e.target.value)}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-            />
-            <p className="text-xs text-muted-foreground">
-              Use the <span className="font-medium text-foreground/70">service_role</span> key (not anon key) for full agent access.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-300/80">
-            The service role key bypasses RLS. Only connect projects you own. Store it here, not in client-side code.
+    <div className="group flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">{def.emoji}</div>
+          <div>
+            <div className="font-semibold leading-tight">{def.name}</div>
+            <div className="text-xs text-muted-foreground">{def.category}</div>
           </div>
         </div>
+        <Badge variant={isConnected ? "default" : "secondary"} className={isConnected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}>
+          {isConnected ? "● Connected" : "Available"}
+        </Badge>
+      </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={saving || !url.trim() || !key.trim()}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save & Connect"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
+      {isConnected && connected?.supabaseUrl && (
+        <p className="truncate text-xs text-muted-foreground/70">{connected.supabaseUrl}</p>
+      )}
+
+      {isConnected ? (
+        <Button size="sm" variant="outline" className="mt-auto w-full" disabled={busy} onClick={handleDisconnect}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Disconnect"}
+        </Button>
+      ) : (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="default" className="mt-auto w-full">Connect</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><span className="text-lg">⚡</span> Connect Supabase</DialogTitle>
+              <DialogDescription>
+                Paste a Supabase Personal Access Token. We verify it against Supabase's MCP server and your apps run on your own database.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="sb-pat">Personal Access Token</Label>
+                <Input id="sb-pat" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." />
+                <p className="text-xs text-muted-foreground">
+                  Create one at Supabase → Account → <span className="font-medium text-foreground/70">Access Tokens</span>.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="sb-ref">Project Ref (recommended)</Label>
+                <Input id="sb-ref" value={projectRef} onChange={e => setProjectRef(e.target.value)} placeholder="abcdefghijklmnop" />
+                <p className="text-xs text-muted-foreground">
+                  The 20-char ref in your project URL (https://<span className="font-medium text-foreground/70">&lt;ref&gt;</span>.supabase.co). Lets us scope tools + fetch your anon key for previews.
+                </p>
+              </div>
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+                Your token is encrypted on our server and never sent to the browser, the AI, or the preview sandbox. Only your project's public anon key is used in previews.
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+              <Button onClick={handleSave} disabled={saving || !token.trim()}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
 }

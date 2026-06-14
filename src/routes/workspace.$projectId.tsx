@@ -574,10 +574,6 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  const previewMode =
-    buildStatus !== "complete" ? "idle" :
-    isFullstack                ? "e2b"  : "sandpack";
-
   return (
     <RequireAuth>
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">

@@ -62,9 +62,9 @@ export function TopBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="ml-1 flex items-center gap-2 rounded-full p-1 transition hover:bg-secondary">
-              <Avatar className="h-8 w-8 ring-2 ring-primary/40">
+              <Avatar className="h-8 w-8 border border-border">
                 {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
-                <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-primary-foreground text-xs font-semibold">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
                   {user.initials}
                 </AvatarFallback>
               </Avatar>

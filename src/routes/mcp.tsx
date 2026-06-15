@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,6 +103,8 @@ function McpPage() {
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customDesc, setCustomDesc] = useState("");
+  // When set, show that integration's detail/connect page instead of the grid.
+  const [selected, setSelected] = useState<McpDef | null>(null);
 
   // Supabase connection comes from the BACKEND (user_integrations via the MCP
   // server), not the local `integrations` table — its PAT is encrypted server
@@ -161,51 +163,6 @@ function McpPage() {
       });
   }, [user?.id]);
 
-  // Upsert a row (insert or update config + status → connected)
-  const connectMcp = async (def: McpDef, config: Record<string, string>) => {
-    if (!user?.id) return;
-    const existing = rows[def.provider];
-    if (existing) {
-      const { data, error } = await supabase
-        .from("integrations")
-        .update({ status: "connected", config, updated_at: new Date().toISOString() })
-        .eq("id", existing.id)
-        .select()
-        .single();
-      if (error) throw error;
-      setRows(r => ({ ...r, [def.provider]: data as IntegrationRow }));
-    } else {
-      const { data, error } = await supabase
-        .from("integrations")
-        .insert({
-          user_id: user.id,
-          provider: def.provider,
-          provider_type: def.providerType,
-          connection_type: "mcp",
-          status: "connected",
-          config,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      setRows(r => ({ ...r, [def.provider]: data as IntegrationRow }));
-    }
-  };
-
-  const disconnectMcp = async (provider: string) => {
-    const existing = rows[provider];
-    if (!existing) return;
-    const { data, error } = await supabase
-      .from("integrations")
-      .update({ status: "disconnected", updated_at: new Date().toISOString() })
-      .eq("id", existing.id)
-      .select()
-      .single();
-    if (error) { toast.error("Failed to disconnect"); return; }
-    setRows(r => ({ ...r, [provider]: data as IntegrationRow }));
-    toast.success(`${provider} disconnected`);
-  };
-
   const filtered = (cat: string) =>
     SERVERS.filter(
       (s) =>
@@ -225,6 +182,23 @@ function McpPage() {
   };
 
   const connectedCount = Object.values(rows).filter(r => r.status === "connected").length;
+
+  if (selected) {
+    return (
+      <RequireAuth>
+        <Shell>
+          <McpDetail
+            def={selected}
+            onBack={() => setSelected(null)}
+            supaConnected={!!supa}
+            mcpRow={rows[selected.provider] ?? null}
+            onConnectSupabase={connectSupabaseMcp}
+            onDisconnectSupabase={disconnectSupabaseMcp}
+          />
+        </Shell>
+      </RequireAuth>
+    );
+  }
 
   return (
     <RequireAuth>
@@ -300,25 +274,20 @@ function McpPage() {
                 ) : (
                   <>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {filtered(c).map(s =>
-                        s.provider === "supabase" ? (
-                          <SupabaseMcpCard
+                      {filtered(c).map(s => {
+                        const connected =
+                          s.provider === "supabase"
+                            ? !!supa
+                            : rows[s.provider]?.status === "connected";
+                        return (
+                          <McpStoreCard
                             key={s.name}
                             def={s}
-                            connected={supa}
-                            onConnect={connectSupabaseMcp}
-                            onDisconnect={disconnectSupabaseMcp}
+                            connected={connected}
+                            onClick={() => setSelected(s)}
                           />
-                        ) : (
-                          <McpCard
-                            key={s.name}
-                            def={s}
-                            row={rows[s.provider] ?? null}
-                            onConnect={connectMcp}
-                            onDisconnect={disconnectMcp}
-                          />
-                        ),
-                      )}
+                        );
+                      })}
                     </div>
                     {filtered(c).length === 0 && (
                       <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
@@ -336,30 +305,23 @@ function McpPage() {
   );
 }
 
-/* ─── MCP Card ────────────────────────────────────────────────────────────── */
+/* ─── Store card (clickable → opens detail page) ──────────────────────────── */
 
-function McpCard({
+function McpStoreCard({
   def,
-  row,
-  onConnect,
-  onDisconnect,
+  connected,
+  onClick,
 }: {
   def: McpDef;
-  row: IntegrationRow | null;
-  onConnect: (def: McpDef, config: Record<string, string>) => Promise<void>;
-  onDisconnect: (provider: string) => Promise<void>;
+  connected: boolean;
+  onClick: () => void;
 }) {
-  const isConnected = row?.status === "connected";
-  const [disconnecting, setDisconnecting] = useState(false);
-
-  const handleDisconnect = async () => {
-    setDisconnecting(true);
-    await onDisconnect(def.provider);
-    setDisconnecting(false);
-  };
-
   return (
-    <div className="group flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]">
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 text-left backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]"
+    >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">
@@ -371,70 +333,66 @@ function McpCard({
           </div>
         </div>
         <Badge
-          variant={isConnected ? "default" : "secondary"}
-          className={isConnected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}
+          variant={connected ? "default" : "secondary"}
+          className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}
         >
-          {isConnected ? "● Connected" : "Available"}
+          {connected ? "● Connected" : "Available"}
         </Badge>
       </div>
-
       <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
-
-      {isConnected ? (
-        <Button
-          size="sm"
-          variant="outline"
-          className="mt-auto w-full"
-          disabled={disconnecting}
-          onClick={handleDisconnect}
-        >
-          {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Disconnect"}
-        </Button>
-      ) : (
-        <Button
-          size="sm"
-          variant="default"
-          className="mt-auto w-full"
-          onClick={() => toast(`${def.name} MCP — launching soon!`, { description: "We're building OAuth flows for all providers." })}
-        >
-          Connect
-        </Button>
-      )}
-    </div>
+      <span className="mt-auto text-xs font-medium text-primary opacity-0 transition group-hover:opacity-100">
+        View details →
+      </span>
+    </button>
   );
 }
 
-/* ─── Supabase MCP card (backend-wired, PAT-based) ────────────────────────── */
+/* ─── Per-provider "what it unlocks" features ─────────────────────────────── */
 
-function SupabaseMcpCard({
+const FEATURES: Record<string, { title: string; desc: string }[]> = {
+  supabase: [
+    { title: "Database (PostgreSQL)", desc: "Store and query your app data with full SQL. Tables and schema are generated from your prompts." },
+    { title: "User Authentication", desc: "Email/password sign-up, login and access control added to your app." },
+    { title: "Row Level Security", desc: "Each user only sees their own data — policies generated automatically." },
+    { title: "File Storage & Realtime", desc: "Upload images/files and stream live data changes to your app." },
+  ],
+};
+
+/* ─── MCP detail / connect page ───────────────────────────────────────────── */
+
+function McpDetail({
   def,
-  connected,
-  onConnect,
-  onDisconnect,
+  onBack,
+  supaConnected,
+  mcpRow,
+  onConnectSupabase,
+  onDisconnectSupabase,
 }: {
   def: McpDef;
-  connected: { id: string; projectRef: string | null; supabaseUrl: string | null } | null;
-  onConnect: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
-  onDisconnect: () => Promise<void>;
+  onBack: () => void;
+  supaConnected: boolean;
+  mcpRow: IntegrationRow | null;
+  onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
+  onDisconnectSupabase: () => Promise<void>;
 }) {
-  const isConnected = !!connected;
-  const [open, setOpen] = useState(false);
+  const isSupabase = def.provider === "supabase";
+  const connected = isSupabase ? supaConnected : mcpRow?.status === "connected";
+  const features = FEATURES[def.provider] ?? [];
+
   const [token, setToken] = useState("");
   const [projectRef, setProjectRef] = useState("");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const handleSave = async () => {
+  const handleConnect = async () => {
     if (!token.trim()) { toast.error("Access token is required"); return; }
     setSaving(true);
     try {
-      const res = await onConnect(token.trim(), projectRef.trim());
+      const res = await onConnectSupabase(token.trim(), projectRef.trim());
       setToken(""); setProjectRef("");
-      setOpen(false);
       toast.success(`Supabase connected — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to connect";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "Failed to connect");
     } finally {
       setSaving(false);
     }
@@ -442,75 +400,89 @@ function SupabaseMcpCard({
 
   const handleDisconnect = async () => {
     setBusy(true);
-    try { await onDisconnect(); } finally { setBusy(false); }
+    try { await onDisconnectSupabase(); } finally { setBusy(false); }
   };
 
   return (
-    <div className="group flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">{def.emoji}</div>
+    <div className="mx-auto max-w-3xl space-y-6">
+      <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to MCP Store
+      </button>
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 text-2xl">{def.emoji}</div>
           <div>
-            <div className="font-semibold leading-tight">{def.name}</div>
-            <div className="text-xs text-muted-foreground">{def.category}</div>
+            <h1 className="text-2xl font-bold tracking-tight">{def.name}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">{def.desc}</p>
           </div>
         </div>
-        <Badge variant={isConnected ? "default" : "secondary"} className={isConnected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}>
-          {isConnected ? "● Connected" : "Available"}
+        <Badge variant={connected ? "default" : "secondary"} className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}>
+          {connected ? "● Connected" : "Available"}
         </Badge>
       </div>
 
-      <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
-      {isConnected && connected?.supabaseUrl && (
-        <p className="truncate text-xs text-muted-foreground/70">{connected.supabaseUrl}</p>
+      {/* Features */}
+      {features.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">What this unlocks</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {features.map((f) => (
+              <div key={f.title} className="flex gap-3">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                <div>
+                  <div className="text-sm font-medium">{f.title}</div>
+                  <div className="text-xs text-muted-foreground">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {isConnected ? (
-        <Button size="sm" variant="outline" className="mt-auto w-full" disabled={busy} onClick={handleDisconnect}>
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Disconnect"}
-        </Button>
-      ) : (
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="default" className="mt-auto w-full">Connect</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><span className="text-lg">⚡</span> Connect Supabase</DialogTitle>
-              <DialogDescription>
-                Paste a Supabase Personal Access Token. We verify it against Supabase's MCP server and your apps run on your own database.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="sb-pat">Personal Access Token</Label>
-                <Input id="sb-pat" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="sbp_..." />
-                <p className="text-xs text-muted-foreground">
-                  Create one at Supabase → Account → <span className="font-medium text-foreground/70">Access Tokens</span>.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="sb-ref">Project Ref (recommended)</Label>
-                <Input id="sb-ref" value={projectRef} onChange={e => setProjectRef(e.target.value)} placeholder="abcdefghijklmnop" />
-                <p className="text-xs text-muted-foreground">
-                  The 20-char ref in your project URL (https://<span className="font-medium text-foreground/70">&lt;ref&gt;</span>.supabase.co). Lets us scope tools + fetch your anon key for previews.
-                </p>
-              </div>
-              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
-                Your token is encrypted on our server and never sent to the browser, the AI, or the preview sandbox. Only your project's public anon key is used in previews.
-              </div>
+      {/* Connect / manage */}
+      <div className="rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">
+        {!isSupabase ? (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <Sparkles className="h-6 w-6 text-primary" />
+            <div className="font-medium">{def.name} MCP is launching soon</div>
+            <p className="max-w-sm text-sm text-muted-foreground">We're rolling out OAuth flows for every provider. Supabase is live today.</p>
+          </div>
+        ) : connected ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm text-emerald-400">
+              <ShieldCheck className="h-4 w-4" /> Connected and ready — your apps run on your own Supabase project.
             </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={handleSave} disabled={saving || !token.trim()}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+            <Button variant="outline" disabled={busy} onClick={handleDisconnect}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            <div className="space-y-2">
+              <Label htmlFor="sb-pat">Personal Access Token</Label>
+              <Input id="sb-pat" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sbp_..." />
+              <p className="text-xs text-muted-foreground">
+                Create one at Supabase → Account → <span className="font-medium text-foreground/70">Access Tokens</span>. Stored encrypted on our server.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sb-ref">Project Ref</Label>
+              <Input id="sb-ref" value={projectRef} onChange={(e) => setProjectRef(e.target.value)} placeholder="abcdefghijklmnop" />
+              <p className="text-xs text-muted-foreground">The 20-char ref from your project (Settings → General). Scopes tools to your project.</p>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>Your token is encrypted and never sent to the browser, the AI, or the preview. Only your project's public anon key is used in previews.</span>
+            </div>
+            <Button onClick={handleConnect} disabled={saving || !token.trim()} className="w-full">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

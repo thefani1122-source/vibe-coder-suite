@@ -44,8 +44,17 @@ interface IntegrationRow {
   updated_at: string;
 }
 
-type ConnectMode = "supabase_form" | "coming_soon";
+type ConnectMode = "supabase_form" | "backend_form" | "coming_soon";
 type Category = "Deploy" | "Database" | "Design" | "AI Tools" | "Dev Tools" | "Productivity";
+
+interface ProviderField {
+  key: string;
+  label: string;
+  type: "text" | "password" | "url";
+  placeholder?: string;
+  optional?: boolean;
+  help?: string;
+}
 
 interface McpDef {
   name: string;
@@ -55,6 +64,8 @@ interface McpDef {
   provider: string;          // lowercase key stored in DB
   providerType: ProviderType;
   connectMode: ConnectMode;
+  fields?: ProviderField[];  // for backend_form providers
+  features?: string[];       // shown on the detail page
 }
 
 /* ─── Static server catalogue ────────────────────────────────────────────── */
@@ -87,6 +98,55 @@ const SERVERS: McpDef[] = [
   { name: "Notion",  desc: "Search pages, append blocks and create databases.", category: "Productivity", emoji: "📝", provider: "notion",  providerType: "code",    connectMode: "coming_soon" },
   { name: "Slack",   desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack",   providerType: "code",    connectMode: "coming_soon" },
   { name: "Stripe",  desc: "Create payments, subscriptions and customer portals.", category: "Productivity", emoji: "💳", provider: "stripe",  providerType: "payment", connectMode: "coming_soon" },
+
+  // ── Live, backend-wired provider integrations ──────────────────────────────
+  {
+    name: "WordPress", desc: "Read/write posts, pages, media & WooCommerce via the WordPress REST API.",
+    category: "Productivity", emoji: "📝", provider: "wordpress", providerType: "code", connectMode: "backend_form",
+    features: ["Posts & pages (get/create)", "Media library", "WooCommerce products & orders", "Application-password auth"],
+    fields: [
+      { key: "siteUrl", label: "Site URL", type: "url", placeholder: "https://myblog.com" },
+      { key: "username", label: "Username", type: "text", placeholder: "admin" },
+      { key: "appPassword", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx", help: "WP Admin → Users → Profile → Application Passwords." },
+    ],
+  },
+  {
+    name: "Shopify", desc: "Products, carts & checkout (Storefront) + orders & webhooks (Admin).",
+    category: "Database", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "backend_form",
+    features: ["Product catalog", "Cart & checkout", "Orders (Admin token)", "Webhooks"],
+    fields: [
+      { key: "shopDomain", label: "Shop Domain", type: "text", placeholder: "my-store.myshopify.com" },
+      { key: "storefrontAccessToken", label: "Storefront Access Token", type: "password", placeholder: "shpsa_..." },
+      { key: "adminApiAccessToken", label: "Admin API Token (optional)", type: "password", placeholder: "shpat_...", optional: true, help: "Needed for orders & webhooks." },
+    ],
+  },
+  {
+    name: "Make.com", desc: "Trigger Make scenarios (automations) from your app via webhook.",
+    category: "Productivity", emoji: "🔗", provider: "make", providerType: "code", connectMode: "backend_form",
+    features: ["Trigger scenarios", "Pass data to workflows", "Async fire-and-forget", "Status via API key"],
+    fields: [
+      { key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://hook.eu1.make.com/xxxxxxxx" },
+      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only for scenario status." },
+    ],
+  },
+  {
+    name: "n8n", desc: "Trigger n8n workflows from your app, sync or fire-and-forget.",
+    category: "Productivity", emoji: "⚙️", provider: "n8n", providerType: "code", connectMode: "backend_form",
+    features: ["Trigger workflows", "Synchronous responses", "Self-hosted or cloud", "Poll executions"],
+    fields: [
+      { key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://your-n8n.app/webhook/xxxx" },
+      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only to poll execution results." },
+    ],
+  },
+  {
+    name: "Zapier", desc: "Send data to 5000+ apps by triggering Zapier Zaps via Catch Hook.",
+    category: "Productivity", emoji: "⚡", provider: "zapier", providerType: "code", connectMode: "backend_form",
+    features: ["Trigger Zaps", "5000+ app integrations", "Async fire-and-forget", "Run history via API key"],
+    fields: [
+      { key: "webhookUrl", label: "Catch Hook URL", type: "url", placeholder: "https://hooks.zapier.com/hooks/catch/xxxx/yyyy/" },
+      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only for run history." },
+    ],
+  },
 ];
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "AI Tools", "Dev Tools", "Productivity"] as const;
@@ -106,40 +166,50 @@ function McpPage() {
   // When set, show that integration's detail/connect page instead of the grid.
   const [selected, setSelected] = useState<McpDef | null>(null);
 
-  // Supabase connection comes from the BACKEND (user_integrations via the MCP
-  // server), not the local `integrations` table — its PAT is encrypted server
-  // side and verified against https://mcp.supabase.com/mcp.
-  const [supa, setSupa] = useState<{ id: string; projectRef: string | null; supabaseUrl: string | null } | null>(null);
+  // Backend-wired connections (user_integrations): supabase + the provider
+  // registry (wordpress/shopify/make/n8n/zapier). Creds are encrypted server
+  // side; the frontend only ever sees connected-status + non-secret meta.
+  const [backendConns, setBackendConns] = useState<Record<string, { id: string; meta: Record<string, string> }>>({});
 
-  const loadSupabase = async () => {
+  const loadBackendConns = async () => {
     try {
-      const res = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string; meta: { supabaseUrl: string | null; projectRef: string | null } }> }>(
+      const res = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string; meta: Record<string, string> }> }>(
         "/api/integrations",
         { silent: true },
       );
-      const row = res.integrations.find((i) => i.provider === "supabase" && i.status === "connected");
-      setSupa(row ? { id: row.id, projectRef: row.meta.projectRef, supabaseUrl: row.meta.supabaseUrl } : null);
+      const map: Record<string, { id: string; meta: Record<string, string> }> = {};
+      for (const i of res.integrations) {
+        if (i.status === "connected") map[i.provider] = { id: i.id, meta: i.meta ?? {} };
+      }
+      setBackendConns(map);
     } catch {
-      /* not connected / not signed in */
+      /* not signed in / none connected */
     }
   };
-  useEffect(() => { if (user?.id) void loadSupabase(); }, [user?.id]);
+  useEffect(() => { if (user?.id) void loadBackendConns(); }, [user?.id]);
 
+  // Supabase uses its dedicated MCP endpoint; everything else the generic one.
   const connectSupabaseMcp = async (accessToken: string, projectRef: string) => {
-    const res = await apiPost<{ toolCount: number; supabaseUrl: string | null; anonKeyResolved: boolean }>(
+    const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
       "/api/integrations/supabase/mcp",
       { accessToken, projectRef: projectRef || undefined },
       { silent: true },
     );
-    await loadSupabase();
+    await loadBackendConns();
     return res;
   };
 
-  const disconnectSupabaseMcp = async () => {
-    if (!supa) return;
-    await apiDelete(`/api/integrations/${supa.id}`, { silent: true });
-    setSupa(null);
-    toast.success("Supabase disconnected");
+  const connectProvider = async (providerId: string, params: Record<string, string>) => {
+    await apiPost(`/api/integrations/provider/${providerId}`, params, { silent: true });
+    await loadBackendConns();
+  };
+
+  const disconnectProvider = async (providerId: string) => {
+    const conn = backendConns[providerId];
+    if (!conn) return;
+    await apiDelete(`/api/integrations/${conn.id}`, { silent: true });
+    setBackendConns((m) => { const n = { ...m }; delete n[providerId]; return n; });
+    toast.success(`${providerId} disconnected`);
   };
 
   // Load all MCP integrations for this user from the DB
@@ -190,10 +260,10 @@ function McpPage() {
           <McpDetail
             def={selected}
             onBack={() => setSelected(null)}
-            supaConnected={!!supa}
-            mcpRow={rows[selected.provider] ?? null}
+            connected={!!backendConns[selected.provider]}
             onConnectSupabase={connectSupabaseMcp}
-            onDisconnectSupabase={disconnectSupabaseMcp}
+            onConnectProvider={connectProvider}
+            onDisconnect={() => disconnectProvider(selected.provider)}
           />
         </Shell>
       </RequireAuth>
@@ -276,8 +346,8 @@ function McpPage() {
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {filtered(c).map(s => {
                         const connected =
-                          s.provider === "supabase"
-                            ? !!supa
+                          s.connectMode === "supabase_form" || s.connectMode === "backend_form"
+                            ? !!backendConns[s.provider]
                             : rows[s.provider]?.status === "connected";
                         return (
                           <McpStoreCard
@@ -363,28 +433,34 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
 function McpDetail({
   def,
   onBack,
-  supaConnected,
-  mcpRow,
+  connected,
   onConnectSupabase,
-  onDisconnectSupabase,
+  onConnectProvider,
+  onDisconnect,
 }: {
   def: McpDef;
   onBack: () => void;
-  supaConnected: boolean;
-  mcpRow: IntegrationRow | null;
+  connected: boolean;
   onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
-  onDisconnectSupabase: () => Promise<void>;
+  onConnectProvider: (providerId: string, params: Record<string, string>) => Promise<void>;
+  onDisconnect: () => Promise<void>;
 }) {
-  const isSupabase = def.provider === "supabase";
-  const connected = isSupabase ? supaConnected : mcpRow?.status === "connected";
-  const features = FEATURES[def.provider] ?? [];
+  const isSupabase = def.connectMode === "supabase_form";
+  const isBackendForm = def.connectMode === "backend_form";
 
+  // Feature bullets: prefer def.features (strings) else the supabase FEATURES map.
+  const featureBullets: string[] =
+    def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
+
+  // Supabase PAT form
   const [token, setToken] = useState("");
   const [projectRef, setProjectRef] = useState("");
+  // Generic backend_form values keyed by field
+  const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const handleConnect = async () => {
+  const handleSupabase = async () => {
     if (!token.trim()) { toast.error("Access token is required"); return; }
     setSaving(true);
     try {
@@ -393,14 +469,32 @@ function McpDetail({
       toast.success(`Supabase connected — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to connect");
-    } finally {
-      setSaving(false);
+    } finally { setSaving(false); }
+  };
+
+  const handleGeneric = async () => {
+    const required = (def.fields ?? []).filter((f) => !f.optional);
+    for (const f of required) {
+      if (!values[f.key]?.trim()) { toast.error(`${f.label} is required`); return; }
     }
+    setSaving(true);
+    try {
+      const payload: Record<string, string> = {};
+      for (const f of def.fields ?? []) {
+        const v = values[f.key]?.trim();
+        if (v) payload[f.key] = v;
+      }
+      await onConnectProvider(def.provider, payload);
+      setValues({});
+      toast.success(`${def.name} connected`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to connect");
+    } finally { setSaving(false); }
   };
 
   const handleDisconnect = async () => {
     setBusy(true);
-    try { await onDisconnectSupabase(); } finally { setBusy(false); }
+    try { await onDisconnect(); } finally { setBusy(false); }
   };
 
   return (
@@ -424,17 +518,14 @@ function McpDetail({
       </div>
 
       {/* Features */}
-      {features.length > 0 && (
+      {featureBullets.length > 0 && (
         <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">What this unlocks</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {features.map((f) => (
-              <div key={f.title} className="flex gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {featureBullets.map((f) => (
+              <div key={f} className="flex gap-2.5 text-sm">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                <div>
-                  <div className="text-sm font-medium">{f.title}</div>
-                  <div className="text-xs text-muted-foreground">{f.desc}</div>
-                </div>
+                <span className="text-muted-foreground">{f}</span>
               </div>
             ))}
           </div>
@@ -443,22 +534,16 @@ function McpDetail({
 
       {/* Connect / manage */}
       <div className="rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">
-        {!isSupabase ? (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <div className="font-medium">{def.name} MCP is launching soon</div>
-            <p className="max-w-sm text-sm text-muted-foreground">We're rolling out OAuth flows for every provider. Supabase is live today.</p>
-          </div>
-        ) : connected ? (
+        {connected ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm text-emerald-400">
-              <ShieldCheck className="h-4 w-4" /> Connected and ready — your apps run on your own Supabase project.
+              <ShieldCheck className="h-4 w-4" /> Connected — credentials are encrypted on our server.
             </div>
             <Button variant="outline" disabled={busy} onClick={handleDisconnect}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
           </div>
-        ) : (
+        ) : isSupabase ? (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Connect {def.name}</h2>
             <div className="space-y-2">
@@ -471,15 +556,45 @@ function McpDetail({
             <div className="space-y-2">
               <Label htmlFor="sb-ref">Project Ref</Label>
               <Input id="sb-ref" value={projectRef} onChange={(e) => setProjectRef(e.target.value)} placeholder="abcdefghijklmnop" />
-              <p className="text-xs text-muted-foreground">The 20-char ref from your project (Settings → General). Scopes tools to your project.</p>
+              <p className="text-xs text-muted-foreground">The 20-char ref from your project (Settings → General).</p>
             </div>
             <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>Your token is encrypted and never sent to the browser, the AI, or the preview. Only your project's public anon key is used in previews.</span>
+              <span>Encrypted and never sent to the browser, the AI, or the preview. Only the public anon key is used in previews.</span>
             </div>
-            <Button onClick={handleConnect} disabled={saving || !token.trim()} className="w-full">
+            <Button onClick={handleSupabase} disabled={saving || !token.trim()} className="w-full">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
             </Button>
+          </div>
+        ) : isBackendForm ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            {(def.fields ?? []).map((f) => (
+              <div key={f.key} className="space-y-2">
+                <Label htmlFor={`f-${f.key}`}>{f.label}</Label>
+                <Input
+                  id={`f-${f.key}`}
+                  type={f.type === "password" ? "password" : "text"}
+                  value={values[f.key] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                />
+                {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
+              </div>
+            ))}
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>We verify the credentials, then store them encrypted. They never reach the browser, the AI, or the preview sandbox.</span>
+            </div>
+            <Button onClick={handleGeneric} disabled={saving} className="w-full">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <Sparkles className="h-6 w-6 text-primary" />
+            <div className="font-medium">{def.name} is launching soon</div>
+            <p className="max-w-sm text-sm text-muted-foreground">We're rolling out connect flows for every provider.</p>
           </div>
         )}
       </div>

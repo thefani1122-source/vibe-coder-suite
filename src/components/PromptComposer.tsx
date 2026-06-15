@@ -25,7 +25,6 @@ import {
   Figma,
   Check,
   Plus,
-  ImageIcon,
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";

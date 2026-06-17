@@ -20,7 +20,7 @@ import {
   ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
-  History, PanelLeft, PanelLeftClose, FileText, Github, Download,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, FileText, Github, Download,
   Square, ExternalLink, Link2, Figma, X, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -767,6 +767,7 @@ function WorkspacePage() {
           businessContext={businessContext}
           showContextPanel={showContextPanel}
           onToggleContextPanel={() => setShowContextPanel(v => !v)}
+          previewUrl={previewUrl}
         />
 
         <Group
@@ -793,6 +794,8 @@ function WorkspacePage() {
                 projectName={projectName}
                 activityStatus={activityStatus}
                 isClarifying={isClarifying}
+                chatCollapsed={chatCollapsed}
+                onCollapse={toggleChat}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -814,6 +817,21 @@ function WorkspacePage() {
                   </div>
                 </div>
               )}
+              {/* ClarifyModal — slides up from above the prompt input */}
+              {showClarifyModal && clarifyQuestions.length > 0 && (
+                <div className="absolute bottom-[80px] left-3 right-3 z-50 animate-in slide-in-from-bottom-4 duration-200">
+                  <ClarifyModal
+                    questions={clarifyQuestions}
+                    currentIndex={currentQuestionIndex}
+                    selectedOptions={selectedOptions}
+                    customText={customText}
+                    onToggleOption={handleToggleOption}
+                    onCustomChange={setCustomText}
+                    onNext={handleNextQuestion}
+                    onSkip={handleSkipAllQuestions}
+                  />
+                </div>
+              )}
             </div>
           </Panel>
 
@@ -822,6 +840,17 @@ function WorkspacePage() {
           {/* Right: preview / code — takes remaining space */}
           <Panel defaultSize={75} minSize={30}>
             <div className="relative flex min-h-0 h-full bg-[#080808]">
+              {/* Floating reopen button when chat is collapsed */}
+              {chatCollapsed && (
+                <button
+                  onClick={toggleChat}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/60 hover:text-white transition-all"
+                  title="Show chat"
+                >
+                  <PanelLeftOpen size={15} />
+                </button>
+              )}
+
               {/* MCP Action Panel — overlay in bottom-right, shown only during/after MCP execution */}
               {(isMcpActive || mcpEvents.length > 0) && (
                 <McpActionPanel
@@ -850,42 +879,41 @@ function WorkspacePage() {
                 </div>
               )}
               {activeTab === "preview" && (
-                <div key={reloadKey} className="h-full w-full bg-[#080808]">
-                  {isFullstack ? (
-                    <E2BPreview
-                      url={previewUrl}
-                      loading={previewLoading}
-                      error={previewError}
-                      isFullstack={isFullstack}
-                      files={files}
-                      device={device}
-                    />
-                  ) : (
-                    <SandpackPreview
-                      files={buildStatus === "complete" ? files : {}}
-                      isBuilding={isBuilding}
-                      externalDevice={device}
-                      className="h-full w-full"
-                    />
-                  )}
+                <div key={reloadKey} className="flex h-full w-full items-start justify-center overflow-hidden bg-[#080808] transition-all duration-300">
+                  <div className={`h-full transition-all duration-300 ${
+                    device === "desktop" ? "w-full" :
+                    device === "tablet"  ? "w-[768px] border-x border-white/10" :
+                                          "w-[375px] border-x border-white/10"
+                  }`}>
+                    {isFullstack ? (
+                      <div className="relative h-full w-full">
+                        <E2BPreview
+                          url={previewUrl}
+                          loading={previewLoading}
+                          error={previewError}
+                          isFullstack={isFullstack}
+                          files={files}
+                          device={device}
+                        />
+                        {/* Overlay to hide E2B sandbox toolbar at top of iframe */}
+                        {previewUrl && (
+                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 h-10 bg-[#080808]" />
+                        )}
+                      </div>
+                    ) : (
+                      <SandpackPreview
+                        files={buildStatus === "complete" ? files : {}}
+                        isBuilding={isBuilding}
+                        externalDevice={device}
+                        className="h-full w-full"
+                      />
+                    )}
+                  </div>
                 </div>
               )}
-            </div>{/* end debug overlay wrapper */}
+            </div>
           </Panel>
         </Group>
-
-      {showClarifyModal && clarifyQuestions.length > 0 && (
-        <ClarifyModal
-          questions={clarifyQuestions}
-          currentIndex={currentQuestionIndex}
-          selectedOptions={selectedOptions}
-          customText={customText}
-          onToggleOption={handleToggleOption}
-          onCustomChange={setCustomText}
-          onNext={handleNextQuestion}
-          onSkip={handleSkipAllQuestions}
-        />
-      )}
 
       {showContextPanel && (
         <BusinessContextPanel
@@ -909,6 +937,7 @@ function WorkspaceTopBar({
   buildStatus, onReload, files, chatCollapsed, onToggleChat,
   showHistory, onToggleHistory,
   businessContext, showContextPanel, onToggleContextPanel,
+  previewUrl,
 }: {
   projectId: string;
   projectName: string;
@@ -926,6 +955,7 @@ function WorkspaceTopBar({
   businessContext: BusinessContext;
   showContextPanel: boolean;
   onToggleContextPanel: () => void;
+  previewUrl: string | null;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -933,13 +963,6 @@ function WorkspaceTopBar({
   const rawName = projectName || projectId.slice(0, 8);
   const words = rawName.split(/\s+/).filter(Boolean);
   const displayName = words.length > 4 ? words.slice(0, 4).join(" ") + "…" : rawName;
-
-  const cycleDevice = () => {
-    const idx = DEVICE_CYCLE.indexOf(device);
-    setDevice(DEVICE_CYCLE[(idx + 1) % DEVICE_CYCLE.length]);
-  };
-
-  const DeviceIcon = device === "mobile" ? Smartphone : device === "tablet" ? Tablet : Monitor;
 
   const handleDownload = () => {
     const entries = Object.entries(files);
@@ -1019,8 +1042,8 @@ function WorkspaceTopBar({
         }
       </button>
 
-      {/* ── Center: tab pills + build status ──────────────────────────── */}
-      <div className="flex flex-1 items-center justify-center gap-2">
+      {/* ── Center: tab pills + device toggle + build status ─────────── */}
+      <div className="flex flex-1 items-center justify-center gap-3">
 
         <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
           <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
@@ -1034,6 +1057,30 @@ function WorkspaceTopBar({
           </IconTab>
         </div>
 
+        {/* Device toggle — only shown in preview tab */}
+        {activeTab === "preview" && (
+          <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
+            {([
+              { mode: "desktop" as Device, icon: Monitor,    label: "Desktop" },
+              { mode: "tablet"  as Device, icon: Tablet,     label: "Tablet"  },
+              { mode: "mobile"  as Device, icon: Smartphone, label: "Mobile"  },
+            ] as const).map(({ mode, icon: Icon, label }) => (
+              <button
+                key={mode}
+                onClick={() => setDevice(mode)}
+                title={label}
+                className={`p-1.5 rounded-md transition-all ${
+                  device === mode
+                    ? "bg-white/15 text-white"
+                    : "text-white/40 hover:text-white/70"
+                }`}
+              >
+                <Icon size={15} />
+              </button>
+            ))}
+          </div>
+        )}
+
         {isBuilding && (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
@@ -1042,36 +1089,22 @@ function WorkspaceTopBar({
         )}
       </div>
 
-      {/* ── Right: device cycle + actions ─────────────────────────────── */}
+      {/* ── Right: actions ─────────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-1.5">
-        {/* Single cycling device button — always visible */}
-        <button
-          className={cn(
-            "ws-iconbtn",
-            activeTab === "preview" ? "text-white/70" : "text-white/30",
-          )}
-          title={`Device: ${device} — click to cycle`}
-          onClick={cycleDevice}
-        >
-          <DeviceIcon className="h-3.5 w-3.5" />
-        </button>
-
         {activeTab === "preview" && (
           <>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
               <RotateCw className="h-3.5 w-3.5" />
             </button>
             <button
-              className="ws-iconbtn"
-              title="Open preview in new tab"
+              className={cn(
+                "ws-iconbtn",
+                !previewUrl && "cursor-not-allowed opacity-40",
+              )}
+              title={previewUrl ? "Open preview in new tab" : "Preview not ready yet"}
+              disabled={!previewUrl}
               onClick={() => {
-                const iframe = document.querySelector('iframe[title="App Preview"], iframe[title="Sandbox Preview"]') as HTMLIFrameElement | null;
-                const url = iframe?.src;
-                if (url && !url.includes("about:blank")) {
-                  window.open(url, "_blank", "noopener,noreferrer");
-                } else {
-                  toast("Preview not ready yet — build first");
-                }
+                if (previewUrl) window.open(previewUrl, "_blank", "noopener,noreferrer");
               }}
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -1111,6 +1144,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus, isClarifying,
+  chatCollapsed, onCollapse,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1120,6 +1154,8 @@ function ChatColumn({
   projectName?: string;
   activityStatus?: string | null;
   isClarifying?: boolean;
+  chatCollapsed?: boolean;
+  onCollapse?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1133,6 +1169,20 @@ function ChatColumn({
 
   return (
     <div className="flex h-full flex-col">
+
+      {/* Chat header with collapse button */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-widest text-white/25">Chat</span>
+        {onCollapse && (
+          <button
+            onClick={onCollapse}
+            className="p-1.5 text-white/40 hover:text-white/70 transition-colors"
+            title={chatCollapsed ? "Show chat" : "Hide chat"}
+          >
+            <PanelLeftClose size={14} />
+          </button>
+        )}
+      </div>
 
       {/* Messages */}
       <div className="flex-1 min-h-0">
@@ -1492,11 +1542,10 @@ function ClarifyModal({
   const canProceed = selectedOptions.size > 0 || customText.trim().length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="mx-4 w-full max-w-lg rounded-xl border border-white/10 bg-[#0d0d12] p-6">
+    <div className="w-full rounded-xl border border-white/20 bg-[#1a1a2e] p-5 shadow-2xl max-h-[70vh] overflow-y-auto">
 
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-5 flex items-center justify-between">
           <div>
             <p className="mb-1 text-xs uppercase tracking-wider text-orange-400">
               Before I start building...
@@ -1602,7 +1651,6 @@ function ClarifyModal({
             </button>
           </div>
         </div>
-      </div>
     </div>
   );
 }

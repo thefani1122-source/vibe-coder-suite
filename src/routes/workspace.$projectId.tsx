@@ -177,6 +177,7 @@ function WorkspacePage() {
   const currentSessionIdRef = useRef<string | undefined>(sessionId);
   const chatPanelRef        = usePanelRef();
   const pendingPromptRef    = useRef<string>("");
+  const rebuildFnRef        = useRef<(() => void) | null>(null);
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -355,15 +356,20 @@ function WorkspacePage() {
       // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
       if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
 
-      // Warn if any code file looks like it was cut off mid-generation.
-      const truncated = Object.entries(mergedFiles).some(([path, content]) => looksTruncated(path, content));
-      if (truncated) {
-        toast.warning("Some files may be incomplete — try rebuilding.");
-      }
     });
 
-    socket.on("build:warning", ({ message }: { message: string }) => {
-      toast.warning(message, { duration: 6000 });
+    socket.on("build:warning", ({ message, truncated }: { message: string; truncated?: boolean }) => {
+      if (truncated) {
+        toast.warning("⚠️ Output was too long — click Rebuild to try again", {
+          duration: 10000,
+          action: {
+            label: "Rebuild",
+            onClick: () => rebuildFnRef.current?.(),
+          },
+        });
+      } else {
+        toast.warning(message, { duration: 6000 });
+      }
       console.warn("[Build Warning]", message);
     });
 
@@ -677,6 +683,13 @@ function WorkspacePage() {
       await executeBuild(prompt, [], []);
     }
   }, [projectId, executeBuild]);
+
+  // Keep rebuildFnRef current so the truncation toast Rebuild button always
+  // re-sends the last prompt through the normal follow-up flow.
+  rebuildFnRef.current = () => {
+    const prompt = pendingPromptRef.current;
+    if (prompt) void handleFollowUp(prompt);
+  };
 
   // Advance through clarify questions; on last → close modal and start build.
   const handleNextQuestion = useCallback(() => {

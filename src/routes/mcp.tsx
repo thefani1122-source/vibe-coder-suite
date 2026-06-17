@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Zap, Lightbulb, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -447,6 +447,236 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Row Level Security", desc: "Each user only sees their own data — policies generated automatically." },
     { title: "File Storage & Realtime", desc: "Upload images/files and stream live data changes to your app." },
   ],
+};
+
+/* ─── Per-provider rich metadata for the detail page ──────────────────────── */
+
+interface McpMeta {
+  longDesc: string;
+  inputs: { name: string; type: string; desc: string }[];
+  useCases: string[];
+}
+
+const META: Record<string, McpMeta> = {
+  vercel: {
+    longDesc: "Vercel hosts your frontend and serverless functions on a global edge network. Connect it so the agent can deploy projects, manage environments, and roll back releases on your behalf.",
+    inputs: [
+      { name: "projectName", type: "string", desc: "Vercel project slug to deploy or inspect." },
+      { name: "environment", type: "'production' | 'preview' | 'development'", desc: "Target environment for the action." },
+      { name: "envVars", type: "Record<string,string>", desc: "Env vars to set before deploy." },
+    ],
+    useCases: ["Ship every prompt to a preview URL", "Promote a preview to production", "Sync env vars across environments"],
+  },
+  netlify: {
+    longDesc: "Netlify builds, previews, and serves your site with deploy previews per pull request. Use it to publish static sites and edge functions straight from chat.",
+    inputs: [
+      { name: "siteId", type: "string", desc: "Netlify site identifier." },
+      { name: "branch", type: "string", desc: "Branch to build & deploy." },
+    ],
+    useCases: ["Publish a marketing landing page", "Spin up deploy previews for review", "Wire forms to a serverless function"],
+  },
+  railway: {
+    longDesc: "Railway runs your backend services, databases, and cron jobs in seconds. The agent can provision services, set variables, and tail logs.",
+    inputs: [
+      { name: "serviceName", type: "string", desc: "Service to deploy or inspect." },
+      { name: "schedule", type: "string (cron)", desc: "Cron schedule for jobs." },
+    ],
+    useCases: ["Host a Node/Python API", "Run nightly cron jobs", "Spin up a managed Postgres"],
+  },
+  cloudflare: {
+    longDesc: "Cloudflare runs your code at the edge with Workers, KV, D1, and R2. Use it for global low-latency apps and asset delivery.",
+    inputs: [
+      { name: "workerName", type: "string", desc: "Worker script to deploy." },
+      { name: "bucket", type: "string", desc: "R2 bucket for asset uploads." },
+    ],
+    useCases: ["Globally-distributed API at the edge", "Image & file storage on R2", "DNS and CDN for a custom domain"],
+  },
+  supabase: {
+    longDesc: "Supabase gives your app a Postgres database, auth, storage, and realtime. Lampcode generates tables, RLS policies, and edge functions for you.",
+    inputs: [
+      { name: "accessToken", type: "string (secret)", desc: "Supabase personal access token (sbp_...)." },
+      { name: "projectRef", type: "string", desc: "20-char project ref from Settings → General." },
+    ],
+    useCases: ["Add user sign-up & login", "Persist data with row-level security", "Upload files and stream realtime updates"],
+  },
+  neon: {
+    longDesc: "Neon is serverless Postgres with database branching for every PR. Great for preview environments with isolated data.",
+    inputs: [
+      { name: "projectId", type: "string", desc: "Neon project identifier." },
+      { name: "branch", type: "string", desc: "Branch name to query or create." },
+    ],
+    useCases: ["Per-PR database branches", "Scale-to-zero dev databases", "Snapshot & restore data"],
+  },
+  planetscale: {
+    longDesc: "PlanetScale is a MySQL-compatible serverless database with branching and deploy requests for safe schema changes.",
+    inputs: [
+      { name: "database", type: "string", desc: "PlanetScale database name." },
+      { name: "branch", type: "string", desc: "Schema branch to use." },
+    ],
+    useCases: ["Safe online schema migrations", "Branching workflows for schema reviews", "High-throughput MySQL at scale"],
+  },
+  mongodb: {
+    longDesc: "MongoDB Atlas is a managed document database with global clusters, Search, and Vector Search built in.",
+    inputs: [
+      { name: "clusterUri", type: "string (secret)", desc: "Atlas connection string." },
+      { name: "database", type: "string", desc: "Database name to operate on." },
+    ],
+    useCases: ["Flexible document storage", "Full-text and vector search", "Globally distributed reads"],
+  },
+  figma: {
+    longDesc: "Figma exposes your design files, components, and tokens so the agent can build pixel-accurate UI from your designs.",
+    inputs: [
+      { name: "fileKey", type: "string", desc: "Figma file key from the URL." },
+      { name: "nodeId", type: "string", desc: "Specific frame or component to import." },
+    ],
+    useCases: ["Import a hero section as React", "Sync design tokens to Tailwind", "Export icons and SVG assets"],
+  },
+  framer: {
+    longDesc: "Framer provides animated layouts, CMS collections, and responsive components you can pull into your app.",
+    inputs: [
+      { name: "projectId", type: "string", desc: "Framer project identifier." },
+      { name: "componentId", type: "string", desc: "Component or page to import." },
+    ],
+    useCases: ["Animated marketing sections", "CMS-driven landing pages", "Responsive layout starters"],
+  },
+  openai: {
+    longDesc: "OpenAI provides GPT chat, embeddings, vision, and image generation. Wire it in to give your app AI capabilities.",
+    inputs: [
+      { name: "apiKey", type: "string (secret)", desc: "OpenAI API key (sk-...)." },
+      { name: "model", type: "string", desc: "Model id, e.g. gpt-4o-mini." },
+    ],
+    useCases: ["Chatbot and Q&A assistant", "Semantic search with embeddings", "Image generation and vision"],
+  },
+  anthropic: {
+    longDesc: "Anthropic's Claude models excel at long-context reasoning, tool use, and careful instruction following.",
+    inputs: [
+      { name: "apiKey", type: "string (secret)", desc: "Anthropic API key." },
+      { name: "model", type: "string", desc: "Model id, e.g. claude-sonnet-4." },
+    ],
+    useCases: ["Summarize long documents", "Structured tool-using agents", "Vision + text analysis"],
+  },
+  sequential_think: {
+    longDesc: "Sequential Thinking adds a structured plan/act/reflect loop to your agent, improving accuracy on multi-step tasks.",
+    inputs: [
+      { name: "thought", type: "string", desc: "Next reasoning step from the agent." },
+      { name: "branchId", type: "string", desc: "Optional branch label for alternative paths." },
+    ],
+    useCases: ["Complex debugging workflows", "Multi-step research tasks", "Plan-then-act tool agents"],
+  },
+  context7: {
+    longDesc: "Context7 streams version-aware library documentation into the agent so generated code uses real, current APIs.",
+    inputs: [
+      { name: "library", type: "string", desc: "Library name, e.g. 'react-query'." },
+      { name: "version", type: "string", desc: "Optional semver to pin docs." },
+    ],
+    useCases: ["Avoid hallucinated SDK calls", "Pin a library to a specific version", "Cite snippets in PR descriptions"],
+  },
+  github: {
+    longDesc: "GitHub gives the agent read/write access to repos, pull requests, issues, and Actions for any account you authorize.",
+    inputs: [
+      { name: "repo", type: "string", desc: "Repository in 'owner/name' format." },
+      { name: "ref", type: "string", desc: "Branch, tag, or commit SHA." },
+    ],
+    useCases: ["Open PRs from chat", "Triage and label issues", "Inspect CI logs"],
+  },
+  gitlab: {
+    longDesc: "GitLab access for repos, merge requests, pipelines, and the container/package registries.",
+    inputs: [
+      { name: "projectId", type: "string", desc: "GitLab project id or path." },
+      { name: "ref", type: "string", desc: "Branch, tag, or SHA." },
+    ],
+    useCases: ["Create merge requests", "Trigger CI pipelines", "Manage registries"],
+  },
+  sentry: {
+    longDesc: "Sentry pulls your runtime errors, performance traces, and release health into the agent for triage and fixes.",
+    inputs: [
+      { name: "org", type: "string", desc: "Sentry organization slug." },
+      { name: "project", type: "string", desc: "Sentry project slug." },
+    ],
+    useCases: ["Diagnose a crashing release", "Group errors by component", "Track regressions across releases"],
+  },
+  posthog: {
+    longDesc: "PostHog brings product analytics, feature flags, A/B tests, and session replay to your app.",
+    inputs: [
+      { name: "projectApiKey", type: "string", desc: "PostHog project API key." },
+      { name: "flagKey", type: "string", desc: "Feature flag to read or toggle." },
+    ],
+    useCases: ["Track funnels and retention", "Roll out behind feature flags", "Watch session replays"],
+  },
+  linear: {
+    longDesc: "Linear connects issues, projects, and cycles so the agent can plan work and update tickets.",
+    inputs: [
+      { name: "teamId", type: "string", desc: "Linear team identifier." },
+      { name: "issueId", type: "string", desc: "Issue id to read or update." },
+    ],
+    useCases: ["Auto-create issues from bug reports", "Move tickets across states", "Plan a cycle from chat"],
+  },
+  notion: {
+    longDesc: "Notion lets the agent search pages, append blocks, and create database rows — perfect for docs-driven workflows.",
+    inputs: [
+      { name: "pageId", type: "string", desc: "Notion page id." },
+      { name: "databaseId", type: "string", desc: "Notion database id for rows." },
+    ],
+    useCases: ["Use docs as agent context", "Append meeting notes", "Create entries in a CRM database"],
+  },
+  slack: {
+    longDesc: "Slack integration to post messages, read channel context, and react inside threads.",
+    inputs: [
+      { name: "channel", type: "string", desc: "Channel id or name (#general)." },
+      { name: "text", type: "string", desc: "Message body to post." },
+    ],
+    useCases: ["Notify a channel on deploy", "Summarize a thread", "Trigger workflows on a reaction"],
+  },
+  stripe: {
+    longDesc: "Stripe powers payments, subscriptions, customer portals, and webhook events in your app.",
+    inputs: [
+      { name: "secretKey", type: "string (secret)", desc: "Stripe secret key (sk_...)." },
+      { name: "priceId", type: "string", desc: "Price id for checkout or subscriptions." },
+    ],
+    useCases: ["One-off checkout", "Recurring subscriptions", "Send users to a billing portal"],
+  },
+  wordpress: {
+    longDesc: "WordPress REST API access for posts, pages, media, and WooCommerce store data.",
+    inputs: [
+      { name: "siteUrl", type: "string (url)", desc: "Your WordPress site root." },
+      { name: "username", type: "string", desc: "WP user with API access." },
+      { name: "appPassword", type: "string (secret)", desc: "Application Password from WP profile." },
+    ],
+    useCases: ["Publish posts from chat", "Sync products and orders", "Upload to the media library"],
+  },
+  shopify: {
+    longDesc: "Shopify Storefront and Admin APIs for catalog, carts, checkout, orders, and webhooks.",
+    inputs: [
+      { name: "shopDomain", type: "string", desc: "Your store's myshopify domain." },
+      { name: "storefrontAccessToken", type: "string (secret)", desc: "Public Storefront token." },
+      { name: "adminApiAccessToken", type: "string (secret)", desc: "Admin token for orders/webhooks." },
+    ],
+    useCases: ["Build a custom storefront", "Sync orders into a dashboard", "Listen for order webhooks"],
+  },
+  make: {
+    longDesc: "Make.com runs automations triggered by webhooks. The agent fires scenarios with structured payloads.",
+    inputs: [
+      { name: "webhookUrl", type: "string (url)", desc: "Make scenario webhook URL." },
+      { name: "payload", type: "Record<string,unknown>", desc: "JSON body sent to the scenario." },
+    ],
+    useCases: ["Sync to Google Sheets", "Send branded emails", "Cross-app automations"],
+  },
+  n8n: {
+    longDesc: "n8n workflows triggered via webhook — synchronously or fire-and-forget. Self-hosted or cloud.",
+    inputs: [
+      { name: "webhookUrl", type: "string (url)", desc: "n8n webhook endpoint." },
+      { name: "payload", type: "Record<string,unknown>", desc: "JSON body for the workflow." },
+    ],
+    useCases: ["Background processing pipelines", "ETL between SaaS tools", "AI agent post-processing"],
+  },
+  zapier: {
+    longDesc: "Zapier Catch Hooks let the agent push data into 5000+ apps without writing integrations.",
+    inputs: [
+      { name: "webhookUrl", type: "string (url)", desc: "Zapier Catch Hook URL." },
+      { name: "payload", type: "Record<string,unknown>", desc: "JSON body for the Zap." },
+    ],
+    useCases: ["Fan out events to many apps", "Notify Slack + email + CRM at once", "Trigger no-code workflows"],
+  },
 };
 
 /* ─── MCP detail / connect page ───────────────────────────────────────────── */

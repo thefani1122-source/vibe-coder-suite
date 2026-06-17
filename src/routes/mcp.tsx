@@ -45,7 +45,13 @@ interface IntegrationRow {
 }
 
 type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
-type Category = "Deploy" | "Database" | "Design" | "AI Tools" | "Dev Tools" | "Productivity";
+type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
+
+interface CustomMcp {
+  slug: string;
+  meta: Record<string, string>;
+  connectedAt: string;
+}
 
 interface ProviderField {
   key: string;
@@ -91,17 +97,10 @@ const SERVERS: McpDef[] = [
 
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
-  { name: "Neon", desc: "Serverless Postgres with branching for every PR.", category: "Database", emoji: "🌿", provider: "neon", providerType: "database", connectMode: "coming_soon" },
-  { name: "PlanetScale", desc: "Serverless MySQL with branching workflows.", category: "Database", emoji: "🪐", provider: "planetscale", providerType: "database", connectMode: "coming_soon" },
   {
     name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
     category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
     fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
-  },
-  {
-    name: "Airtable", desc: "Read and write Airtable bases, tables, and records via the REST API.",
-    category: "Database", emoji: "📊", provider: "airtable", providerType: "database", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "Airtable Personal Access Token", type: "password", placeholder: "pat...", help: "Create at airtable.com/account under Personal Access Tokens" }],
   },
   {
     name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
@@ -129,48 +128,16 @@ const SERVERS: McpDef[] = [
     fields: [{ key: "stitch_api_key", label: "Google Stitch API Key", type: "password", placeholder: "AIza...", help: "console.cloud.google.com → APIs → Enable Stitch API → Credentials → Create API Key" }],
   },
 
-  // ── AI Tools ──────────────────────────────────────────────────────────────
-  { name: "OpenAI", desc: "GPT, embeddings, and vision tools for your agents.", category: "AI Tools", emoji: "✺", provider: "openai", providerType: "ai", connectMode: "coming_soon" },
-  { name: "Anthropic", desc: "Claude models for long-context reasoning.", category: "AI Tools", emoji: "✶", provider: "anthropic", providerType: "ai", connectMode: "coming_soon" },
-  { name: "Sequential Thinking", desc: "Step-by-step reasoning helper for complex tasks.", category: "AI Tools", emoji: "🧠", provider: "sequential_think", providerType: "ai", connectMode: "coming_soon" },
-  { name: "Context7", desc: "Up-to-date library docs piped right into the agent.", category: "AI Tools", emoji: "📚", provider: "context7", providerType: "ai", connectMode: "coming_soon" },
-
   // ── Dev Tools ─────────────────────────────────────────────────────────────
   {
     name: "GitHub", desc: "Create repos, manage issues, open pull requests, and more via the GitHub MCP server.",
     category: "Dev Tools", emoji: "🐙", provider: "github", providerType: "code", connectMode: "registry_form",
     fields: [{ key: "github_token", label: "Personal Access Token", type: "password", placeholder: "ghp_...", help: "Create at github.com/settings/tokens — needs repo and workflow scopes" }],
   },
-  { name: "GitLab", desc: "Repos, MRs, CI pipelines and registries.", category: "Dev Tools", emoji: "🦊", provider: "gitlab", providerType: "code", connectMode: "coming_soon" },
   {
     name: "Sentry", desc: "Query errors, manage issues, and view performance data via the Sentry MCP server.",
     category: "Dev Tools", emoji: "🪲", provider: "sentry", providerType: "code", connectMode: "registry_form",
     fields: [{ key: "sentry_token", label: "Sentry Internal Integration Token", type: "password", placeholder: "...", help: "Create an Internal Integration at sentry.io/settings/ → Integrations" }],
-  },
-  { name: "PostHog", desc: "Product analytics, feature flags, and session replay.", category: "Dev Tools", emoji: "📊", provider: "posthog", providerType: "analytics", connectMode: "coming_soon" },
-  {
-    name: "HubSpot", desc: "Manage CRM contacts, deals, and companies via the HubSpot API.",
-    category: "Dev Tools", emoji: "🧲", provider: "hubspot", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "HubSpot Private App Access Token", type: "password", placeholder: "pat-na1-...", help: "Create a Private App at app.hubspot.com/settings/integrations/private-apps" }],
-  },
-  {
-    name: "Jira", desc: "Create and manage Jira issues, sprints, and projects via the Atlassian API.",
-    category: "Dev Tools", emoji: "🎫", provider: "jira", providerType: "code", connectMode: "registry_form",
-    fields: [
-      { key: "site_url", label: "Jira Site URL", type: "url", placeholder: "https://yourcompany.atlassian.net", help: "Your Atlassian cloud site URL" },
-      { key: "email", label: "Atlassian Account Email", type: "text", placeholder: "you@company.com" },
-      { key: "api_token", label: "Atlassian API Token", type: "password", placeholder: "...", help: "Create at id.atlassian.com/manage-profile/security/api-tokens" },
-    ],
-  },
-  {
-    name: "Mixpanel", desc: "Track events and query analytics data via the Mixpanel API.",
-    category: "Dev Tools", emoji: "📈", provider: "mixpanel", providerType: "analytics", connectMode: "registry_form",
-    fields: [{ key: "project_token", label: "Mixpanel Project Token", type: "password", placeholder: "...", help: "Find at mixpanel.com → Project Settings → Access Keys" }],
-  },
-  {
-    name: "Segment", desc: "Send events and identify users via the Segment tracking API.",
-    category: "Dev Tools", emoji: "📡", provider: "segment", providerType: "analytics", connectMode: "registry_form",
-    fields: [{ key: "write_key", label: "Segment Write Key", type: "password", placeholder: "...", help: "Find at app.segment.com → Sources → Your Source → Settings → API Keys" }],
   },
 
   // ── Productivity ──────────────────────────────────────────────────────────
@@ -184,7 +151,6 @@ const SERVERS: McpDef[] = [
     category: "Productivity", emoji: "📝", provider: "notion", providerType: "code", connectMode: "registry_form",
     fields: [{ key: "notion_token", label: "Notion Integration Token", type: "password", placeholder: "secret_...", help: "Create an integration at notion.com/profile/integrations and share pages with it" }],
   },
-  { name: "Slack", desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack", providerType: "code", connectMode: "coming_soon" },
   {
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
@@ -242,7 +208,7 @@ const SERVERS: McpDef[] = [
   },
 ];
 
-const CATEGORIES = ["All", "Deploy", "Database", "Design", "AI Tools", "Dev Tools", "Productivity"] as const;
+const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;
 
 /* ─── Feature bullets for Supabase detail page ───────────────────────────── */
 
@@ -284,9 +250,15 @@ function McpPage() {
   const [loadingRows, setLoadingRows] = useState(true);
   const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
   const [customOpen, setCustomOpen] = useState(false);
-  const [customName, setCustomName] = useState("");
-  const [customUrl, setCustomUrl] = useState("");
-  const [customDesc, setCustomDesc] = useState("");
+  const [customForm, setCustomForm] = useState({
+    name: "", description: "", mcpServerUrl: "",
+    authType: "bearer_token" as "bearer_token" | "api_key" | "none",
+    token: "",
+  });
+  const [customShowToken, setCustomShowToken] = useState(false);
+  const [customSaving, setCustomSaving] = useState(false);
+  const [customMcps, setCustomMcps] = useState<CustomMcp[]>([]);
+  const [customDisconnecting, setCustomDisconnecting] = useState<string | null>(null);
   const [selected, setSelected] = useState<McpDef | null>(null);
   const [backendConns, setBackendConns] = useState<Record<string, { id: string; meta: Record<string, string> }>>({});
 
@@ -303,7 +275,19 @@ function McpPage() {
     } catch { /* not signed in */ }
   };
 
-  useEffect(() => { if (user?.id) void loadConnectedSlugs(); }, [user?.id]);
+  const fetchCustomMcps = async () => {
+    try {
+      const res = await apiGet<{ custom: CustomMcp[] }>("/api/integrations/mcp/custom");
+      setCustomMcps(res.custom);
+    } catch { /* none */ }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      void loadConnectedSlugs();
+      void fetchCustomMcps();
+    }
+  }, [user?.id]);
 
   const loadBackendConns = async () => {
     try {
@@ -387,14 +371,49 @@ function McpPage() {
           s.desc.toLowerCase().includes(query.toLowerCase())),
     );
 
-  const addCustom = () => {
-    if (!customName.trim() || !customUrl.trim()) { toast.error("Name and URL are required"); return; }
-    toast.success(`${customName} added to your MCP servers`);
-    setCustomName(""); setCustomUrl(""); setCustomDesc("");
-    setCustomOpen(false);
+  const addCustomMcp = async () => {
+    const { name, mcpServerUrl, description, authType, token } = customForm;
+    if (!name.trim()) { toast.error("Name is required"); return; }
+    if (!mcpServerUrl.trim()) { toast.error("MCP Server URL is required"); return; }
+    if (!mcpServerUrl.trim().startsWith("https://")) { toast.error("URL must start with https://"); return; }
+    if (authType !== "none" && !token.trim()) { toast.error("Token / API Key is required"); return; }
+
+    const slug = "custom-" + name.toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 50);
+
+    setCustomSaving(true);
+    try {
+      await apiPost("/api/integrations/mcp/custom/connect", {
+        name: name.trim(), slug, description: description.trim(),
+        mcpServerUrl: mcpServerUrl.trim(), authType,
+        creds: authType !== "none" ? { token: token.trim() } : {},
+      });
+      toast.success(`${name} connected!`);
+      setCustomForm({ name: "", description: "", mcpServerUrl: "", authType: "bearer_token", token: "" });
+      setCustomShowToken(false);
+      setCustomOpen(false);
+      await fetchCustomMcps();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add MCP");
+    } finally {
+      setCustomSaving(false);
+    }
   };
 
-  const connectedCount = connectedSlugs.size + Object.keys(backendConns).length;
+  const removeCustomMcp = async (slug: string) => {
+    setCustomDisconnecting(slug);
+    try {
+      await apiDelete(`/api/integrations/mcp/custom/${slug}`);
+      setCustomMcps(prev => prev.filter(m => m.slug !== slug));
+      toast.success("Custom MCP removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+    } finally {
+      setCustomDisconnecting(null);
+    }
+  };
+
+  const connectedCount = connectedSlugs.size + Object.keys(backendConns).length + customMcps.length;
 
   if (selected) {
     return (
@@ -433,26 +452,83 @@ function McpPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-primary" /> Add Custom MCP Server
+                    <Sparkles className="h-4 w-4 text-primary" /> Add Custom MCP
                   </DialogTitle>
-                  <DialogDescription>Bring your own Model Context Protocol server.</DialogDescription>
+                  <DialogDescription>Connect any MCP server to Lampcode</DialogDescription>
                 </DialogHeader>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="mcp-name">Name</Label>
-                    <Input id="mcp-name" value={customName} onChange={e => setCustomName(e.target.value)} placeholder="My MCP" />
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label>Name *</Label>
+                    <Input
+                      value={customForm.name}
+                      onChange={e => setCustomForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="My Custom MCP"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>MCP Server URL *</Label>
+                    <Input
+                      value={customForm.mcpServerUrl}
+                      onChange={e => setCustomForm(f => ({ ...f, mcpServerUrl: e.target.value }))}
+                      placeholder="https://mcp.example.com/sse"
+                    />
+                    <p className="text-xs text-muted-foreground">Must support SSE or HTTP transport</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Description</Label>
+                    <Textarea
+                      value={customForm.description}
+                      onChange={e => setCustomForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="What does this MCP do?"
+                      className="min-h-[60px]"
+                    />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="mcp-url">Server URL</Label>
-                    <Input id="mcp-url" value={customUrl} onChange={e => setCustomUrl(e.target.value)} placeholder="https://my-mcp.example.com/mcp" />
+                    <Label>Authentication</Label>
+                    {(["none", "bearer_token", "api_key"] as const).map(v => (
+                      <label key={v} className="flex items-center gap-2 cursor-pointer text-sm">
+                        <input
+                          type="radio"
+                          name="custom-auth-type"
+                          value={v}
+                          checked={customForm.authType === v}
+                          onChange={() => setCustomForm(f => ({ ...f, authType: v }))}
+                          className="accent-primary"
+                        />
+                        {v === "none" ? "None (public server)" : v === "bearer_token" ? "Bearer Token" : "API Key header"}
+                      </label>
+                    ))}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="mcp-desc">Description (optional)</Label>
-                    <Textarea id="mcp-desc" value={customDesc} onChange={e => setCustomDesc(e.target.value)} placeholder="What does this MCP do?" />
+                  {customForm.authType !== "none" && (
+                    <div className="space-y-1.5">
+                      <Label>Token / Key *</Label>
+                      <div className="relative">
+                        <Input
+                          type={customShowToken ? "text" : "password"}
+                          value={customForm.token}
+                          onChange={e => setCustomForm(f => ({ ...f, token: e.target.value }))}
+                          placeholder="••••••••••••"
+                          className="pr-14"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCustomShowToken(s => !s)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground hover:text-foreground"
+                        >{customShowToken ? "Hide" : "Show"}</button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300/80">
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                    🔒 Stored encrypted on our servers
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button onClick={addCustom} className="w-full">Add MCP</Button>
+                  <Button variant="outline" onClick={() => setCustomOpen(false)}>Cancel</Button>
+                  <Button onClick={() => void addCustomMcp()} disabled={customSaving} className="gap-1">
+                    {customSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Add MCP →
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -525,6 +601,41 @@ function McpPage() {
               </TabsContent>
             ))}
           </Tabs>
+
+          {/* Custom MCPs */}
+          {customMcps.length > 0 && (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-border/60" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Your Custom MCPs</span>
+                <div className="h-px flex-1 bg-border/60" />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {customMcps.map(m => (
+                  <div key={m.slug} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-base">🔌</div>
+                      <div>
+                        <div className="text-sm font-semibold leading-tight">{m.meta?.["name"] ?? m.slug}</div>
+                        <div className="text-xs text-muted-foreground">{m.meta?.["url"] ?? "Custom"}</div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Connected</Badge>
+                      <button
+                        type="button"
+                        onClick={() => void removeCustomMcp(m.slug)}
+                        disabled={customDisconnecting === m.slug}
+                        className="text-[11px] text-muted-foreground hover:text-destructive transition"
+                      >
+                        {customDisconnecting === m.slug ? "Removing…" : "Disconnect"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Registry connect modal */}

@@ -21,7 +21,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, FileText, Github, Download,
-  Square, ExternalLink, Link2, Figma, X,
+  Square, ExternalLink, Link2, Figma, X, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -112,6 +112,21 @@ function looksTruncated(path: string, content: string): boolean {
 }
 
 
+// ── Business context ─────────────────────────────────────────────────────────
+
+type BusinessContext = {
+  appDescription?: string;
+  userType?: string;
+  isMultiTenant?: boolean;
+  hasPaidFeatures?: boolean;
+  industry?: string;
+};
+
+function hasFilledContext(bc: BusinessContext): boolean {
+  return !!(bc.appDescription || bc.userType || bc.industry ||
+    bc.isMultiTenant !== undefined || bc.hasPaidFeatures !== undefined);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Page                                                                       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -153,6 +168,9 @@ function WorkspacePage() {
   const [selectedOptions,      setSelectedOptions]      = useState<Set<string>>(new Set());
   const [customText,           setCustomText]           = useState("");
 
+  const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
+  const [showContextPanel,  setShowContextPanel]  = useState(false);
+
   const socketRef          = useRef<Socket | null>(null);
   const completedRef       = useRef(false);
   const filesRef           = useRef<Record<string, string>>({});
@@ -163,13 +181,15 @@ function WorkspacePage() {
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
   useEffect(() => {
-    apiGet<{ project?: { name?: string; description?: string }; name?: string; title?: string }>(
+    apiGet<{ project?: { name?: string; description?: string; businessContext?: BusinessContext }; name?: string; title?: string }>(
       `/api/projects/${projectId}`,
       { silent: true },
     )
       .then(d => {
         const name = d?.project?.name ?? d?.name ?? d?.title;
         if (name) setProjectName(name);
+        const bc = d?.project?.businessContext;
+        if (bc && typeof bc === "object") setBusinessContext(bc);
       })
       .catch(() => {});
   }, [projectId]);
@@ -731,6 +751,9 @@ function WorkspacePage() {
           onToggleChat={toggleChat}
           showHistory={showHistory}
           onToggleHistory={() => setShowHistory(v => !v)}
+          businessContext={businessContext}
+          showContextPanel={showContextPanel}
+          onToggleContextPanel={() => setShowContextPanel(v => !v)}
         />
 
         <Group
@@ -850,6 +873,15 @@ function WorkspacePage() {
           onSkip={handleSkipAllQuestions}
         />
       )}
+
+      {showContextPanel && (
+        <BusinessContextPanel
+          projectId={projectId}
+          initial={businessContext}
+          onClose={() => setShowContextPanel(false)}
+          onSaved={setBusinessContext}
+        />
+      )}
       </div>
     </RequireAuth>
   );
@@ -863,6 +895,7 @@ function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
   buildStatus, onReload, files, chatCollapsed, onToggleChat,
   showHistory, onToggleHistory,
+  businessContext, showContextPanel, onToggleContextPanel,
 }: {
   projectId: string;
   projectName: string;
@@ -877,6 +910,9 @@ function WorkspaceTopBar({
   onToggleChat: () => void;
   showHistory: boolean;
   onToggleHistory: () => void;
+  businessContext: BusinessContext;
+  showContextPanel: boolean;
+  onToggleContextPanel: () => void;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -925,6 +961,23 @@ function WorkspaceTopBar({
           <span className="truncate">{displayName}</span>
           <ChevronDown className="h-3 w-3 shrink-0 text-white/40" />
         </button>
+        <button
+          onClick={onToggleContextPanel}
+          className={cn(
+            "grid h-6 w-6 place-content-center rounded-md transition",
+            showContextPanel
+              ? "text-orange-400"
+              : "text-white/30 hover:bg-white/[0.05] hover:text-white/70",
+          )}
+          title="AI project context"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </button>
+        {hasFilledContext(businessContext) && !showContextPanel && (
+          <span className="flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            🧠 AI context set
+          </span>
+        )}
       </div>
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
@@ -1538,6 +1591,145 @@ function ClarifyModal({
         </div>
       </div>
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Business Context Panel                                                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ContextToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className="flex flex-1 items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-white/60 transition hover:bg-white/[0.06]"
+    >
+      <span>{label}</span>
+      <span className={cn(
+        "relative ml-2 h-4 w-7 shrink-0 rounded-full transition-colors",
+        value ? "bg-orange-500" : "bg-white/20",
+      )}>
+        <span className={cn(
+          "absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform",
+          value ? "translate-x-3.5" : "translate-x-0.5",
+        )} />
+      </span>
+    </button>
+  );
+}
+
+function BusinessContextPanel({
+  projectId, initial, onClose, onSaved,
+}: {
+  projectId: string;
+  initial: BusinessContext;
+  onClose: () => void;
+  onSaved: (ctx: BusinessContext) => void;
+}) {
+  const [ctx, setCtx] = useState<BusinessContext>(initial);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const handleChange = (patch: Partial<BusinessContext>) => {
+    const next = { ...ctx, ...patch };
+    setCtx(next);
+    onSaved(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        await apiPost(`/api/projects/${projectId}/business-context`, next);
+        toast.success("✓ Context saved", { duration: 1500 });
+      } catch {
+        // api() already shows error toast
+      }
+    }, 1000);
+  };
+
+  const selectClass = "w-full rounded-lg border border-white/[0.08] bg-[#0f0f16] px-3 py-2 text-xs text-white/80 focus:border-orange-500/40 focus:outline-none";
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed left-3 top-14 z-50 w-[300px] rounded-xl border border-white/[0.10] bg-[#0d0d14] p-4 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40">AI Project Context</p>
+          <button onClick={onClose} className="text-white/30 transition hover:text-white/70">
+            <X size={13} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {/* App description */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">What does your app do?</label>
+            <textarea
+              rows={2}
+              value={ctx.appDescription ?? ""}
+              onChange={e => handleChange({ appDescription: e.target.value || undefined })}
+              placeholder="e.g. A project management tool for remote teams"
+              className="w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-white/80 placeholder:text-white/25 focus:border-orange-500/40 focus:outline-none"
+            />
+          </div>
+
+          {/* User type */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">Who are your users?</label>
+            <select
+              value={ctx.userType ?? ""}
+              onChange={e => handleChange({ userType: e.target.value || undefined })}
+              className={selectClass}
+            >
+              <option value="">Select...</option>
+              <option value="Consumers">Consumers</option>
+              <option value="Businesses">Businesses</option>
+              <option value="Internal Team">Internal Team</option>
+              <option value="Marketplace">Marketplace</option>
+            </select>
+          </div>
+
+          {/* Industry */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">Industry?</label>
+            <select
+              value={ctx.industry ?? ""}
+              onChange={e => handleChange({ industry: e.target.value || undefined })}
+              className={selectClass}
+            >
+              <option value="">Select...</option>
+              <option value="SaaS">SaaS</option>
+              <option value="Ecommerce">Ecommerce</option>
+              <option value="Fintech">Fintech</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          {/* Toggles */}
+          <div className="flex gap-2">
+            <ContextToggle
+              label="Multi-tenant?"
+              value={ctx.isMultiTenant ?? false}
+              onChange={v => handleChange({ isMultiTenant: v })}
+            />
+            <ContextToggle
+              label="Paid features?"
+              value={ctx.hasPaidFeatures ?? false}
+              onChange={v => handleChange({ hasPaidFeatures: v })}
+            />
+          </div>
+        </div>
+
+        <p className="mt-3 text-[10px] text-white/25">
+          Saved automatically · helps AI build the right thing
+        </p>
+      </div>
+    </>
   );
 }
 

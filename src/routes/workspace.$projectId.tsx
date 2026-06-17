@@ -33,6 +33,16 @@ type BuildStatus = "running" | "complete" | "error";
 type ActiveTab  = "preview" | "code";
 type Device     = "desktop" | "mobile" | "tablet";
 
+type McpEventKind = "thinking" | "tool_call" | "tool_result" | "done";
+interface McpEvent {
+  id: string;
+  kind: McpEventKind;
+  tool?: string;
+  text?: string;
+  success?: boolean;
+  summary?: string;
+}
+
 const DEVICE_CYCLE: Device[] = ["desktop", "mobile", "tablet"];
 
 function toolToAgent(tool: string): string {
@@ -127,6 +137,9 @@ function WorkspacePage() {
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError,   setPreviewError]   = useState<string | null>(null);
+
+  const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
+  const [isMcpActive, setIsMcpActive] = useState(false);
 
   const socketRef          = useRef<Socket | null>(null);
   const completedRef       = useRef(false);
@@ -368,6 +381,33 @@ function WorkspacePage() {
         newMsg({ type: "text", text: "Build stopped." }),
       ]);
       toast.success("Build stopped");
+    });
+
+    socket.on("mcp:thinking", (data: { text?: string }) => {
+      setIsMcpActive(true);
+      const text = data.text ?? "";
+      if (!text) return;
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "thinking", text }]);
+    });
+
+    socket.on("mcp:tool_call", (data: { tool?: string; server?: string }) => {
+      const tool = [data.tool, data.server].filter(Boolean).join(" @ ");
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "tool_call", tool }]);
+    });
+
+    socket.on("mcp:tool_result", (data: { success?: boolean }) => {
+      setMcpEvents(prev => {
+        const lastCallIdx = prev.map((e, i) => (e.kind === "tool_call" && e.success === undefined ? i : -1)).filter(i => i !== -1).at(-1);
+        if (lastCallIdx === undefined) return prev;
+        const updated = [...prev];
+        updated[lastCallIdx] = { ...updated[lastCallIdx], kind: "tool_result", success: data.success ?? true };
+        return updated;
+      });
+    });
+
+    socket.on("mcp:done", (data: { summary?: string }) => {
+      setIsMcpActive(false);
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "done", summary: data.summary ?? "" }]);
     });
   }, []);
 
@@ -646,6 +686,14 @@ function WorkspacePage() {
           {/* Right: preview / code — takes remaining space */}
           <Panel defaultSize={75} minSize={30}>
             <div className="relative flex min-h-0 h-full bg-[#080808]">
+              {/* MCP Action Panel — overlay in bottom-right, shown only during/after MCP execution */}
+              {(isMcpActive || mcpEvents.length > 0) && (
+                <McpActionPanel
+                  events={mcpEvents}
+                  active={isMcpActive}
+                  onClear={() => { setMcpEvents([]); setIsMcpActive(false); }}
+                />
+              )}
               {activeTab === "code" && (
                 <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
                   <div style={{
@@ -1221,5 +1269,89 @@ function IconTab({
     >
       {children}
     </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  MCP Action Panel                                                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function McpActionPanel({
+  events, active, onClear,
+}: {
+  events: McpEvent[];
+  active: boolean;
+  onClear: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [events]);
+
+  return (
+    <div className="absolute bottom-4 right-4 z-30 flex w-80 flex-col rounded-xl border border-white/[0.10] bg-[#0d0d14]/95 shadow-2xl backdrop-blur">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3 py-2">
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-white/80">
+          🔧 AI Actions
+          {active && (
+            <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-orange-400" />
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[10px] text-white/30 hover:text-white/60 transition"
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* Event list */}
+      <div ref={scrollRef} className="flex max-h-64 flex-col gap-1.5 overflow-y-auto p-2">
+        {events.map(ev => {
+          if (ev.kind === "thinking") {
+            return (
+              <div key={ev.id} className="rounded-md bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-white/50">
+                💭 {ev.text}
+              </div>
+            );
+          }
+          if (ev.kind === "tool_call" || ev.kind === "tool_result") {
+            const isDone = ev.kind === "tool_result";
+            return (
+              <div
+                key={ev.id}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-[11px]",
+                  isDone
+                    ? ev.success
+                      ? "bg-emerald-500/10 text-emerald-300"
+                      : "bg-red-500/10 text-red-300"
+                    : "bg-orange-500/10 text-orange-300",
+                )}
+              >
+                {isDone ? (ev.success ? "✅" : "❌") : "⚡"}{" "}
+                <span className="font-medium">{ev.tool}</span>
+              </div>
+            );
+          }
+          if (ev.kind === "done") {
+            return (
+              <div key={ev.id} className="rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-300">
+                ✅ {ev.summary ? ev.summary.slice(0, 120) + (ev.summary.length > 120 ? "…" : "") : "Done"}
+              </div>
+            );
+          }
+          return null;
+        })}
+        {active && events.length === 0 && (
+          <div className="py-2 text-center text-[11px] text-white/30">Waiting for AI actions…</div>
+        )}
+      </div>
+    </div>
   );
 }

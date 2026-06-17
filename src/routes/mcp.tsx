@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Link } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,10 +17,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { apiGet, apiPost, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/mcp")({ component: McpPage });
@@ -44,7 +44,7 @@ interface IntegrationRow {
   updated_at: string;
 }
 
-type ConnectMode = "supabase_form" | "backend_form" | "coming_soon";
+type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
 type Category = "Deploy" | "Database" | "Design" | "AI Tools" | "Dev Tools" | "Productivity";
 
 interface ProviderField {
@@ -61,95 +61,220 @@ interface McpDef {
   desc: string;
   category: Category;
   emoji: string;
-  provider: string;          // lowercase key stored in DB
+  provider: string;
   providerType: ProviderType;
   connectMode: ConnectMode;
-  fields?: ProviderField[];  // for backend_form providers
-  features?: string[];       // shown on the detail page
+  fields?: ProviderField[];
+  features?: string[];
 }
 
-/* ─── Static server catalogue ────────────────────────────────────────────── */
+/* ─── Provider catalogue ─────────────────────────────────────────────────── */
 
 const SERVERS: McpDef[] = [
-  { name: "Vercel",        desc: "Deploy and manage your apps on Vercel's global edge network.", category: "Deploy",       emoji: "▲",  provider: "vercel",      providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Netlify",       desc: "One-click deploys with previews and serverless functions.",    category: "Deploy",       emoji: "◆",  provider: "netlify",     providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Railway",       desc: "Deploy backends, databases, and cron jobs in minutes.",        category: "Deploy",       emoji: "🚂", provider: "railway",     providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Cloudflare",    desc: "Workers, R2 storage, and global CDN at the edge.",             category: "Deploy",       emoji: "☁︎", provider: "cloudflare",  providerType: "deploy",   connectMode: "coming_soon" },
-
-  { name: "Supabase",      desc: "Provision Postgres databases with auth, storage and RLS.",     category: "Database",     emoji: "⚡", provider: "supabase",    providerType: "database", connectMode: "supabase_form" },
-  { name: "Neon",          desc: "Serverless Postgres with branching for every PR.",             category: "Database",     emoji: "🌿", provider: "neon",        providerType: "database", connectMode: "coming_soon" },
-  { name: "PlanetScale",   desc: "Serverless MySQL with branching workflows.",                   category: "Database",     emoji: "🪐", provider: "planetscale", providerType: "database", connectMode: "coming_soon" },
-  { name: "MongoDB Atlas", desc: "Managed document database with global clusters.",              category: "Database",     emoji: "🍃", provider: "mongodb",     providerType: "database", connectMode: "coming_soon" },
-
-  { name: "Figma",         desc: "Pull designs, components and tokens straight from Figma.",    category: "Design",       emoji: "🎨", provider: "figma",       providerType: "code",     connectMode: "coming_soon" },
-  { name: "Framer",        desc: "Import animated layouts and components from Framer.",         category: "Design",       emoji: "✦",  provider: "framer",      providerType: "code",     connectMode: "coming_soon" },
-
-  { name: "OpenAI",             desc: "GPT, embeddings, and vision tools for your agents.",                    category: "AI Tools",     emoji: "✺",  provider: "openai",           providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Anthropic",          desc: "Claude models for long-context reasoning.",                             category: "AI Tools",     emoji: "✶",  provider: "anthropic",        providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Sequential Thinking",desc: "Step-by-step reasoning helper for complex tasks.",                     category: "AI Tools",     emoji: "🧠", provider: "sequential_think", providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Context7",           desc: "Up-to-date library docs piped right into the agent.",                  category: "AI Tools",     emoji: "📚", provider: "context7",         providerType: "ai",   connectMode: "coming_soon" },
-
-  { name: "GitHub",   desc: "Read repos, open PRs, and manage issues from chat.",    category: "Dev Tools",    emoji: "",  provider: "github",   providerType: "code", connectMode: "coming_soon" },
-  { name: "GitLab",   desc: "Repos, MRs, CI pipelines and registries.",             category: "Dev Tools",    emoji: "🦊", provider: "gitlab",   providerType: "code", connectMode: "coming_soon" },
-  { name: "Sentry",   desc: "Track errors and performance across your stack.",       category: "Dev Tools",    emoji: "🛡",  provider: "sentry",   providerType: "code", connectMode: "coming_soon" },
-  { name: "PostHog",  desc: "Product analytics, feature flags, and session replay.", category: "Dev Tools",    emoji: "📊", provider: "posthog",  providerType: "analytics", connectMode: "coming_soon" },
-
-  { name: "Linear",  desc: "Read and update issues, projects and cycles.", category: "Productivity", emoji: "📐", provider: "linear",  providerType: "code",    connectMode: "coming_soon" },
-  { name: "Notion",  desc: "Search pages, append blocks and create databases.", category: "Productivity", emoji: "📝", provider: "notion",  providerType: "code",    connectMode: "coming_soon" },
-  { name: "Slack",   desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack",   providerType: "code",    connectMode: "coming_soon" },
-  { name: "Stripe",  desc: "Create payments, subscriptions and customer portals.", category: "Productivity", emoji: "💳", provider: "stripe",  providerType: "payment", connectMode: "coming_soon" },
-
-  // ── Live, backend-wired provider integrations ──────────────────────────────
+  // ── Deploy ────────────────────────────────────────────────────────────────
   {
-    name: "WordPress", desc: "Read/write posts, pages, media & WooCommerce via the WordPress REST API.",
-    category: "Productivity", emoji: "📝", provider: "wordpress", providerType: "code", connectMode: "backend_form",
-    features: ["Posts & pages (get/create)", "Media library", "WooCommerce products & orders", "Application-password auth"],
+    name: "Vercel", desc: "Deploy projects, manage domains, and view deployments via the Vercel MCP server.",
+    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form",
+    fields: [{ key: "vercel_token", label: "Vercel Account Token", type: "password", placeholder: "...", help: "Create at vercel.com/account/tokens" }],
+  },
+  { name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "coming_soon" },
+  {
+    name: "Railway", desc: "Deploy to Railway from generated apps via the Railway GraphQL API.",
+    category: "Deploy", emoji: "🚂", provider: "railway", providerType: "deploy", connectMode: "registry_form",
+    fields: [{ key: "api_token", label: "Railway API Token", type: "password", placeholder: "...", help: "Create at railway.app/account/tokens" }],
+  },
+  {
+    name: "Cloudflare", desc: "Manage Workers, KV, R2, and DNS records via the Cloudflare MCP server.",
+    category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form",
+    fields: [{ key: "cf_token", label: "Cloudflare API Token", type: "password", placeholder: "...", help: "Create at dash.cloudflare.com/profile/api-tokens" }],
+  },
+
+  // ── Database ──────────────────────────────────────────────────────────────
+  { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
+  { name: "Neon", desc: "Serverless Postgres with branching for every PR.", category: "Database", emoji: "🌿", provider: "neon", providerType: "database", connectMode: "coming_soon" },
+  { name: "PlanetScale", desc: "Serverless MySQL with branching workflows.", category: "Database", emoji: "🪐", provider: "planetscale", providerType: "database", connectMode: "coming_soon" },
+  {
+    name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
+    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
+    fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
+  },
+  {
+    name: "Airtable", desc: "Read and write Airtable bases, tables, and records via the REST API.",
+    category: "Database", emoji: "📊", provider: "airtable", providerType: "database", connectMode: "registry_form",
+    fields: [{ key: "api_key", label: "Airtable Personal Access Token", type: "password", placeholder: "pat...", help: "Create at airtable.com/account under Personal Access Tokens" }],
+  },
+  {
+    name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
+    category: "Database", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "registry_form",
     fields: [
-      { key: "siteUrl", label: "Site URL", type: "url", placeholder: "https://myblog.com" },
-      { key: "username", label: "Username", type: "text", placeholder: "admin" },
-      { key: "appPassword", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx", help: "WP Admin → Users → Profile → Application Passwords." },
+      { key: "shopify_store_domain", label: "Shopify Store Domain", type: "text", placeholder: "yourstore.myshopify.com", help: "Your Shopify store domain (without https://)" },
+      { key: "shopify_admin_token", label: "Admin API Access Token", type: "password", placeholder: "shpat_...", help: "Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API access token" },
+    ],
+  },
+
+  // ── Design ────────────────────────────────────────────────────────────────
+  {
+    name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma MCP server.",
+    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "figma_access_token", label: "Figma Personal Access Token", type: "password", placeholder: "figd_...", help: "Create at figma.com → Account → Personal Access Tokens" }],
+  },
+  {
+    name: "Framer", desc: "Import animated components and layouts via the Framer API.",
+    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "framer_api_token", label: "Framer API Token", type: "password", placeholder: "...", help: "Create at framer.com/developers → API Tokens" }],
+  },
+  {
+    name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
+    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "stitch_api_key", label: "Google Stitch API Key", type: "password", placeholder: "AIza...", help: "console.cloud.google.com → APIs → Enable Stitch API → Credentials → Create API Key" }],
+  },
+
+  // ── AI Tools ──────────────────────────────────────────────────────────────
+  { name: "OpenAI", desc: "GPT, embeddings, and vision tools for your agents.", category: "AI Tools", emoji: "✺", provider: "openai", providerType: "ai", connectMode: "coming_soon" },
+  { name: "Anthropic", desc: "Claude models for long-context reasoning.", category: "AI Tools", emoji: "✶", provider: "anthropic", providerType: "ai", connectMode: "coming_soon" },
+  { name: "Sequential Thinking", desc: "Step-by-step reasoning helper for complex tasks.", category: "AI Tools", emoji: "🧠", provider: "sequential_think", providerType: "ai", connectMode: "coming_soon" },
+  { name: "Context7", desc: "Up-to-date library docs piped right into the agent.", category: "AI Tools", emoji: "📚", provider: "context7", providerType: "ai", connectMode: "coming_soon" },
+
+  // ── Dev Tools ─────────────────────────────────────────────────────────────
+  {
+    name: "GitHub", desc: "Create repos, manage issues, open pull requests, and more via the GitHub MCP server.",
+    category: "Dev Tools", emoji: "🐙", provider: "github", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "github_token", label: "Personal Access Token", type: "password", placeholder: "ghp_...", help: "Create at github.com/settings/tokens — needs repo and workflow scopes" }],
+  },
+  { name: "GitLab", desc: "Repos, MRs, CI pipelines and registries.", category: "Dev Tools", emoji: "🦊", provider: "gitlab", providerType: "code", connectMode: "coming_soon" },
+  {
+    name: "Sentry", desc: "Query errors, manage issues, and view performance data via the Sentry MCP server.",
+    category: "Dev Tools", emoji: "🪲", provider: "sentry", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "sentry_token", label: "Sentry Internal Integration Token", type: "password", placeholder: "...", help: "Create an Internal Integration at sentry.io/settings/ → Integrations" }],
+  },
+  { name: "PostHog", desc: "Product analytics, feature flags, and session replay.", category: "Dev Tools", emoji: "📊", provider: "posthog", providerType: "analytics", connectMode: "coming_soon" },
+  {
+    name: "HubSpot", desc: "Manage CRM contacts, deals, and companies via the HubSpot API.",
+    category: "Dev Tools", emoji: "🧲", provider: "hubspot", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "api_key", label: "HubSpot Private App Access Token", type: "password", placeholder: "pat-na1-...", help: "Create a Private App at app.hubspot.com/settings/integrations/private-apps" }],
+  },
+  {
+    name: "Jira", desc: "Create and manage Jira issues, sprints, and projects via the Atlassian API.",
+    category: "Dev Tools", emoji: "🎫", provider: "jira", providerType: "code", connectMode: "registry_form",
+    fields: [
+      { key: "site_url", label: "Jira Site URL", type: "url", placeholder: "https://yourcompany.atlassian.net", help: "Your Atlassian cloud site URL" },
+      { key: "email", label: "Atlassian Account Email", type: "text", placeholder: "you@company.com" },
+      { key: "api_token", label: "Atlassian API Token", type: "password", placeholder: "...", help: "Create at id.atlassian.com/manage-profile/security/api-tokens" },
     ],
   },
   {
-    name: "Shopify", desc: "Products, carts & checkout (Storefront) + orders & webhooks (Admin).",
-    category: "Database", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "backend_form",
-    features: ["Product catalog", "Cart & checkout", "Orders (Admin token)", "Webhooks"],
+    name: "Mixpanel", desc: "Track events and query analytics data via the Mixpanel API.",
+    category: "Dev Tools", emoji: "📈", provider: "mixpanel", providerType: "analytics", connectMode: "registry_form",
+    fields: [{ key: "project_token", label: "Mixpanel Project Token", type: "password", placeholder: "...", help: "Find at mixpanel.com → Project Settings → Access Keys" }],
+  },
+  {
+    name: "Segment", desc: "Send events and identify users via the Segment tracking API.",
+    category: "Dev Tools", emoji: "📡", provider: "segment", providerType: "analytics", connectMode: "registry_form",
+    fields: [{ key: "write_key", label: "Segment Write Key", type: "password", placeholder: "...", help: "Find at app.segment.com → Sources → Your Source → Settings → API Keys" }],
+  },
+
+  // ── Productivity ──────────────────────────────────────────────────────────
+  {
+    name: "Linear", desc: "Read and update issues, projects and cycles via the Linear MCP server.",
+    category: "Productivity", emoji: "📋", provider: "linear", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "linear_key", label: "Linear API Key", type: "password", placeholder: "lin_api_...", help: "Create at linear.app/settings/api under Personal API Keys" }],
+  },
+  {
+    name: "Notion", desc: "Read and write pages, databases, and blocks via the Notion MCP server.",
+    category: "Productivity", emoji: "📝", provider: "notion", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "notion_token", label: "Notion Integration Token", type: "password", placeholder: "secret_...", help: "Create an integration at notion.com/profile/integrations and share pages with it" }],
+  },
+  { name: "Slack", desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack", providerType: "code", connectMode: "coming_soon" },
+  {
+    name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
+    category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
+    fields: [{ key: "stripe_key", label: "Stripe API Key", type: "password", placeholder: "sk_live_... or rk_live_...", help: "Use a Restricted Key from dashboard.stripe.com/apikeys for least privilege" }],
+  },
+  {
+    name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the REST API.",
+    category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "registry_form",
     fields: [
-      { key: "shopDomain", label: "Shop Domain", type: "text", placeholder: "my-store.myshopify.com" },
-      { key: "storefrontAccessToken", label: "Storefront Access Token", type: "password", placeholder: "shpsa_..." },
-      { key: "adminApiAccessToken", label: "Admin API Token (optional)", type: "password", placeholder: "shpat_...", optional: true, help: "Needed for orders & webhooks." },
+      { key: "wordpress_site_url", label: "WordPress Site URL", type: "url", placeholder: "https://yoursite.com", help: "The root URL of your WordPress site" },
+      { key: "wordpress_app_password", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx xxxx xxxx", help: "WordPress Admin → Users → Profile → Application Passwords → Generate" },
     ],
   },
   {
-    name: "Make.com", desc: "Trigger Make scenarios (automations) from your app via webhook.",
-    category: "Productivity", emoji: "🔗", provider: "make", providerType: "code", connectMode: "backend_form",
-    features: ["Trigger scenarios", "Pass data to workflows", "Async fire-and-forget", "Status via API key"],
+    name: "Make", desc: "Run Make scenarios using your personal Make MCP endpoint.",
+    category: "Productivity", emoji: "🔧", provider: "make", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "make_mcp_url", label: "Make MCP URL", type: "url", placeholder: "https://eu2.make.com/mcp/api/v1/u/YOUR_TOKEN/sse", help: "Go to Make.com → Profile → API → MCP → Copy your zone URL" }],
+  },
+  {
+    name: "n8n", desc: "Trigger and manage n8n workflows via your self-hosted n8n MCP endpoint.",
+    category: "Productivity", emoji: "⚙️", provider: "n8n", providerType: "code", connectMode: "registry_form",
     fields: [
-      { key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://hook.eu1.make.com/xxxxxxxx" },
-      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only for scenario status." },
+      { key: "instance_url", label: "n8n Instance URL", type: "url", placeholder: "https://n8n.yourdomain.com", help: "The public URL of your n8n instance (must be accessible from the internet)" },
+      { key: "api_key", label: "n8n API Key", type: "password", placeholder: "n8n_...", help: "Create at your n8n instance → Settings → API" },
     ],
   },
   {
-    name: "n8n", desc: "Trigger n8n workflows from your app, sync or fire-and-forget.",
-    category: "Productivity", emoji: "⚙️", provider: "n8n", providerType: "code", connectMode: "backend_form",
-    features: ["Trigger workflows", "Synchronous responses", "Self-hosted or cloud", "Poll executions"],
+    name: "Zapier", desc: "Trigger Zapier actions using your personal Zapier MCP endpoint.",
+    category: "Productivity", emoji: "⚡", provider: "zapier", providerType: "code", connectMode: "registry_form",
+    fields: [{ key: "zapier_mcp_url", label: "Zapier MCP URL", type: "url", placeholder: "https://mcp.zapier.com/api/mcp/s/YOUR_TOKEN/mcp", help: "Go to zapier.com/mcp → Create MCP → Copy your unique URL" }],
+  },
+  {
+    name: "Mailchimp", desc: "Manage audiences, campaigns, and subscribers via the Mailchimp API.",
+    category: "Productivity", emoji: "🐵", provider: "mailchimp", providerType: "email", connectMode: "registry_form",
+    fields: [{ key: "api_key", label: "Mailchimp API Key", type: "password", placeholder: "xxxxxxxxxxxxxxxx-us1", help: "Find at mailchimp.com/account → Extras → API keys" }],
+  },
+  {
+    name: "Resend", desc: "Transactional email sending via the Resend API.",
+    category: "Productivity", emoji: "📨", provider: "resend", providerType: "email", connectMode: "registry_form",
+    fields: [{ key: "api_key", label: "Resend API Key", type: "password", placeholder: "re_...", help: "Create an API key at resend.com/api-keys" }],
+  },
+  {
+    name: "Twilio", desc: "Send SMS, WhatsApp messages, and make calls via the Twilio API.",
+    category: "Productivity", emoji: "📱", provider: "twilio", providerType: "code", connectMode: "registry_form",
     fields: [
-      { key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://your-n8n.app/webhook/xxxx" },
-      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only to poll execution results." },
+      { key: "account_sid", label: "Account SID", type: "text", placeholder: "ACxxxxxxxxxxxxxxxx", help: "Found on your Twilio Console dashboard" },
+      { key: "auth_token", label: "Auth Token", type: "password", placeholder: "...", help: "Found on your Twilio Console dashboard" },
+      { key: "phone_number", label: "Twilio Phone Number", type: "text", placeholder: "+15551234567", optional: true, help: "Your Twilio phone number in E.164 format (optional)" },
     ],
   },
   {
-    name: "Zapier", desc: "Send data to 5000+ apps by triggering Zapier Zaps via Catch Hook.",
-    category: "Productivity", emoji: "⚡", provider: "zapier", providerType: "code", connectMode: "backend_form",
-    features: ["Trigger Zaps", "5000+ app integrations", "Async fire-and-forget", "Run history via API key"],
-    fields: [
-      { key: "webhookUrl", label: "Catch Hook URL", type: "url", placeholder: "https://hooks.zapier.com/hooks/catch/xxxx/yyyy/" },
-      { key: "apiKey", label: "API Key (optional)", type: "password", optional: true, help: "Only for run history." },
-    ],
+    name: "SendGrid", desc: "Send transactional and marketing email via the SendGrid API.",
+    category: "Productivity", emoji: "📧", provider: "sendgrid", providerType: "email", connectMode: "registry_form",
+    fields: [{ key: "api_key", label: "SendGrid API Key", type: "password", placeholder: "SG...", help: "Create at app.sendgrid.com/settings/api_keys" }],
   },
 ];
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "AI Tools", "Dev Tools", "Productivity"] as const;
+
+/* ─── Feature bullets for Supabase detail page ───────────────────────────── */
+
+const FEATURES: Record<string, { title: string; desc: string }[]> = {
+  supabase: [
+    { title: "Database (PostgreSQL)", desc: "Store and query your app data with full SQL. Tables and schema are generated from your prompts." },
+    { title: "User Authentication", desc: "Email/password sign-up, login and access control added to your app." },
+    { title: "Row Level Security", desc: "Each user only sees their own data — policies generated automatically." },
+    { title: "File Storage & Realtime", desc: "Upload images/files and stream live data changes to your app." },
+  ],
+};
+
+/* ─── Hint text with clickable URLs ──────────────────────────────────────── */
+
+function HintText({ text }: { text: string }) {
+  const urlRe = /https?:\/\/[^\s)]+/g;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = urlRe.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const href = m[0];
+    parts.push(
+      <a key={m.index} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+        <Link className="h-3 w-3" />{href}
+      </a>,
+    );
+    last = urlRe.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <p className="mt-1 text-xs text-muted-foreground">{parts}</p>;
+}
 
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
@@ -157,38 +282,43 @@ function McpPage() {
   const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [loadingRows, setLoadingRows] = useState(true);
-  // Keyed by provider string (lowercase)
   const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
   const [customOpen, setCustomOpen] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customDesc, setCustomDesc] = useState("");
-  // When set, show that integration's detail/connect page instead of the grid.
   const [selected, setSelected] = useState<McpDef | null>(null);
-
-  // Backend-wired connections (user_integrations): supabase + the provider
-  // registry (wordpress/shopify/make/n8n/zapier). Creds are encrypted server
-  // side; the frontend only ever sees connected-status + non-secret meta.
   const [backendConns, setBackendConns] = useState<Record<string, { id: string; meta: Record<string, string> }>>({});
+
+  // Registry MCP connection state
+  const [connectedSlugs, setConnectedSlugs] = useState<Set<string>>(new Set());
+  const [connectTarget, setConnectTarget]   = useState<McpDef | null>(null);
+  const [disconnectTarget, setDisconnectTarget] = useState<McpDef | null>(null);
+  const [disconnectBusy,   setDisconnectBusy]   = useState(false);
+
+  const loadConnectedSlugs = async () => {
+    try {
+      const mcps = await getConnectedMcps();
+      setConnectedSlugs(new Set(mcps.map(m => m.providerSlug)));
+    } catch { /* not signed in */ }
+  };
+
+  useEffect(() => { if (user?.id) void loadConnectedSlugs(); }, [user?.id]);
 
   const loadBackendConns = async () => {
     try {
       const res = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string; meta: Record<string, string> }> }>(
-        "/api/integrations",
-        { silent: true },
+        "/api/integrations", { silent: true },
       );
       const map: Record<string, { id: string; meta: Record<string, string> }> = {};
       for (const i of res.integrations) {
         if (i.status === "connected") map[i.provider] = { id: i.id, meta: i.meta ?? {} };
       }
       setBackendConns(map);
-    } catch {
-      /* not signed in / none connected */
-    }
+    } catch { /* none connected */ }
   };
   useEffect(() => { if (user?.id) void loadBackendConns(); }, [user?.id]);
 
-  // Supabase uses its dedicated MCP endpoint; everything else the generic one.
   const connectSupabaseMcp = async (accessToken: string, projectRef: string) => {
     const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
       "/api/integrations/supabase/mcp",
@@ -199,20 +329,15 @@ function McpPage() {
     return res;
   };
 
-  const connectProvider = async (providerId: string, params: Record<string, string>) => {
-    await apiPost(`/api/integrations/provider/${providerId}`, params, { silent: true });
-    await loadBackendConns();
-  };
-
   const disconnectProvider = async (providerId: string) => {
     const conn = backendConns[providerId];
     if (!conn) return;
     await apiDelete(`/api/integrations/${conn.id}`, { silent: true });
-    setBackendConns((m) => { const n = { ...m }; delete n[providerId]; return n; });
+    setBackendConns(m => { const n = { ...m }; delete n[providerId]; return n; });
     toast.success(`${providerId} disconnected`);
   };
 
-  // Load all MCP integrations for this user from the DB
+  // Load legacy MCP integrations from Supabase (used for connected-count only)
   useEffect(() => {
     if (!user?.id) return;
     supabase
@@ -224,14 +349,35 @@ function McpPage() {
         if (error) { console.error("[mcp] load error", error); }
         else {
           const map: Record<string, IntegrationRow> = {};
-          for (const row of (data ?? []) as IntegrationRow[]) {
-            map[row.provider] = row;
-          }
+          for (const row of (data ?? []) as IntegrationRow[]) map[row.provider] = row;
           setRows(map);
         }
         setLoadingRows(false);
       });
   }, [user?.id]);
+
+  const handleRegistryConnect = async (creds: Record<string, string>) => {
+    if (!connectTarget) return;
+    await connectMcp(connectTarget.provider, creds);
+    setConnectedSlugs(prev => new Set([...prev, connectTarget.provider]));
+    setConnectTarget(null);
+    toast.success(`${connectTarget.name} connected!`);
+  };
+
+  const handleRegistryDisconnect = async () => {
+    if (!disconnectTarget) return;
+    setDisconnectBusy(true);
+    try {
+      await disconnectMcp(disconnectTarget.provider);
+      setConnectedSlugs(prev => { const n = new Set(prev); n.delete(disconnectTarget.provider); return n; });
+      toast.success(`${disconnectTarget.name} disconnected`);
+      setDisconnectTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+    } finally {
+      setDisconnectBusy(false);
+    }
+  };
 
   const filtered = (cat: string) =>
     SERVERS.filter(
@@ -242,16 +388,13 @@ function McpPage() {
     );
 
   const addCustom = () => {
-    if (!customName.trim() || !customUrl.trim()) {
-      toast.error("Name and URL are required");
-      return;
-    }
+    if (!customName.trim() || !customUrl.trim()) { toast.error("Name and URL are required"); return; }
     toast.success(`${customName} added to your MCP servers`);
     setCustomName(""); setCustomUrl(""); setCustomDesc("");
     setCustomOpen(false);
   };
 
-  const connectedCount = Object.values(rows).filter(r => r.status === "connected").length;
+  const connectedCount = connectedSlugs.size + Object.keys(backendConns).length;
 
   if (selected) {
     return (
@@ -262,7 +405,6 @@ function McpPage() {
             onBack={() => setSelected(null)}
             connected={!!backendConns[selected.provider]}
             onConnectSupabase={connectSupabaseMcp}
-            onConnectProvider={connectProvider}
             onDisconnect={() => disconnectProvider(selected.provider)}
           />
         </Shell>
@@ -345,10 +487,24 @@ function McpPage() {
                   <>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {filtered(c).map(s => {
-                        const connected =
-                          s.connectMode === "supabase_form" || s.connectMode === "backend_form"
-                            ? !!backendConns[s.provider]
-                            : rows[s.provider]?.status === "connected";
+                        const isRegistry = s.connectMode === "registry_form";
+                        const connected = isRegistry
+                          ? connectedSlugs.has(s.provider)
+                          : s.connectMode === "supabase_form"
+                          ? !!backendConns[s.provider]
+                          : rows[s.provider]?.status === "connected";
+
+                        if (isRegistry) {
+                          return (
+                            <RegistryCard
+                              key={s.provider}
+                              def={s}
+                              connected={connected}
+                              onConnect={() => setConnectTarget(s)}
+                              onDisconnect={() => setDisconnectTarget(s)}
+                            />
+                          );
+                        }
                         return (
                           <McpStoreCard
                             key={s.name}
@@ -370,22 +526,44 @@ function McpPage() {
             ))}
           </Tabs>
         </div>
+
+        {/* Registry connect modal */}
+        {connectTarget && (
+          <RegistryConnectModal
+            def={connectTarget}
+            open={true}
+            onOpenChange={open => { if (!open) setConnectTarget(null); }}
+            onConnect={handleRegistryConnect}
+          />
+        )}
+
+        {/* Registry disconnect confirm */}
+        {disconnectTarget && (
+          <Dialog open={true} onOpenChange={open => { if (!open) setDisconnectTarget(null); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Disconnect {disconnectTarget.name}?</DialogTitle>
+                <DialogDescription>
+                  This will stop the AI from using {disconnectTarget.name} tools.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDisconnectTarget(null)}>Cancel</Button>
+                <Button variant="destructive" disabled={disconnectBusy} onClick={handleRegistryDisconnect}>
+                  {disconnectBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </Shell>
     </RequireAuth>
   );
 }
 
-/* ─── Store card (clickable → opens detail page) ──────────────────────────── */
+/* ─── Store card (supabase / coming_soon) ────────────────────────────────── */
 
-function McpStoreCard({
-  def,
-  connected,
-  onClick,
-}: {
-  def: McpDef;
-  connected: boolean;
-  onClick: () => void;
-}) {
+function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -394,9 +572,7 @@ function McpStoreCard({
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">
-            {def.emoji}
-          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">{def.emoji}</div>
           <div>
             <div className="font-semibold leading-tight">{def.name}</div>
             <div className="text-xs text-muted-foreground">{def.category}</div>
@@ -410,55 +586,178 @@ function McpStoreCard({
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
-      <span className="mt-auto text-xs font-medium text-primary opacity-0 transition group-hover:opacity-100">
-        View details →
-      </span>
+      <span className="mt-auto text-xs font-medium text-primary opacity-0 transition group-hover:opacity-100">View details →</span>
     </button>
   );
 }
 
-/* ─── Per-provider "what it unlocks" features ─────────────────────────────── */
+/* ─── Registry card (inline connect/disconnect) ───────────────────────────── */
 
-const FEATURES: Record<string, { title: string; desc: string }[]> = {
-  supabase: [
-    { title: "Database (PostgreSQL)", desc: "Store and query your app data with full SQL. Tables and schema are generated from your prompts." },
-    { title: "User Authentication", desc: "Email/password sign-up, login and access control added to your app." },
-    { title: "Row Level Security", desc: "Each user only sees their own data — policies generated automatically." },
-    { title: "File Storage & Realtime", desc: "Upload images/files and stream live data changes to your app." },
-  ],
-};
+function RegistryCard({
+  def, connected, onConnect, onDisconnect,
+}: { def: McpDef; connected: boolean; onConnect: () => void; onDisconnect: () => void }) {
+  return (
+    <div className="flex w-full flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur transition hover:border-primary/20">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-lg">{def.emoji}</div>
+          <div>
+            <div className="font-semibold leading-tight">{def.name}</div>
+            <div className="text-xs text-muted-foreground">{def.category}</div>
+          </div>
+        </div>
+        {connected ? (
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">✓ Connected</Badge>
+            <button
+              type="button"
+              onClick={onDisconnect}
+              className="text-[11px] text-muted-foreground transition hover:text-destructive"
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onConnect}
+            className="h-7 shrink-0 border border-orange-500/30 bg-orange-500/10 px-2.5 text-xs text-orange-400 hover:bg-orange-500/25"
+          >
+            Connect
+          </Button>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
+    </div>
+  );
+}
 
-/* ─── MCP detail / connect page ───────────────────────────────────────────── */
+/* ─── Registry connect modal ─────────────────────────────────────────────── */
+
+function RegistryConnectModal({
+  def, open, onOpenChange, onConnect,
+}: {
+  def: McpDef;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConnect: (creds: Record<string, string>) => Promise<void>;
+}) {
+  const [values,   setValues]   = useState<Record<string, string>>({});
+  const [showPass, setShowPass] = useState<Record<string, boolean>>({});
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const fields = def.fields ?? [];
+  const requiredKeys = fields.filter(f => !f.optional).map(f => f.key);
+  const canSubmit = requiredKeys.every(k => (values[k] ?? "").trim().length > 0);
+
+  const handleSubmit = async () => {
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const creds: Record<string, string> = {};
+      for (const f of fields) {
+        const v = values[f.key]?.trim();
+        if (v) creds[f.key] = v;
+      }
+      await onConnect(creds);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Connection failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) { setValues({}); setShowPass({}); setError(null); setSaving(false); }
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span>{def.emoji}</span> Connect {def.name}
+          </DialogTitle>
+          <DialogDescription>{def.desc}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {fields.map(f => {
+            const isPass = f.type === "password";
+            const shown  = showPass[f.key] ?? false;
+            return (
+              <div key={f.key} className="space-y-1.5">
+                <Label htmlFor={`mcp-f-${f.key}`}>
+                  {f.label}
+                  {f.optional && <span className="ml-1 text-xs text-muted-foreground">(optional)</span>}
+                </Label>
+                <div className="relative">
+                  <Input
+                    id={`mcp-f-${f.key}`}
+                    type={isPass && !shown ? "password" : "text"}
+                    value={values[f.key] ?? ""}
+                    onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    className={isPass ? "pr-14" : ""}
+                    autoComplete="off"
+                  />
+                  {isPass && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPass(s => ({ ...s, [f.key]: !s[f.key] }))}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground hover:text-foreground"
+                    >
+                      {shown ? "Hide" : "Show"}
+                    </button>
+                  )}
+                </div>
+                {f.help && <HintText text={f.help} />}
+              </div>
+            );
+          })}
+
+          {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit || saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── MCP detail page (Supabase only) ───────────────────────────────────── */
 
 function McpDetail({
-  def,
-  onBack,
-  connected,
-  onConnectSupabase,
-  onConnectProvider,
-  onDisconnect,
+  def, onBack, connected, onConnectSupabase, onDisconnect,
 }: {
   def: McpDef;
   onBack: () => void;
   connected: boolean;
   onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
-  onConnectProvider: (providerId: string, params: Record<string, string>) => Promise<void>;
   onDisconnect: () => Promise<void>;
 }) {
-  const isSupabase = def.connectMode === "supabase_form";
-  const isBackendForm = def.connectMode === "backend_form";
-
-  // Feature bullets: prefer def.features (strings) else the supabase FEATURES map.
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
 
-  // Supabase PAT form
-  const [token, setToken] = useState("");
+  const [token,      setToken]      = useState("");
   const [projectRef, setProjectRef] = useState("");
-  // Generic backend_form values keyed by field
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [busy,       setBusy]       = useState(false);
 
   const handleSupabase = async () => {
     if (!token.trim()) { toast.error("Access token is required"); return; }
@@ -467,26 +766,6 @@ function McpDetail({
       const res = await onConnectSupabase(token.trim(), projectRef.trim());
       setToken(""); setProjectRef("");
       toast.success(`Supabase connected — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to connect");
-    } finally { setSaving(false); }
-  };
-
-  const handleGeneric = async () => {
-    const required = (def.fields ?? []).filter((f) => !f.optional);
-    for (const f of required) {
-      if (!values[f.key]?.trim()) { toast.error(`${f.label} is required`); return; }
-    }
-    setSaving(true);
-    try {
-      const payload: Record<string, string> = {};
-      for (const f of def.fields ?? []) {
-        const v = values[f.key]?.trim();
-        if (v) payload[f.key] = v;
-      }
-      await onConnectProvider(def.provider, payload);
-      setValues({});
-      toast.success(`${def.name} connected`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to connect");
     } finally { setSaving(false); }
@@ -503,7 +782,6 @@ function McpDetail({
         <ArrowLeft className="h-4 w-4" /> Back to MCP Store
       </button>
 
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">
         <div className="flex items-center gap-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 text-2xl">{def.emoji}</div>
@@ -517,7 +795,6 @@ function McpDetail({
         </Badge>
       </div>
 
-      {/* Features */}
       {featureBullets.length > 0 && (
         <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">What this unlocks</h2>
@@ -532,7 +809,6 @@ function McpDetail({
         </div>
       )}
 
-      {/* Connect / manage */}
       <div className="rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">
         {connected ? (
           <div className="space-y-4">
@@ -543,7 +819,7 @@ function McpDetail({
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
           </div>
-        ) : isSupabase ? (
+        ) : (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Connect {def.name}</h2>
             <div className="space-y-2">
@@ -565,36 +841,6 @@ function McpDetail({
             <Button onClick={handleSupabase} disabled={saving || !token.trim()} className="w-full">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
             </Button>
-          </div>
-        ) : isBackendForm ? (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
-            {(def.fields ?? []).map((f) => (
-              <div key={f.key} className="space-y-2">
-                <Label htmlFor={`f-${f.key}`}>{f.label}</Label>
-                <Input
-                  id={`f-${f.key}`}
-                  type={f.type === "password" ? "password" : "text"}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder}
-                />
-                {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
-              </div>
-            ))}
-            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
-              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>We verify the credentials, then store them encrypted. They never reach the browser, the AI, or the preview sandbox.</span>
-            </div>
-            <Button onClick={handleGeneric} disabled={saving} className="w-full">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
-            </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <div className="font-medium">{def.name} is launching soon</div>
-            <p className="max-w-sm text-sm text-muted-foreground">We're rolling out connect flows for every provider.</p>
           </div>
         )}
       </div>

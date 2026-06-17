@@ -93,3 +93,20 @@ export const apiPatch = <T = unknown>(path: string, body?: unknown, opts?: ApiOp
   api<T>(path, { ...opts, method: "PATCH", body: body == null ? undefined : JSON.stringify(body) });
 export const apiDelete = <T = unknown>(path: string, opts?: ApiOptions) =>
   api<T>(path, { ...opts, method: "DELETE" });
+
+// ── MCP Connection helpers ────────────────────────────────────────────────────
+
+export type ConnectedMcp = { providerSlug: string; connectedAt: string };
+
+export async function getConnectedMcps(): Promise<ConnectedMcp[]> {
+  const res = await apiGet<{ connected: ConnectedMcp[] }>("/api/integrations/mcp");
+  return res.connected;
+}
+
+export async function connectMcp(slug: string, creds: Record<string, string>): Promise<void> {
+  await apiPost(`/api/integrations/mcp/${slug}/connect`, { creds });
+}
+
+export async function disconnectMcp(slug: string): Promise<void> {
+  await apiDelete(`/api/integrations/mcp/${slug}`);
+}

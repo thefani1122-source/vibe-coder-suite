@@ -702,6 +702,7 @@ function McpDetail({
   // Feature bullets: prefer def.features (strings) else the supabase FEATURES map.
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
+  const meta = META[def.provider];
 
   // Supabase PAT form
   const [token, setToken] = useState("");
@@ -782,6 +783,53 @@ function McpDetail({
           </div>
         </div>
       )}
+
+      {/* About */}
+      {meta?.longDesc && (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Info className="h-4 w-4" /> About
+          </h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">{meta.longDesc}</p>
+        </div>
+      )}
+
+      {/* Supported inputs */}
+      {meta?.inputs?.length ? (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Zap className="h-4 w-4" /> Supported inputs
+          </h2>
+          <div className="divide-y divide-border/50">
+            {meta.inputs.map((i) => (
+              <div key={i.name} className="grid grid-cols-1 gap-1 py-3 sm:grid-cols-[200px_1fr] sm:gap-4">
+                <div className="flex items-start gap-2">
+                  <code className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">{i.name}</code>
+                  <span className="text-[11px] text-muted-foreground/70">{i.type}</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{i.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Recommended use-cases */}
+      {meta?.useCases?.length ? (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Lightbulb className="h-4 w-4" /> Recommended use-cases
+          </h2>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {meta.useCases.map((u) => (
+              <li key={u} className="flex items-start gap-2 rounded-lg border border-border/40 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
+                <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>{u}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Connect / manage */}
       <div className="rounded-2xl border border-border/60 bg-card/60 p-6 backdrop-blur">

@@ -94,6 +94,33 @@ export const apiPatch = <T = unknown>(path: string, body?: unknown, opts?: ApiOp
 export const apiDelete = <T = unknown>(path: string, opts?: ApiOptions) =>
   api<T>(path, { ...opts, method: "DELETE" });
 
+// ── Clarification types ───────────────────────────────────────────────────────
+
+export type ClarifyQuestion = {
+  id: string;
+  heading: string;
+  reason: string;
+  question: string;
+  options: string[];
+  allowMultiple: boolean;
+  allowCustom: boolean;
+};
+
+export type ClarifyResponse = {
+  needsClarification: boolean;
+  questions: ClarifyQuestion[];
+};
+
+export type QuestionAnswer = {
+  questionId: string;
+  selected: string[];
+  custom?: string;
+};
+
+export async function clarifyPrompt(prompt: string, projectId: string): Promise<ClarifyResponse> {
+  return apiPost<ClarifyResponse>("/api/build/clarify", { prompt, projectId });
+}
+
 // ── MCP Connection helpers ────────────────────────────────────────────────────
 
 export type ConnectedMcp = { providerSlug: string; connectedAt: string };

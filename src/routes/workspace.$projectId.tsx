@@ -10,7 +10,11 @@ import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { createBuildSocket } from "@/lib/websocket";
-import { apiGet, apiPost } from "@/lib/api";
+import {
+  apiGet, apiPost,
+  clarifyPrompt,
+  type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
+} from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
   ArrowUp, ChevronDown, Lamp, Zap, Plus,
@@ -141,11 +145,20 @@ function WorkspacePage() {
   const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
   const [isMcpActive, setIsMcpActive] = useState(false);
 
+  const [clarifyQuestions,     setClarifyQuestions]     = useState<ClarifyQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionAnswers,      setQuestionAnswers]       = useState<QuestionAnswer[]>([]);
+  const [showClarifyModal,     setShowClarifyModal]     = useState(false);
+  const [isClarifying,         setIsClarifying]         = useState(false);
+  const [selectedOptions,      setSelectedOptions]      = useState<Set<string>>(new Set());
+  const [customText,           setCustomText]           = useState("");
+
   const socketRef          = useRef<Socket | null>(null);
   const completedRef       = useRef(false);
   const filesRef           = useRef<Record<string, string>>({});
   const currentSessionIdRef = useRef<string | undefined>(sessionId);
   const chatPanelRef        = usePanelRef();
+  const pendingPromptRef    = useRef<string>("");
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -561,9 +574,25 @@ function WorkspacePage() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [buildStatus]);
 
-  // Follow-up build: POST new prompt, reconnect socket with fresh sessionId.
-  const handleFollowUp = useCallback(async (prompt: string) => {
-    if (!prompt.trim()) return;
+  // Actual build dispatch — accepts enriched prompt + question/answer context.
+  const executeBuild = useCallback(async (
+    prompt: string,
+    answers: QuestionAnswer[],
+    questions: ClarifyQuestion[],
+  ) => {
+    const answerContext = answers.length > 0
+      ? "\n\n---\nUser Clarifications:\n" +
+        answers
+          .map(a => {
+            const q = questions.find(cq => cq.id === a.questionId);
+            const selected = a.selected.join(", ");
+            const custom = a.custom ? ` (custom: ${a.custom})` : "";
+            return `- ${q?.question ?? a.questionId}: ${selected}${custom}`;
+          })
+          .join("\n")
+      : "";
+
+    const enrichedPrompt = prompt + answerContext;
 
     setMessages(prev => [
       ...closeStreaming(prev),
@@ -581,7 +610,7 @@ function WorkspacePage() {
     let newSessionId: string;
     try {
       const res = await apiPost<{ sessionId?: string; session_id?: string }>("/api/build/fast", {
-        prompt,
+        prompt: enrichedPrompt,
         projectId,
       });
       newSessionId = res.sessionId ?? res.session_id ?? "";
@@ -590,7 +619,7 @@ function WorkspacePage() {
       setBuildStatus("error");
       setMessages(prev => [
         ...prev,
-        newMsg({ type: "error", text: "Failed to start follow-up build" }),
+        newMsg({ type: "error", text: "Failed to start build" }),
       ]);
       return;
     }
@@ -601,6 +630,76 @@ function WorkspacePage() {
     socketRef.current = newSocket;
     registerHandlers(newSocket);
   }, [projectId, registerHandlers]);
+
+  // Entry point from ChatColumn — runs clarification check first.
+  const handleFollowUp = useCallback(async (prompt: string) => {
+    if (!prompt.trim()) return;
+    pendingPromptRef.current = prompt;
+
+    setIsClarifying(true);
+    let result: ClarifyResponse = { needsClarification: false, questions: [] };
+    try {
+      result = await clarifyPrompt(prompt, projectId);
+    } catch {
+      // network failure → skip clarify, build directly
+    } finally {
+      setIsClarifying(false);
+    }
+
+    if (result.needsClarification && result.questions.length > 0) {
+      setClarifyQuestions(result.questions);
+      setCurrentQuestionIndex(0);
+      setQuestionAnswers([]);
+      setSelectedOptions(new Set());
+      setCustomText("");
+      setShowClarifyModal(true);
+    } else {
+      await executeBuild(prompt, [], []);
+    }
+  }, [projectId, executeBuild]);
+
+  // Advance through clarify questions; on last → close modal and start build.
+  const handleNextQuestion = useCallback(() => {
+    const q = clarifyQuestions[currentQuestionIndex];
+    if (!q) return;
+
+    const answer: QuestionAnswer = {
+      questionId: q.id,
+      selected: Array.from(selectedOptions),
+      custom: customText.trim() || undefined,
+    };
+    const newAnswers = [...questionAnswers, answer];
+    setQuestionAnswers(newAnswers);
+
+    if (currentQuestionIndex < clarifyQuestions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+      setSelectedOptions(new Set());
+      setCustomText("");
+    } else {
+      setShowClarifyModal(false);
+      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions);
+    }
+  }, [clarifyQuestions, currentQuestionIndex, selectedOptions, customText, questionAnswers, executeBuild]);
+
+  const handleSkipAllQuestions = useCallback(() => {
+    setShowClarifyModal(false);
+    void executeBuild(pendingPromptRef.current, [], []);
+  }, [executeBuild]);
+
+  const handleToggleOption = useCallback((option: string) => {
+    const q = clarifyQuestions[currentQuestionIndex];
+    setSelectedOptions(prev => {
+      const next = new Set(prev);
+      if (q?.allowMultiple) {
+        if (next.has(option)) next.delete(option);
+        else next.add(option);
+      } else {
+        next.clear();
+        next.add(option);
+      }
+      return next;
+    });
+  }, [clarifyQuestions, currentQuestionIndex]);
 
   const toggleChat = useCallback(() => {
     if (chatPanelRef.current?.isCollapsed()) {
@@ -657,6 +756,7 @@ function WorkspacePage() {
                 onStop={handleStopBuild}
                 projectName={projectName}
                 activityStatus={activityStatus}
+                isClarifying={isClarifying}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -738,6 +838,18 @@ function WorkspacePage() {
           </Panel>
         </Group>
 
+      {showClarifyModal && clarifyQuestions.length > 0 && (
+        <ClarifyModal
+          questions={clarifyQuestions}
+          currentIndex={currentQuestionIndex}
+          selectedOptions={selectedOptions}
+          customText={customText}
+          onToggleOption={handleToggleOption}
+          onCustomChange={setCustomText}
+          onNext={handleNextQuestion}
+          onSkip={handleSkipAllQuestions}
+        />
+      )}
       </div>
     </RequireAuth>
   );
@@ -932,7 +1044,7 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus,
+  messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus, isClarifying,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -941,6 +1053,7 @@ function ChatColumn({
   onStop?: () => void;
   projectName?: string;
   activityStatus?: string | null;
+  isClarifying?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1039,7 +1152,15 @@ function ChatColumn({
                 <Zap className="h-3 w-3 text-orange-400" />
                 Fast Mode
               </span>
-              {isBuilding ? (
+              {isClarifying ? (
+                <button
+                  disabled
+                  className="flex h-8 cursor-wait items-center gap-1.5 rounded-lg bg-orange-500/10 px-3 text-xs text-orange-300/70"
+                >
+                  <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-orange-400 border-t-transparent" />
+                  Analyzing...
+                </button>
+              ) : isBuilding ? (
                 <button
                   className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13] active:bg-red-500/20"
                   title="Stop build"
@@ -1275,6 +1396,150 @@ function IconTab({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MCP Action Panel                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Clarify Modal                                                               */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ClarifyModal({
+  questions,
+  currentIndex,
+  selectedOptions,
+  customText,
+  onToggleOption,
+  onCustomChange,
+  onNext,
+  onSkip,
+}: {
+  questions: ClarifyQuestion[];
+  currentIndex: number;
+  selectedOptions: Set<string>;
+  customText: string;
+  onToggleOption: (option: string) => void;
+  onCustomChange: (value: string) => void;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const question = questions[currentIndex];
+  if (!question) return null;
+  const total = questions.length;
+  const canProceed = selectedOptions.size > 0 || customText.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="mx-4 w-full max-w-lg rounded-xl border border-white/10 bg-[#0d0d12] p-6">
+
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-wider text-orange-400">
+              Before I start building...
+            </p>
+            <h2 className="text-lg font-semibold text-white">
+              {question.heading}
+            </h2>
+          </div>
+          <button
+            onClick={onSkip}
+            className="text-sm text-white/40 transition-colors hover:text-white/70"
+          >
+            Skip all
+          </button>
+        </div>
+
+        {/* Reason banner */}
+        <div className="mb-5 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-sm leading-relaxed text-white/60">
+            💡 {question.reason}
+          </p>
+        </div>
+
+        {/* Question */}
+        <p className="mb-4 font-medium text-white">
+          {question.question}
+        </p>
+
+        {/* Options */}
+        <div className="mb-4 space-y-2">
+          {question.options.map(option => {
+            const isSelected = selectedOptions.has(option);
+            return (
+              <button
+                key={option}
+                onClick={() => onToggleOption(option)}
+                className={cn(
+                  "w-full rounded-lg border px-4 py-3 text-left text-sm transition-all",
+                  isSelected
+                    ? "border-orange-500 bg-orange-500/10 text-white"
+                    : "border-white/10 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
+                )}
+              >
+                <span className={cn(
+                  "mr-3 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]",
+                  isSelected
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-white/30",
+                )}>
+                  {isSelected ? "✓" : ""}
+                </span>
+                {option}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Custom input */}
+        {question.allowCustom && (
+          <input
+            type="text"
+            placeholder="Or type a custom answer..."
+            value={customText}
+            onChange={e => onCustomChange(e.target.value)}
+            className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 focus:border-orange-500/50 focus:outline-none"
+          />
+        )}
+
+        {/* Footer */}
+        <div className="mt-6 flex items-center justify-between">
+          {/* Progress dots */}
+          <div className="flex gap-1.5">
+            {questions.map((_, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "h-1.5 rounded-full transition-all",
+                  i === currentIndex
+                    ? "w-6 bg-orange-500"
+                    : i < currentIndex
+                    ? "w-1.5 bg-orange-500/50"
+                    : "w-1.5 bg-white/20",
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-white/30">
+              {currentIndex + 1} of {total}
+            </span>
+            <button
+              onClick={onNext}
+              disabled={!canProceed}
+              className={cn(
+                "rounded-lg px-5 py-2 text-sm font-medium transition-all",
+                canProceed
+                  ? "bg-orange-500 text-white hover:bg-orange-600"
+                  : "cursor-not-allowed bg-white/10 text-white/30",
+              )}
+            >
+              {currentIndex === total - 1 ? "Start Building →" : "Next →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function McpActionPanel({
   events, active, onClear,

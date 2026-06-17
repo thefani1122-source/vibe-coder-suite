@@ -4,7 +4,7 @@ import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-r
 
 export interface BuildMessage {
   id: string
-  type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "error"
+  type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "file_writing" | "assistant" | "error"
   text: string
   /** "user" → right-aligned bubble; anything else (default) → left-aligned agent output */
   role?: "user" | "agent"
@@ -12,6 +12,7 @@ export interface BuildMessage {
   path?: string
   done?: boolean
   streaming?: boolean
+  files?: string[]
 }
 
 interface ChatPanelProps {
@@ -204,6 +205,44 @@ function MessageRow({
         <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/40 bg-muted/20 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
           <span className="shrink-0">📄</span>
           <span className="truncate">{msg.path ?? msg.text}</span>
+        </div>
+      )
+
+    case "file_writing":
+      return (
+        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/[0.06] px-2.5 py-1 font-mono text-[11px] text-green-400/80">
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+          </span>
+          <span className="truncate">{msg.path ?? msg.text}</span>
+        </div>
+      )
+
+    case "assistant":
+      return (
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-[10px] font-bold text-orange-400 mt-0.5">
+            L
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
+              {msg.text}
+              {showCursor && <BlinkCursor />}
+            </p>
+            {msg.files && msg.files.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {msg.files.map(f => (
+                  <span
+                    key={f}
+                    className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/20 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                  >
+                    📄 {f}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )
 

@@ -293,6 +293,21 @@ function WorkspacePage() {
       });
     });
 
+    socket.on("build:file_writing", (data: { filename?: string; path?: string }) => {
+      const filename = data.filename ?? data.path ?? ""
+      if (!filename) return
+      setMessages(prev => {
+        const withoutPrev = prev.filter(m => !(m.type === "file_writing" && m.path === filename))
+        return [...withoutPrev, newMsg({ type: "file_writing", text: filename, path: filename })]
+      })
+    })
+
+    socket.on("build:file_done", (data: { filename?: string; path?: string }) => {
+      const filename = data.filename ?? data.path ?? ""
+      if (!filename) return
+      setMessages(prev => prev.filter(m => !(m.type === "file_writing" && m.path === filename)))
+    })
+
     socket.on(
       "build:file_write",
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
@@ -314,7 +329,7 @@ function WorkspacePage() {
       },
     );
 
-    socket.on("build:complete", (data?: { files?: Record<string, string> }) => {
+    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number }) => {
       if (completedRef.current) return;
       completedRef.current = true;
       setActivityStatus(null);
@@ -342,17 +357,23 @@ function WorkspacePage() {
       setSelectedFile(prev => prev ?? Object.keys(mergedFiles)[0] ?? null);
 
       const count = Object.keys(mergedFiles).length;
+      const summaryText = data?.summary ||
+        `Built your app with ${count > 0 ? count : "your"} files. Preview is live on the right — click Code to explore.`
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
       setActiveTab("preview");
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({
-          type: "text",
-          text: `Here's your app! I generated ${count > 0 ? count : "your"} files. You can see the preview on the right, or click Code to explore the files.`,
-        }),
-      ]);
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.type !== "file_writing")
+        return [
+          ...closeStreaming(filtered),
+          newMsg({
+            type: "assistant",
+            text: summaryText,
+            files: Object.keys(mergedFiles).slice(0, 8),
+          }),
+        ]
+      });
       // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
       if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
 
@@ -623,6 +644,7 @@ function WorkspacePage() {
     setMessages(prev => [
       ...closeStreaming(prev),
       newMsg({ type: "text", text: prompt, role: "user" }),
+      newMsg({ type: "thinking", text: "Planning the build...", streaming: true }),
     ]);
     setBuildStatus("running");
     setCurrentAgent(undefined);

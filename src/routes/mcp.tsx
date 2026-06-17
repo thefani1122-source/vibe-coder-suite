@@ -71,33 +71,54 @@ interface McpDef {
 /* ─── Static server catalogue ────────────────────────────────────────────── */
 
 const SERVERS: McpDef[] = [
-  { name: "Vercel",        desc: "Deploy and manage your apps on Vercel's global edge network.", category: "Deploy",       emoji: "▲",  provider: "vercel",      providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Netlify",       desc: "One-click deploys with previews and serverless functions.",    category: "Deploy",       emoji: "◆",  provider: "netlify",     providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Railway",       desc: "Deploy backends, databases, and cron jobs in minutes.",        category: "Deploy",       emoji: "🚂", provider: "railway",     providerType: "deploy",   connectMode: "coming_soon" },
-  { name: "Cloudflare",    desc: "Workers, R2 storage, and global CDN at the edge.",             category: "Deploy",       emoji: "☁︎", provider: "cloudflare",  providerType: "deploy",   connectMode: "coming_soon" },
+  { name: "Vercel",        desc: "Deploy and manage your apps on Vercel's global edge network.", category: "Deploy",       emoji: "▲",  provider: "vercel",      providerType: "deploy",   connectMode: "coming_soon",
+    features: ["One-click deploys from Git", "Preview URLs for every branch", "Serverless & edge functions", "Global CDN with instant rollback"] },
+  { name: "Netlify",       desc: "One-click deploys with previews and serverless functions.",    category: "Deploy",       emoji: "◆",  provider: "netlify",     providerType: "deploy",   connectMode: "coming_soon",
+    features: ["Continuous deploys from Git", "Deploy previews per PR", "Edge functions & forms", "Custom domains with HTTPS"] },
+  { name: "Railway",       desc: "Deploy backends, databases, and cron jobs in minutes.",        category: "Deploy",       emoji: "🚂", provider: "railway",     providerType: "deploy",   connectMode: "coming_soon",
+    features: ["Backend & worker hosting", "Managed Postgres / Redis", "Scheduled cron jobs", "Env vars & secrets management"] },
+  { name: "Cloudflare",    desc: "Workers, R2 storage, and global CDN at the edge.",             category: "Deploy",       emoji: "☁︎", provider: "cloudflare",  providerType: "deploy",   connectMode: "coming_soon",
+    features: ["Workers at the edge", "R2 object storage", "KV & D1 databases", "DNS, CDN and DDoS protection"] },
 
   { name: "Supabase",      desc: "Provision Postgres databases with auth, storage and RLS.",     category: "Database",     emoji: "⚡", provider: "supabase",    providerType: "database", connectMode: "supabase_form" },
-  { name: "Neon",          desc: "Serverless Postgres with branching for every PR.",             category: "Database",     emoji: "🌿", provider: "neon",        providerType: "database", connectMode: "coming_soon" },
-  { name: "PlanetScale",   desc: "Serverless MySQL with branching workflows.",                   category: "Database",     emoji: "🪐", provider: "planetscale", providerType: "database", connectMode: "coming_soon" },
-  { name: "MongoDB Atlas", desc: "Managed document database with global clusters.",              category: "Database",     emoji: "🍃", provider: "mongodb",     providerType: "database", connectMode: "coming_soon" },
+  { name: "Neon",          desc: "Serverless Postgres with branching for every PR.",             category: "Database",     emoji: "🌿", provider: "neon",        providerType: "database", connectMode: "coming_soon",
+    features: ["Serverless Postgres", "Branch a DB like Git", "Autoscaling compute", "Bottomless storage"] },
+  { name: "PlanetScale",   desc: "Serverless MySQL with branching workflows.",                   category: "Database",     emoji: "🪐", provider: "planetscale", providerType: "database", connectMode: "coming_soon",
+    features: ["MySQL-compatible at scale", "Schema branching & deploy requests", "Non-blocking schema changes", "Global read replicas"] },
+  { name: "MongoDB Atlas", desc: "Managed document database with global clusters.",              category: "Database",     emoji: "🍃", provider: "mongodb",     providerType: "database", connectMode: "coming_soon",
+    features: ["Managed document DB", "Global, multi-region clusters", "Atlas Search & Vector Search", "Built-in backups & monitoring"] },
 
-  { name: "Figma",         desc: "Pull designs, components and tokens straight from Figma.",    category: "Design",       emoji: "🎨", provider: "figma",       providerType: "code",     connectMode: "coming_soon" },
-  { name: "Framer",        desc: "Import animated layouts and components from Framer.",         category: "Design",       emoji: "✦",  provider: "framer",      providerType: "code",     connectMode: "coming_soon" },
+  { name: "Figma",         desc: "Pull designs, components and tokens straight from Figma.",    category: "Design",       emoji: "🎨", provider: "figma",       providerType: "code",     connectMode: "coming_soon",
+    features: ["Import frames as components", "Sync design tokens & variables", "Export images & SVG assets", "Read comments and selections"] },
+  { name: "Framer",        desc: "Import animated layouts and components from Framer.",         category: "Design",       emoji: "✦",  provider: "framer",      providerType: "code",     connectMode: "coming_soon",
+    features: ["Import Framer layouts", "Animated component presets", "CMS collections sync", "Responsive breakpoints"] },
 
-  { name: "OpenAI",             desc: "GPT, embeddings, and vision tools for your agents.",                    category: "AI Tools",     emoji: "✺",  provider: "openai",           providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Anthropic",          desc: "Claude models for long-context reasoning.",                             category: "AI Tools",     emoji: "✶",  provider: "anthropic",        providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Sequential Thinking",desc: "Step-by-step reasoning helper for complex tasks.",                     category: "AI Tools",     emoji: "🧠", provider: "sequential_think", providerType: "ai",   connectMode: "coming_soon" },
-  { name: "Context7",           desc: "Up-to-date library docs piped right into the agent.",                  category: "AI Tools",     emoji: "📚", provider: "context7",         providerType: "ai",   connectMode: "coming_soon" },
+  { name: "OpenAI",             desc: "GPT, embeddings, and vision tools for your agents.",                    category: "AI Tools",     emoji: "✺",  provider: "openai",           providerType: "ai",   connectMode: "coming_soon",
+    features: ["GPT chat & completions", "Embeddings for search/RAG", "Vision & image generation", "Function & tool calling"] },
+  { name: "Anthropic",          desc: "Claude models for long-context reasoning.",                             category: "AI Tools",     emoji: "✶",  provider: "anthropic",        providerType: "ai",   connectMode: "coming_soon",
+    features: ["Claude Sonnet & Opus models", "200K+ token context", "Tool use & JSON mode", "Vision input support"] },
+  { name: "Sequential Thinking",desc: "Step-by-step reasoning helper for complex tasks.",                     category: "AI Tools",     emoji: "🧠", provider: "sequential_think", providerType: "ai",   connectMode: "coming_soon",
+    features: ["Structured chain-of-thought", "Plan / act / reflect loop", "Branch & revise reasoning", "Better multi-step accuracy"] },
+  { name: "Context7",           desc: "Up-to-date library docs piped right into the agent.",                  category: "AI Tools",     emoji: "📚", provider: "context7",         providerType: "ai",   connectMode: "coming_soon",
+    features: ["Live docs for popular libs", "Version-aware snippets", "Fewer hallucinated APIs", "Cited code references"] },
 
-  { name: "GitHub",   desc: "Read repos, open PRs, and manage issues from chat.",    category: "Dev Tools",    emoji: "",  provider: "github",   providerType: "code", connectMode: "coming_soon" },
-  { name: "GitLab",   desc: "Repos, MRs, CI pipelines and registries.",             category: "Dev Tools",    emoji: "🦊", provider: "gitlab",   providerType: "code", connectMode: "coming_soon" },
-  { name: "Sentry",   desc: "Track errors and performance across your stack.",       category: "Dev Tools",    emoji: "🛡",  provider: "sentry",   providerType: "code", connectMode: "coming_soon" },
-  { name: "PostHog",  desc: "Product analytics, feature flags, and session replay.", category: "Dev Tools",    emoji: "📊", provider: "posthog",  providerType: "analytics", connectMode: "coming_soon" },
+  { name: "GitHub",   desc: "Read repos, open PRs, and manage issues from chat.",    category: "Dev Tools",    emoji: "",  provider: "github",   providerType: "code", connectMode: "coming_soon",
+    features: ["Read repos & files", "Open & review pull requests", "Create and triage issues", "Manage Actions workflows"] },
+  { name: "GitLab",   desc: "Repos, MRs, CI pipelines and registries.",             category: "Dev Tools",    emoji: "🦊", provider: "gitlab",   providerType: "code", connectMode: "coming_soon",
+    features: ["Repo & merge request access", "CI/CD pipeline triggers", "Issue tracking", "Container & package registries"] },
+  { name: "Sentry",   desc: "Track errors and performance across your stack.",       category: "Dev Tools",    emoji: "🛡",  provider: "sentry",   providerType: "code", connectMode: "coming_soon",
+    features: ["Real-time error tracking", "Performance & traces", "Release health & alerts", "Source-mapped stack traces"] },
+  { name: "PostHog",  desc: "Product analytics, feature flags, and session replay.", category: "Dev Tools",    emoji: "📊", provider: "posthog",  providerType: "analytics", connectMode: "coming_soon",
+    features: ["Product analytics events", "Feature flags & A/B tests", "Session replay", "Funnels & retention"] },
 
-  { name: "Linear",  desc: "Read and update issues, projects and cycles.", category: "Productivity", emoji: "📐", provider: "linear",  providerType: "code",    connectMode: "coming_soon" },
-  { name: "Notion",  desc: "Search pages, append blocks and create databases.", category: "Productivity", emoji: "📝", provider: "notion",  providerType: "code",    connectMode: "coming_soon" },
-  { name: "Slack",   desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack",   providerType: "code",    connectMode: "coming_soon" },
-  { name: "Stripe",  desc: "Create payments, subscriptions and customer portals.", category: "Productivity", emoji: "💳", provider: "stripe",  providerType: "payment", connectMode: "coming_soon" },
+  { name: "Linear",  desc: "Read and update issues, projects and cycles.", category: "Productivity", emoji: "📐", provider: "linear",  providerType: "code",    connectMode: "coming_soon",
+    features: ["Read & create issues", "Update cycles and projects", "Comment from chat", "Triage by team / label"] },
+  { name: "Notion",  desc: "Search pages, append blocks and create databases.", category: "Productivity", emoji: "📝", provider: "notion",  providerType: "code",    connectMode: "coming_soon",
+    features: ["Search across pages", "Append & edit blocks", "Create databases & rows", "Use docs as agent context"] },
+  { name: "Slack",   desc: "Post messages and read channels for context.", category: "Productivity", emoji: "💬", provider: "slack",   providerType: "code",    connectMode: "coming_soon",
+    features: ["Post to channels & DMs", "Read recent messages", "React & thread replies", "Trigger workflows on events"] },
+  { name: "Stripe",  desc: "Create payments, subscriptions and customer portals.", category: "Productivity", emoji: "💳", provider: "stripe",  providerType: "payment", connectMode: "coming_soon",
+    features: ["Checkout & payment links", "Subscriptions & invoicing", "Customer portal", "Webhooks for events"] },
 
   // ── Live, backend-wired provider integrations ──────────────────────────────
   {
@@ -591,10 +612,22 @@ function McpDetail({
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 py-6 text-center">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <div className="font-medium">{def.name} is launching soon</div>
-            <p className="max-w-sm text-sm text-muted-foreground">We're rolling out connect flows for every provider.</p>
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            <p className="text-sm text-muted-foreground">
+              {def.name} integrates with Lampcode through the Model Context Protocol. Connect your
+              account to let the agent use {def.name} tools while building your app.
+            </p>
+            <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-xs text-primary/80">
+              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>One-click connect for {def.name} is rolling out soon. Join the waitlist and we'll enable it on your workspace.</span>
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => toast.success(`We'll notify you when ${def.name} is ready to connect`)}
+            >
+              Connect {def.name}
+            </Button>
           </div>
         )}
       </div>

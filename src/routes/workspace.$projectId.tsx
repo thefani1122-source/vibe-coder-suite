@@ -895,6 +895,7 @@ function WorkspacePage() {
                       selectedFile={selectedFile}
                       setSelectedFile={setSelectedFile}
                       isBuilding={isBuilding}
+                      externalQuery={codeQuery}
                     />
                   </div>
                 </div>
@@ -1284,15 +1285,18 @@ function ChatColumn({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function CodePanel({
-  files, newFiles, selectedFile, setSelectedFile, isBuilding,
+  files, newFiles, selectedFile, setSelectedFile, isBuilding, externalQuery,
 }: {
   files: Record<string, string>;
   newFiles: Set<string>;
   selectedFile: string | null;
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
+  externalQuery?: string;
 }) {
-  const [query, setQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const query = externalQuery !== undefined && externalQuery !== "" ? externalQuery : localQuery;
+  void setLocalQuery;
 
   const filteredFiles = useMemo(() => {
     if (!query.trim()) return files;

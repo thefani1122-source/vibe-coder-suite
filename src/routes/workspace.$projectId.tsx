@@ -21,7 +21,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, FileText, Github, Download,
-  Square, ExternalLink, Link2, Figma, X, Settings,
+  Square, ExternalLink, Link2, Figma, X,
 } from "lucide-react";
 import { toast } from "sonner";
 

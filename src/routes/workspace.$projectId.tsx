@@ -16,6 +16,8 @@ import {
   type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import {
   ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
@@ -163,13 +165,35 @@ function WorkspacePage() {
   const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
   const [showContextPanel,  setShowContextPanel]  = useState(false);
 
-  const socketRef          = useRef<Socket | null>(null);
-  const completedRef       = useRef(false);
-  const filesRef           = useRef<Record<string, string>>({});
-  const currentSessionIdRef = useRef<string | undefined>(sessionId);
-  const chatPanelRef        = usePanelRef();
-  const pendingPromptRef    = useRef<string>("");
-  const rebuildFnRef        = useRef<(() => void) | null>(null);
+  const socketRef               = useRef<Socket | null>(null);
+  const completedRef            = useRef(false);
+  const filesRef                = useRef<Record<string, string>>({});
+  const currentSessionIdRef     = useRef<string | undefined>(sessionId);
+  const currentStreamSessionIdRef = useRef<string | null>(null);
+  const chatPanelRef            = usePanelRef();
+  const pendingPromptRef        = useRef<string>("");
+  const rebuildFnRef            = useRef<(() => void) | null>(null);
+
+  const { messages: aiMessages, status: aiStatus, sendMessage, stop: stopAi } = useChat({
+    transport: new DefaultChatTransport({
+      api: `${import.meta.env.VITE_BACKEND_URL ?? ""}/api/build/stream`,
+      prepareSendMessagesRequest: ({ messages }) => {
+        const lastUser = [...messages].reverse().find(m => m.role === "user");
+        const prompt = lastUser?.parts?.find((p: { type: string }) => p.type === "text")
+          ? (lastUser.parts.find((p: { type: string }) => p.type === "text") as { type: string; text: string }).text
+          : "";
+        const token = useAuthStore.getState().session?.access_token;
+        return {
+          body: {
+            projectId,
+            sessionId: currentStreamSessionIdRef.current ?? "",
+            prompt,
+          },
+          headers: token ? { Authorization: `Bearer ${token}` } as Record<string, string> : {} as Record<string, string>,
+        };
+      },
+    }),
+  });
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -198,16 +222,18 @@ function WorkspacePage() {
     return () => window.removeEventListener("socket:connection_failed", handler);
   }, []);
 
-  // F5: Emit cancel-build to the backend and wait for build:cancelled confirmation.
+  // F5: Stop the AI stream and emit cancel-build to the backend.
   const handleStopBuild = useCallback(() => {
+    stopAi();
     const socket = socketRef.current;
-    if (!socket?.connected) {
-      toast.error("No active build connection to stop");
-      return;
+    if (socket?.connected) {
+      socket.emit("cancel-build", { sessionId: currentSessionIdRef.current });
     }
-    socket.emit("cancel-build", { sessionId: currentSessionIdRef.current });
+    setBuildStatus("complete");
+    setCurrentAgent(undefined);
+    setActivityStatus(null);
     toast("Stopping build…");
-  }, []);
+  }, [stopAi]);
 
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
@@ -225,29 +251,8 @@ function WorkspacePage() {
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
-
-      // Route system/pipeline messages to activityStatus; real AI thinking goes to chat.
-      // Prefer the explicit `internal` flag from the backend; only fall back to
-      // pattern-matching when the backend hasn't sent the flag yet.
-      const isInternal = typeof data.internal === "boolean"
-        ? data.internal
-        : HARDCODED_PATTERNS.some(p => p.test(chunk.trim()));
-      if (isInternal) {
-        setActivityStatus(chunk.trim());
-        return;
-      }
-
-      // Clear any lingering status chip when real thinking arrives.
-      setActivityStatus(null);
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.type === "thinking" && last.streaming) {
-          return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
-          );
-        }
-        return [...closeStreaming(prev), newMsg({ type: "thinking", text: chunk, streaming: true })];
-      });
+      // All thinking shown via activity status chip only (AI content comes through SSE)
+      setActivityStatus(chunk.trim());
     });
 
     socket.on("build:token", (data: { text?: string; token?: string }) => {
@@ -285,19 +290,12 @@ function WorkspacePage() {
       });
     });
 
-    socket.on("build:file_writing", (data: { filename?: string; path?: string }) => {
-      const filename = data.filename ?? data.path ?? ""
-      if (!filename) return
-      setMessages(prev => {
-        const withoutPrev = prev.filter(m => !(m.type === "file_writing" && m.path === filename))
-        return [...withoutPrev, newMsg({ type: "file_writing", text: filename, path: filename })]
-      })
+    socket.on("build:file_writing", (_data: { filename?: string; path?: string }) => {
+      // Files are tracked in the sidebar only — no chat messages
     })
 
-    socket.on("build:file_done", (data: { filename?: string; path?: string }) => {
-      const filename = data.filename ?? data.path ?? ""
-      if (!filename) return
-      setMessages(prev => prev.filter(m => !(m.type === "file_writing" && m.path === filename)))
+    socket.on("build:file_done", (_data: { filename?: string; path?: string }) => {
+      // Files are tracked in the sidebar only — no chat messages
     })
 
     socket.on(
@@ -305,19 +303,11 @@ function WorkspacePage() {
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
         const path = data.path ?? data.file ?? "file";
         const code = data.content ?? data.code ?? "";
-        const isUpdate = !!filesRef.current[path];
-        console.log(`[FRONTEND] ${isUpdate ? "Updating" : "Adding"} file:`, path);
         filesRef.current = { ...filesRef.current, [path]: code };
         setFiles(prev => ({ ...prev, [path]: code }));
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
         setCurrentAgent("frontend");
-        // Only add a chat pill for the first write of each path — prevents duplicate pills
-        // when the backend emits the same file more than once.
-        setMessages(prev => {
-          if (prev.some(m => m.type === "file_write" && m.path === path)) return prev;
-          return [...closeStreaming(prev), newMsg({ type: "file_write", text: path, path })];
-        });
       },
     );
 
@@ -327,23 +317,12 @@ function WorkspacePage() {
       setActivityStatus(null);
 
       // Merge build:complete files into what file_write events already accumulated.
-      // Never overwrite — file_write events may have newer content for the same path.
       let mergedFiles = { ...filesRef.current };
-      let addedCount = 0;
       if (data?.files) {
         for (const [path, content] of Object.entries(data.files)) {
-          if (!mergedFiles[path]) {
-            mergedFiles[path] = content;
-            addedCount++;
-          }
+          if (!mergedFiles[path]) mergedFiles[path] = content;
         }
       }
-      console.log(
-        "[FRONTEND] build:complete received:",
-        Object.keys(data?.files ?? {}),
-        "| existing:", Object.keys(filesRef.current).length,
-        "| new additions:", addedCount,
-      );
       filesRef.current = mergedFiles;
       setFiles(mergedFiles);
       setSelectedFile(prev => prev ?? Object.keys(mergedFiles)[0] ?? null);
@@ -355,20 +334,13 @@ function WorkspacePage() {
       setCurrentAgent(undefined);
       setNewFiles(new Set());
       setActiveTab("preview");
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.type !== "file_writing")
-        return [
-          ...closeStreaming(filtered),
-          newMsg({
-            type: "assistant",
-            text: summaryText,
-            files: Object.keys(mergedFiles).slice(0, 8),
-          }),
-        ]
-      });
+      // Add summary as assistant message for history persistence
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "assistant", text: summaryText }),
+      ]);
       // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
       if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
-
     });
 
     socket.on("build:warning", ({ message, truncated }: { message: string; truncated?: boolean }) => {
@@ -636,7 +608,6 @@ function WorkspacePage() {
     setMessages(prev => [
       ...closeStreaming(prev),
       newMsg({ type: "text", text: prompt, role: "user" }),
-      newMsg({ type: "thinking", text: "Planning the build...", streaming: true }),
     ]);
     setBuildStatus("running");
     setCurrentAgent(undefined);
@@ -647,29 +618,20 @@ function WorkspacePage() {
     setPreviewLoading(false);
     setPreviewError(null);
 
-    let newSessionId: string;
-    try {
-      const res = await apiPost<{ sessionId?: string; session_id?: string }>("/api/build/fast", {
-        prompt: enrichedPrompt,
-        projectId,
-      });
-      newSessionId = res.sessionId ?? res.session_id ?? "";
-      if (!newSessionId) throw new Error("No sessionId in response");
-    } catch {
-      setBuildStatus("error");
-      setMessages(prev => [
-        ...prev,
-        newMsg({ type: "error", text: "Failed to start build" }),
-      ]);
-      return;
-    }
-
+    // Generate a UUID on the frontend — used for both the WS room and the build session
+    const newSessionId = crypto.randomUUID();
     currentSessionIdRef.current = newSessionId;
+    currentStreamSessionIdRef.current = newSessionId;
+
+    // Connect socket so we receive build:file_write / build:complete events
     socketRef.current?.disconnect();
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers]);
+
+    // Kick off the SSE stream via useChat
+    sendMessage({ text: enrichedPrompt });
+  }, [projectId, registerHandlers, sendMessage]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -808,6 +770,8 @@ function WorkspacePage() {
                 onCollapse={toggleChat}
                 showHistory={showHistory}
                 onToggleHistory={() => setShowHistory(v => !v)}
+                aiMessages={aiMessages}
+                aiStatus={aiStatus}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -1120,7 +1084,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
-  chatCollapsed, onCollapse, showHistory, onToggleHistory,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory, aiMessages, aiStatus,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1133,6 +1097,8 @@ function ChatColumn({
   onCollapse?: () => void;
   showHistory?: boolean;
   onToggleHistory?: () => void;
+  aiMessages?: import("ai").UIMessage[];
+  aiStatus?: import("ai").ChatStatus;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1184,6 +1150,8 @@ function ChatColumn({
           messages={messages}
           isBuilding={isBuilding}
           currentAgent={currentAgent}
+          aiMessages={aiMessages}
+          aiStatus={aiStatus}
           className="h-full !bg-transparent"
           projectName={projectName}
         />

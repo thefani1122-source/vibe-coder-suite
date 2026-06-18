@@ -21,7 +21,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, FileText, Github, Download,
-  Square, ExternalLink, Link2, Figma, X, Settings,
+  Square, ExternalLink, Link2, Figma, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -65,15 +65,6 @@ function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   if (!prev.length || !prev[prev.length - 1].streaming) return prev;
   return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
 }
-
-const AGENT_LABELS: Record<string, string> = {
-  planning:   "Analyzing UI patterns…",
-  frontend:   "Polishing UI: gradient borders, skeletons, avatars",
-  db:         "Wiring up the database…",
-  security:   "Running security & verification…",
-  deploy:     "Preparing deployment…",
-  connection: "Working on it…",
-};
 
 // Pipeline status messages emitted by the backend — never real AI thinking.
 // FALLBACK ONLY: classifies a build:thinking event when the backend hasn't
@@ -147,8 +138,9 @@ function WorkspacePage() {
   const [projectName,  setProjectName]  = useState<string>("");
   const [chatCollapsed,  setChatCollapsed]  = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
-  const [activityStatus, setActivityStatus] = useState<string | null>(null);
+  const [, setActivityStatus] = useState<string | null>(null);
   const [isFullstack, setIsFullstack] = useState(false);
+  const [codeQuery,   setCodeQuery]   = useState("");
 
   // E2B preview state — the backend creates the E2B sandbox and emits the
   // public preview URL via Socket.IO. The iframe loads it directly: no Service
@@ -782,14 +774,11 @@ function WorkspacePage() {
           buildStatus={buildStatus}
           onReload={() => setReloadKey(k => k + 1)}
           files={files}
-          chatCollapsed={chatCollapsed}
-          onToggleChat={toggleChat}
-          showHistory={showHistory}
-          onToggleHistory={() => setShowHistory(v => !v)}
           businessContext={businessContext}
           showContextPanel={showContextPanel}
-          onToggleContextPanel={() => setShowContextPanel(v => !v)}
           previewUrl={previewUrl}
+          codeQuery={codeQuery}
+          onCodeQueryChange={setCodeQuery}
         />
 
         <Group
@@ -814,10 +803,11 @@ function WorkspacePage() {
                 onSend={handleFollowUp}
                 onStop={handleStopBuild}
                 projectName={projectName}
-                activityStatus={activityStatus}
                 isClarifying={isClarifying}
                 chatCollapsed={chatCollapsed}
                 onCollapse={toggleChat}
+                showHistory={showHistory}
+                onToggleHistory={() => setShowHistory(v => !v)}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -896,6 +886,7 @@ function WorkspacePage() {
                       selectedFile={selectedFile}
                       setSelectedFile={setSelectedFile}
                       isBuilding={isBuilding}
+                      externalQuery={codeQuery}
                     />
                   </div>
                 </div>
@@ -956,10 +947,9 @@ function WorkspacePage() {
 
 function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
-  buildStatus, onReload, files, chatCollapsed, onToggleChat,
-  showHistory, onToggleHistory,
-  businessContext, showContextPanel, onToggleContextPanel,
-  previewUrl,
+  buildStatus, onReload, files,
+  businessContext, showContextPanel,
+  previewUrl, codeQuery, onCodeQueryChange,
 }: {
   projectId: string;
   projectName: string;
@@ -970,14 +960,11 @@ function WorkspaceTopBar({
   buildStatus: BuildStatus;
   onReload: () => void;
   files: Record<string, string>;
-  chatCollapsed: boolean;
-  onToggleChat: () => void;
-  showHistory: boolean;
-  onToggleHistory: () => void;
   businessContext: BusinessContext;
   showContextPanel: boolean;
-  onToggleContextPanel: () => void;
   previewUrl: string | null;
+  codeQuery: string;
+  onCodeQueryChange: (v: string) => void;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -1019,18 +1006,6 @@ function WorkspaceTopBar({
           <span className="truncate">{displayName}</span>
           <ChevronDown className="h-3 w-3 shrink-0 text-white/40" />
         </button>
-        <button
-          onClick={onToggleContextPanel}
-          className={cn(
-            "grid h-6 w-6 place-content-center rounded-md transition",
-            showContextPanel
-              ? "text-orange-400"
-              : "text-white/30 hover:bg-white/[0.05] hover:text-white/70",
-          )}
-          title="AI project context"
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </button>
         {hasFilledContext(businessContext) && !showContextPanel && (
           <span className="flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             🧠 AI context set
@@ -1040,68 +1015,47 @@ function WorkspaceTopBar({
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
 
-      {/* History panel toggle */}
-      <button
-        onClick={onToggleHistory}
-        className={cn(
-          "p-1.5 rounded transition-colors hover:bg-white/5",
-          showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
-        )}
-        title="Build history"
-      >
-        <History size={14} />
-      </button>
+      {/* ── Left of iframe: tab pills ─────────────────────────────────── */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+        <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
+          <Globe className="h-4 w-4" />
+        </IconTab>
+        <IconTab active={false} onClick={() => {}} title="Docs">
+          <FileText className="h-4 w-4" />
+        </IconTab>
+        <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
+          <Code2 className="h-4 w-4" />
+        </IconTab>
+      </div>
 
-      {/* Collapse/expand chat panel */}
-      <button
-        onClick={onToggleChat}
-        className="ws-iconbtn"
-        title={chatCollapsed ? "Show chat" : "Hide chat"}
-      >
-        {chatCollapsed
-          ? <PanelLeft className="h-4 w-4" />
-          : <PanelLeftClose className="h-4 w-4" />
-        }
-      </button>
-
-      {/* ── Center: tab pills + device toggle + build status ─────────── */}
+      {/* ── Center: single device-cycle button + code search ─────────── */}
       <div className="flex flex-1 items-center justify-center gap-3">
+        {activeTab === "preview" && (() => {
+          const cycle: Device[] = ["desktop", "mobile", "tablet"];
+          const next = cycle[(cycle.indexOf(device) + 1) % cycle.length];
+          const Icon = device === "desktop" ? Monitor : device === "mobile" ? Smartphone : Tablet;
+          const label = device.charAt(0).toUpperCase() + device.slice(1);
+          return (
+            <button
+              onClick={() => setDevice(next)}
+              title={`${label} — click to switch`}
+              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10"
+            >
+              <Icon size={14} />
+              <span>{label}</span>
+            </button>
+          );
+        })()}
 
-        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-          <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
-            <Globe className="h-4 w-4" />
-          </IconTab>
-          <IconTab active={false} onClick={() => {}} title="Docs">
-            <FileText className="h-4 w-4" />
-          </IconTab>
-          <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
-            <Code2 className="h-4 w-4" />
-          </IconTab>
+        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5 min-w-[220px] max-w-[360px] flex-1">
+          <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
+          <input
+            value={codeQuery}
+            onChange={(e) => onCodeQueryChange(e.target.value)}
+            placeholder="Search code…"
+            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
+          />
         </div>
-
-        {/* Device toggle — only shown in preview tab */}
-        {activeTab === "preview" && (
-          <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
-            {([
-              { mode: "desktop" as Device, icon: Monitor,    label: "Desktop" },
-              { mode: "tablet"  as Device, icon: Tablet,     label: "Tablet"  },
-              { mode: "mobile"  as Device, icon: Smartphone, label: "Mobile"  },
-            ] as const).map(({ mode, icon: Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setDevice(mode)}
-                title={label}
-                className={`p-1.5 rounded-md transition-all ${
-                  device === mode
-                    ? "bg-white/15 text-white"
-                    : "text-white/40 hover:text-white/70"
-                }`}
-              >
-                <Icon size={15} />
-              </button>
-            ))}
-          </div>
-        )}
 
         {isBuilding && (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
@@ -1165,8 +1119,8 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus, isClarifying,
-  chatCollapsed, onCollapse,
+  messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1174,13 +1128,15 @@ function ChatColumn({
   onSend?: (prompt: string) => void;
   onStop?: () => void;
   projectName?: string;
-  activityStatus?: string | null;
   isClarifying?: boolean;
   chatCollapsed?: boolean;
   onCollapse?: () => void;
+  showHistory?: boolean;
+  onToggleHistory?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  void currentAgent;
 
   const handleSend = () => {
     const text = draft.trim();
@@ -1195,15 +1151,31 @@ function ChatColumn({
       {/* Chat header with collapse button */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-widest text-white/25">Chat</span>
-        {onCollapse && (
-          <button
-            onClick={onCollapse}
-            className="p-1.5 text-white/40 hover:text-white/70 transition-colors"
-            title={chatCollapsed ? "Show chat" : "Hide chat"}
-          >
-            <PanelLeftClose size={14} />
-          </button>
-        )}
+        <div className="flex items-center gap-0.5">
+          {onToggleHistory && (
+            <button
+              onClick={onToggleHistory}
+              className={cn(
+                "p-1.5 rounded transition-colors hover:bg-white/5",
+                showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
+              )}
+              title="Build history"
+            >
+              <History size={14} />
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              className="p-1.5 rounded text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors"
+              title={chatCollapsed ? "Show chat" : "Hide chat"}
+            >
+              {chatCollapsed
+                ? <PanelLeft size={14} />
+                : <PanelLeftClose size={14} />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -1216,31 +1188,6 @@ function ChatColumn({
           projectName={projectName}
         />
       </div>
-
-      {/* Working… inline status block */}
-      {isBuilding && currentAgent && (
-        <div className="shrink-0 border-t border-white/[0.05] px-4 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold leading-tight text-white">Working...</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-white/40">
-                {AGENT_LABELS[currentAgent] ?? "Working on it…"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Activity status chip — shows backend pipeline progress, never AI thinking */}
-      {activityStatus && (
-        <div className="shrink-0 px-4 pb-1">
-          <span className="text-[11px] italic text-white/30">{activityStatus}</span>
-        </div>
-      )}
 
       {/* Input bar */}
       <div className="shrink-0 p-3">
@@ -1329,15 +1276,16 @@ function ChatColumn({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function CodePanel({
-  files, newFiles, selectedFile, setSelectedFile, isBuilding,
+  files, newFiles, selectedFile, setSelectedFile, isBuilding, externalQuery,
 }: {
   files: Record<string, string>;
   newFiles: Set<string>;
   selectedFile: string | null;
   setSelectedFile: (p: string) => void;
   isBuilding: boolean;
+  externalQuery?: string;
 }) {
-  const [query, setQuery] = useState("");
+  const query = externalQuery ?? "";
 
   const filteredFiles = useMemo(() => {
     if (!query.trim()) return files;
@@ -1368,18 +1316,6 @@ function CodePanel({
 
       {/* Left: file tree column */}
       <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
-        <div className="shrink-0 border-b border-white/[0.06] p-2">
-          <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5">
-            <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search code"
-              className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
-            />
-          </div>
-        </div>
-
         <div className="min-h-0 flex-1 overflow-auto">
           {Object.keys(files).length === 0 ? (
             <EmptyCodeSkeleton building={isBuilding} />

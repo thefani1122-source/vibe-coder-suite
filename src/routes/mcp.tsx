@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Link } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Link, Info, Zap, Lightbulb } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -219,6 +219,150 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Row Level Security", desc: "Each user only sees their own data — policies generated automatically." },
     { title: "File Storage & Realtime", desc: "Upload images/files and stream live data changes to your app." },
   ],
+};
+
+/* ─── Rich per-provider metadata (About / Inputs / Use-cases) ────────────── */
+
+interface McpMeta {
+  longDesc: string;
+  inputs: { name: string; type: string; desc: string }[];
+  useCases: string[];
+}
+
+const META: Record<string, McpMeta> = {
+  vercel: {
+    longDesc: "Vercel MCP lets the agent deploy, inspect, and manage projects on your Vercel account — from creating deployments to wiring custom domains.",
+    inputs: [
+      { name: "vercel_token", type: "secret", desc: "Account-scoped token used to authenticate against Vercel's REST API." },
+    ],
+    useCases: ["Ship preview deploys for every build", "Promote a build to production", "Attach a custom domain and verify DNS"],
+  },
+  netlify: {
+    longDesc: "Netlify MCP automates site deploys, build hooks, and environment variables on your Netlify team.",
+    inputs: [{ name: "auth_token", type: "secret", desc: "Personal access token from app.netlify.com." }],
+    useCases: ["Deploy a static site with previews", "Trigger build hooks from chat", "Rotate environment variables"],
+  },
+  railway: {
+    longDesc: "Railway MCP provisions services, runs migrations, and tails logs on your Railway projects via the GraphQL API.",
+    inputs: [{ name: "api_token", type: "secret", desc: "Railway account token with project access." }],
+    useCases: ["Spin up Postgres + a Node service", "Stream production logs into chat", "Promote a build between environments"],
+  },
+  cloudflare: {
+    longDesc: "Cloudflare MCP manages Workers, KV namespaces, R2 buckets, and DNS records on your Cloudflare account.",
+    inputs: [{ name: "cf_token", type: "secret", desc: "Scoped API token with Workers / DNS edit permissions." }],
+    useCases: ["Deploy a Worker from a prompt", "Add or edit DNS records", "Manage R2 storage buckets"],
+  },
+  supabase: {
+    longDesc: "Supabase MCP gives the agent direct access to your Postgres database, auth, storage, and edge functions — schema and RLS policies are generated as you prompt.",
+    inputs: [
+      { name: "access_token", type: "secret", desc: "Personal access token from Supabase → Account → Access Tokens." },
+      { name: "project_ref", type: "text", desc: "20-character project reference from Settings → General." },
+    ],
+    useCases: ["Create tables with RLS in one prompt", "Wire up email + Google sign-in", "Generate edge functions and call them from the UI"],
+  },
+  mongodb: {
+    longDesc: "MongoDB Atlas MCP connects your app to a managed Mongo cluster with full CRUD via the official driver.",
+    inputs: [{ name: "connection_string", type: "secret", desc: "mongodb+srv:// URI including credentials and database." }],
+    useCases: ["Persist user data in collections", "Run aggregation pipelines from chat", "Seed and migrate documents"],
+  },
+  shopify: {
+    longDesc: "Shopify MCP reads and writes products, orders, and customers through the Admin GraphQL API.",
+    inputs: [
+      { name: "shopify_store_domain", type: "text", desc: "yourstore.myshopify.com — without https://." },
+      { name: "shopify_admin_token", type: "secret", desc: "Admin API access token from a custom app." },
+    ],
+    useCases: ["Sync products into a custom storefront", "Build a back-office dashboard for orders", "Push customer segments into email tools"],
+  },
+  figma: {
+    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code.",
+    inputs: [{ name: "figma_access_token", type: "secret", desc: "Personal access token from figma.com → Account." }],
+    useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
+  },
+  framer: {
+    longDesc: "Framer MCP imports motion-rich components and layouts straight from Framer projects.",
+    inputs: [{ name: "framer_api_token", type: "secret", desc: "Token from framer.com/developers." }],
+    useCases: ["Reuse Framer animations in React", "Pull layouts as starting points", "Sync brand assets"],
+  },
+  "google-stitch": {
+    longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app.",
+    inputs: [{ name: "stitch_api_key", type: "secret", desc: "API key from Google Cloud Console with Stitch enabled." }],
+    useCases: ["Brainstorm UI directions from a prompt", "Export Stitch designs as React", "Iterate on layout variants"],
+  },
+  github: {
+    longDesc: "GitHub MCP creates repos, opens PRs, files issues, and reads code so the agent can collaborate inside your workflow.",
+    inputs: [{ name: "github_token", type: "secret", desc: "PAT with repo + workflow scopes." }],
+    useCases: ["Open a PR with the generated diff", "Triage issues from chat", "Search across your repos for context"],
+  },
+  sentry: {
+    longDesc: "Sentry MCP queries errors, releases, and performance data so the agent can debug against real production signal.",
+    inputs: [{ name: "sentry_token", type: "secret", desc: "Internal Integration token from sentry.io." }],
+    useCases: ["Pull the top errors for a release", "Find the stack trace for an issue", "Mark issues resolved after a fix"],
+  },
+  linear: {
+    longDesc: "Linear MCP reads and updates issues, projects, and cycles — perfect for turning tickets into shipped features.",
+    inputs: [{ name: "linear_key", type: "secret", desc: "Personal API key from linear.app/settings/api." }],
+    useCases: ["Convert a Linear issue into a working PR", "Move tickets across states", "Summarize a cycle's progress"],
+  },
+  notion: {
+    longDesc: "Notion MCP reads and writes pages, databases, and blocks so the agent can use your docs as context.",
+    inputs: [{ name: "notion_token", type: "secret", desc: "Integration token from notion.com/profile/integrations." }],
+    useCases: ["Use a spec page as build context", "Append changelogs to a release page", "Mirror Notion data into the app"],
+  },
+  stripe: {
+    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API.",
+    inputs: [{ name: "stripe_key", type: "secret", desc: "Restricted key from dashboard.stripe.com/apikeys." }],
+    useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
+  },
+  wordpress: {
+    longDesc: "WordPress MCP creates and manages posts, pages, and media via the WP REST API.",
+    inputs: [
+      { name: "wordpress_site_url", type: "url", desc: "Root URL of your WordPress install." },
+      { name: "wordpress_app_password", type: "secret", desc: "Application password generated from Users → Profile." },
+    ],
+    useCases: ["Publish a blog post from a prompt", "Bulk update SEO meta", "Upload media from chat"],
+  },
+  make: {
+    longDesc: "Make MCP runs Make scenarios from your personal MCP endpoint, perfect for chaining 1000+ apps.",
+    inputs: [{ name: "make_mcp_url", type: "url", desc: "Personal Make MCP URL from Profile → API." }],
+    useCases: ["Trigger a scenario from chat", "Pipe data between SaaS apps", "Build no-code automations"],
+  },
+  n8n: {
+    longDesc: "n8n MCP triggers and manages workflows on your self-hosted n8n instance.",
+    inputs: [
+      { name: "instance_url", type: "url", desc: "Public URL of your n8n instance." },
+      { name: "api_key", type: "secret", desc: "API key from n8n Settings → API." },
+    ],
+    useCases: ["Run a workflow with custom payload", "Build a chat-driven ops console", "Schedule automations"],
+  },
+  zapier: {
+    longDesc: "Zapier MCP fires Zap actions from your personal Zapier MCP endpoint.",
+    inputs: [{ name: "zapier_mcp_url", type: "url", desc: "Personal Zapier MCP URL from zapier.com/mcp." }],
+    useCases: ["Send a Slack message", "Add a row to a Google Sheet", "Kick off any Zap from chat"],
+  },
+  mailchimp: {
+    longDesc: "Mailchimp MCP manages audiences, campaigns, and subscribers via the Mailchimp Marketing API.",
+    inputs: [{ name: "api_key", type: "secret", desc: "API key from mailchimp.com → Account → Extras → API keys." }],
+    useCases: ["Add subscribers from a signup form", "Send a campaign", "Segment your audience"],
+  },
+  resend: {
+    longDesc: "Resend MCP sends transactional email with React Email templates.",
+    inputs: [{ name: "api_key", type: "secret", desc: "API key from resend.com/api-keys." }],
+    useCases: ["Send welcome emails", "Magic-link authentication", "Notify users on app events"],
+  },
+  twilio: {
+    longDesc: "Twilio MCP sends SMS, WhatsApp messages, and places voice calls via the Twilio API.",
+    inputs: [
+      { name: "account_sid", type: "text", desc: "Account SID from Twilio Console." },
+      { name: "auth_token", type: "secret", desc: "Auth token from Twilio Console." },
+      { name: "phone_number", type: "text", desc: "Optional Twilio phone number in E.164 format." },
+    ],
+    useCases: ["Send OTP codes by SMS", "Notify users on WhatsApp", "Trigger voice alerts"],
+  },
+  sendgrid: {
+    longDesc: "SendGrid MCP sends transactional and marketing email via the SendGrid v3 API.",
+    inputs: [{ name: "api_key", type: "secret", desc: "API key from app.sendgrid.com/settings/api_keys." }],
+    useCases: ["Send order confirmations", "Run drip campaigns", "Track delivery and opens"],
+  },
 };
 
 /* ─── Hint text with clickable URLs ──────────────────────────────────────── */
@@ -864,6 +1008,7 @@ function McpDetail({
 }) {
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
+  const meta = META[def.provider];
 
   const [token,      setToken]      = useState("");
   const [projectRef, setProjectRef] = useState("");
@@ -917,6 +1062,50 @@ function McpDetail({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {meta && (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Info className="h-4 w-4 text-primary" /> About
+          </div>
+          <p className="text-sm leading-relaxed text-foreground/80">{meta.longDesc}</p>
+        </div>
+      )}
+
+      {meta && meta.inputs.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Zap className="h-4 w-4 text-primary" /> Supported inputs
+          </div>
+          <div className="divide-y divide-border/50">
+            {meta.inputs.map((inp) => (
+              <div key={inp.name} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:gap-4">
+                <div className="flex items-center gap-2 sm:w-56 sm:shrink-0">
+                  <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground/90">{inp.name}</code>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{inp.type}</span>
+                </div>
+                <p className="text-xs text-muted-foreground sm:flex-1">{inp.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {meta && meta.useCases.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-card/40 p-6 backdrop-blur">
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Lightbulb className="h-4 w-4 text-primary" /> Recommended use-cases
+          </div>
+          <ul className="space-y-2.5">
+            {meta.useCases.map((u) => (
+              <li key={u} className="flex items-start gap-2.5 text-sm">
+                <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
+                <span className="text-muted-foreground">{u}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

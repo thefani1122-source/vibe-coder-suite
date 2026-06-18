@@ -149,6 +149,7 @@ function WorkspacePage() {
   const [showHistory,    setShowHistory]    = useState(false);
   const [activityStatus, setActivityStatus] = useState<string | null>(null);
   const [isFullstack, setIsFullstack] = useState(false);
+  const [codeQuery,   setCodeQuery]   = useState("");
 
   // E2B preview state — the backend creates the E2B sandbox and emits the
   // public preview URL via Socket.IO. The iframe loads it directly: no Service
@@ -782,14 +783,11 @@ function WorkspacePage() {
           buildStatus={buildStatus}
           onReload={() => setReloadKey(k => k + 1)}
           files={files}
-          chatCollapsed={chatCollapsed}
-          onToggleChat={toggleChat}
-          showHistory={showHistory}
-          onToggleHistory={() => setShowHistory(v => !v)}
           businessContext={businessContext}
           showContextPanel={showContextPanel}
-          onToggleContextPanel={() => setShowContextPanel(v => !v)}
           previewUrl={previewUrl}
+          codeQuery={codeQuery}
+          onCodeQueryChange={setCodeQuery}
         />
 
         <Group

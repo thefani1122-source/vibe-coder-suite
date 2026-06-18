@@ -1019,18 +1019,6 @@ function WorkspaceTopBar({
           <span className="truncate">{displayName}</span>
           <ChevronDown className="h-3 w-3 shrink-0 text-white/40" />
         </button>
-        <button
-          onClick={onToggleContextPanel}
-          className={cn(
-            "grid h-6 w-6 place-content-center rounded-md transition",
-            showContextPanel
-              ? "text-orange-400"
-              : "text-white/30 hover:bg-white/[0.05] hover:text-white/70",
-          )}
-          title="AI project context"
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </button>
         {hasFilledContext(businessContext) && !showContextPanel && (
           <span className="flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             🧠 AI context set
@@ -1040,68 +1028,47 @@ function WorkspaceTopBar({
 
       <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
 
-      {/* History panel toggle */}
-      <button
-        onClick={onToggleHistory}
-        className={cn(
-          "p-1.5 rounded transition-colors hover:bg-white/5",
-          showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
-        )}
-        title="Build history"
-      >
-        <History size={14} />
-      </button>
+      {/* ── Left of iframe: tab pills ─────────────────────────────────── */}
+      <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+        <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
+          <Globe className="h-4 w-4" />
+        </IconTab>
+        <IconTab active={false} onClick={() => {}} title="Docs">
+          <FileText className="h-4 w-4" />
+        </IconTab>
+        <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
+          <Code2 className="h-4 w-4" />
+        </IconTab>
+      </div>
 
-      {/* Collapse/expand chat panel */}
-      <button
-        onClick={onToggleChat}
-        className="ws-iconbtn"
-        title={chatCollapsed ? "Show chat" : "Hide chat"}
-      >
-        {chatCollapsed
-          ? <PanelLeft className="h-4 w-4" />
-          : <PanelLeftClose className="h-4 w-4" />
-        }
-      </button>
-
-      {/* ── Center: tab pills + device toggle + build status ─────────── */}
+      {/* ── Center: single device-cycle button + code search ─────────── */}
       <div className="flex flex-1 items-center justify-center gap-3">
+        {activeTab === "preview" && (() => {
+          const cycle: Device[] = ["desktop", "mobile", "tablet"];
+          const next = cycle[(cycle.indexOf(device) + 1) % cycle.length];
+          const Icon = device === "desktop" ? Monitor : device === "mobile" ? Smartphone : Tablet;
+          const label = device.charAt(0).toUpperCase() + device.slice(1);
+          return (
+            <button
+              onClick={() => setDevice(next)}
+              title={`${label} — click to switch`}
+              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10"
+            >
+              <Icon size={14} />
+              <span>{label}</span>
+            </button>
+          );
+        })()}
 
-        <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
-          <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
-            <Globe className="h-4 w-4" />
-          </IconTab>
-          <IconTab active={false} onClick={() => {}} title="Docs">
-            <FileText className="h-4 w-4" />
-          </IconTab>
-          <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
-            <Code2 className="h-4 w-4" />
-          </IconTab>
+        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5 min-w-[220px] max-w-[360px] flex-1">
+          <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
+          <input
+            value={codeQuery}
+            onChange={(e) => onCodeQueryChange(e.target.value)}
+            placeholder="Search code…"
+            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
+          />
         </div>
-
-        {/* Device toggle — only shown in preview tab */}
-        {activeTab === "preview" && (
-          <div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
-            {([
-              { mode: "desktop" as Device, icon: Monitor,    label: "Desktop" },
-              { mode: "tablet"  as Device, icon: Tablet,     label: "Tablet"  },
-              { mode: "mobile"  as Device, icon: Smartphone, label: "Mobile"  },
-            ] as const).map(({ mode, icon: Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setDevice(mode)}
-                title={label}
-                className={`p-1.5 rounded-md transition-all ${
-                  device === mode
-                    ? "bg-white/15 text-white"
-                    : "text-white/40 hover:text-white/70"
-                }`}
-              >
-                <Icon size={15} />
-              </button>
-            ))}
-          </div>
-        )}
 
         {isBuilding && (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">

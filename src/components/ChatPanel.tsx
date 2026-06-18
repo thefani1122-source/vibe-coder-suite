@@ -153,11 +153,15 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   )
 }
 
-// Collapsible thinking card — starts collapsed so it never overwhelms the chat.
-// Each card manages its own expand/collapse independently.
+// Thinking card — auto-expands while streaming, stays open after; user can collapse.
 function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(() => msg.streaming !== false)
   const showCursor = isLast && msg.streaming === true
+
+  // Re-expand if streaming kicks in after first render (AI SDK reasoning parts)
+  useEffect(() => {
+    if (msg.streaming) setExpanded(true)
+  }, [msg.streaming])
   const text = msg.text?.trim() ?? ""
   if (!text) return null
 

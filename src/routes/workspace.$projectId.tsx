@@ -1127,8 +1127,8 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  messages, isBuilding, currentAgent, onSend, onStop, projectName, activityStatus, isClarifying,
-  chatCollapsed, onCollapse,
+  messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1136,13 +1136,15 @@ function ChatColumn({
   onSend?: (prompt: string) => void;
   onStop?: () => void;
   projectName?: string;
-  activityStatus?: string | null;
   isClarifying?: boolean;
   chatCollapsed?: boolean;
   onCollapse?: () => void;
+  showHistory?: boolean;
+  onToggleHistory?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  void currentAgent;
 
   const handleSend = () => {
     const text = draft.trim();
@@ -1157,15 +1159,31 @@ function ChatColumn({
       {/* Chat header with collapse button */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-widest text-white/25">Chat</span>
-        {onCollapse && (
-          <button
-            onClick={onCollapse}
-            className="p-1.5 text-white/40 hover:text-white/70 transition-colors"
-            title={chatCollapsed ? "Show chat" : "Hide chat"}
-          >
-            <PanelLeftClose size={14} />
-          </button>
-        )}
+        <div className="flex items-center gap-0.5">
+          {onToggleHistory && (
+            <button
+              onClick={onToggleHistory}
+              className={cn(
+                "p-1.5 rounded transition-colors hover:bg-white/5",
+                showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
+              )}
+              title="Build history"
+            >
+              <History size={14} />
+            </button>
+          )}
+          {onCollapse && (
+            <button
+              onClick={onCollapse}
+              className="p-1.5 rounded text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors"
+              title={chatCollapsed ? "Show chat" : "Hide chat"}
+            >
+              {chatCollapsed
+                ? <PanelLeft size={14} />
+                : <PanelLeftClose size={14} />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -1178,31 +1196,6 @@ function ChatColumn({
           projectName={projectName}
         />
       </div>
-
-      {/* Working… inline status block */}
-      {isBuilding && currentAgent && (
-        <div className="shrink-0 border-t border-white/[0.05] px-4 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold leading-tight text-white">Working...</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-white/40">
-                {AGENT_LABELS[currentAgent] ?? "Working on it…"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Activity status chip — shows backend pipeline progress, never AI thinking */}
-      {activityStatus && (
-        <div className="shrink-0 px-4 pb-1">
-          <span className="text-[11px] italic text-white/30">{activityStatus}</span>
-        </div>
-      )}
 
       {/* Input bar */}
       <div className="shrink-0 p-3">

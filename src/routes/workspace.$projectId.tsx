@@ -66,15 +66,6 @@ function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
 }
 
-const AGENT_LABELS: Record<string, string> = {
-  planning:   "Analyzing UI patterns…",
-  frontend:   "Polishing UI: gradient borders, skeletons, avatars",
-  db:         "Wiring up the database…",
-  security:   "Running security & verification…",
-  deploy:     "Preparing deployment…",
-  connection: "Working on it…",
-};
-
 // Pipeline status messages emitted by the backend — never real AI thinking.
 // FALLBACK ONLY: classifies a build:thinking event when the backend hasn't
 // sent the `internal` boolean flag yet (see the build:thinking handler below,
@@ -147,7 +138,7 @@ function WorkspacePage() {
   const [projectName,  setProjectName]  = useState<string>("");
   const [chatCollapsed,  setChatCollapsed]  = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
-  const [activityStatus, setActivityStatus] = useState<string | null>(null);
+  const [, setActivityStatus] = useState<string | null>(null);
   const [isFullstack, setIsFullstack] = useState(false);
   const [codeQuery,   setCodeQuery]   = useState("");
 

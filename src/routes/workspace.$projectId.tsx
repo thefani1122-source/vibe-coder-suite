@@ -812,10 +812,11 @@ function WorkspacePage() {
                 onSend={handleFollowUp}
                 onStop={handleStopBuild}
                 projectName={projectName}
-                activityStatus={activityStatus}
                 isClarifying={isClarifying}
                 chatCollapsed={chatCollapsed}
                 onCollapse={toggleChat}
+                showHistory={showHistory}
+                onToggleHistory={() => setShowHistory(v => !v)}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">

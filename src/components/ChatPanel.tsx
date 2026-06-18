@@ -14,6 +14,7 @@ export interface BuildMessage {
   done?: boolean
   streaming?: boolean
   files?: string[]
+  hint?: string
 }
 
 interface ChatPanelProps {
@@ -291,6 +292,11 @@ function MessageRow({
                   </span>
                 ))}
               </div>
+            )}
+            {msg.hint && (
+              <p className="mt-2 text-xs text-white/30 border-t border-white/5 pt-2">
+                💡 {msg.hint}
+              </p>
             )}
           </div>
         </div>

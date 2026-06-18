@@ -311,7 +311,7 @@ function WorkspacePage() {
       },
     );
 
-    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number }) => {
+    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string }) => {
       if (completedRef.current) return;
       completedRef.current = true;
       setActivityStatus(null);
@@ -337,7 +337,7 @@ function WorkspacePage() {
       // Add summary as assistant message for history persistence
       setMessages(prev => [
         ...closeStreaming(prev),
-        newMsg({ type: "assistant", text: summaryText }),
+        newMsg({ type: "assistant", text: summaryText, hint: data?.hint }),
       ]);
       // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
       if (hasBackendFiles(mergedFiles)) setIsFullstack(true);

@@ -1294,9 +1294,7 @@ function CodePanel({
   isBuilding: boolean;
   externalQuery?: string;
 }) {
-  const [localQuery, setLocalQuery] = useState("");
-  const query = externalQuery !== undefined && externalQuery !== "" ? externalQuery : localQuery;
-  void setLocalQuery;
+  const query = externalQuery ?? "";
 
   const filteredFiles = useMemo(() => {
     if (!query.trim()) return files;

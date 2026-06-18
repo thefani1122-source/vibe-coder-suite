@@ -1327,18 +1327,6 @@ function CodePanel({
 
       {/* Left: file tree column */}
       <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
-        <div className="shrink-0 border-b border-white/[0.06] p-2">
-          <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5">
-            <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search code"
-              className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
-            />
-          </div>
-        </div>
-
         <div className="min-h-0 flex-1 overflow-auto">
           {Object.keys(files).length === 0 ? (
             <EmptyCodeSkeleton building={isBuilding} />

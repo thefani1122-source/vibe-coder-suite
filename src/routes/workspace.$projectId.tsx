@@ -956,10 +956,9 @@ function WorkspacePage() {
 
 function WorkspaceTopBar({
   projectId, projectName, activeTab, setActiveTab, device, setDevice,
-  buildStatus, onReload, files, chatCollapsed, onToggleChat,
-  showHistory, onToggleHistory,
-  businessContext, showContextPanel, onToggleContextPanel,
-  previewUrl,
+  buildStatus, onReload, files,
+  businessContext, showContextPanel,
+  previewUrl, codeQuery, onCodeQueryChange,
 }: {
   projectId: string;
   projectName: string;
@@ -970,14 +969,11 @@ function WorkspaceTopBar({
   buildStatus: BuildStatus;
   onReload: () => void;
   files: Record<string, string>;
-  chatCollapsed: boolean;
-  onToggleChat: () => void;
-  showHistory: boolean;
-  onToggleHistory: () => void;
   businessContext: BusinessContext;
   showContextPanel: boolean;
-  onToggleContextPanel: () => void;
   previewUrl: string | null;
+  codeQuery: string;
+  onCodeQueryChange: (v: string) => void;
 }) {
   const navigate = useNavigate();
   void navigate;

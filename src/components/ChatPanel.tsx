@@ -166,12 +166,14 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
 // Thinking card — auto-expands while streaming, stays open after; user can collapse.
 function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
   const [expanded, setExpanded] = useState(() => msg.streaming !== false)
+  const [userToggled, setUserToggled] = useState(false)
   const showCursor = isLast && msg.streaming === true
 
-  // Re-expand if streaming kicks in after first render (AI SDK reasoning parts)
+  // Auto-expand while streaming, auto-collapse when done — unless user toggled it.
   useEffect(() => {
-    if (msg.streaming) setExpanded(true)
-  }, [msg.streaming])
+    if (userToggled) return
+    setExpanded(msg.streaming === true)
+  }, [msg.streaming, userToggled])
   const text = msg.text?.trim() ?? ""
   if (!text) return null
 
@@ -180,12 +182,12 @@ function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
       {/* Header — always visible, click to toggle */}
       <button
         type="button"
-        onClick={() => setExpanded(e => !e)}
+        onClick={() => { setUserToggled(true); setExpanded(e => !e) }}
         className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-violet-500/[0.06]"
       >
         <span className="shrink-0 text-sm leading-none">💡</span>
         <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-300/70">
-          Plan
+          {msg.streaming ? "Thinking" : "Thoughts"}
         </span>
         {msg.streaming && !expanded && (
           <span className="relative ml-1 flex h-1.5 w-1.5 shrink-0">

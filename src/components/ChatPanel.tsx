@@ -329,3 +329,36 @@ function BlinkCursor() {
     <span className="ml-px inline-block h-[0.85em] w-px animate-pulse align-text-bottom bg-current" />
   )
 }
+
+// Dedicated thinking box — shows while the LLM is processing a user prompt
+// but hasn't streamed any reasoning text yet.
+function ThinkingBox() {
+  return (
+    <div className="rounded-xl border border-violet-500/[0.2] bg-violet-500/[0.05] overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <span className="shrink-0 text-sm leading-none">🧠</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-300/80">
+          Thinking
+        </span>
+        <span className="relative ml-1 flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
+        </span>
+        <div className="ml-auto flex gap-1 items-center">
+          {[0, 150, 300].map(delay => (
+            <span
+              key={delay}
+              className="w-1 h-1 bg-violet-300/70 rounded-full animate-bounce"
+              style={{ animationDelay: `${delay}ms` }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="border-t border-violet-500/[0.12] px-3 py-2">
+        <p className="text-xs italic leading-relaxed text-white/40">
+          Lampcode is reasoning through your request…
+        </p>
+      </div>
+    </div>
+  )
+}

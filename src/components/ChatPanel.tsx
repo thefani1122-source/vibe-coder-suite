@@ -52,6 +52,13 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   const isAiStreaming = aiStatus === 'streaming' || aiStatus === 'submitted'
   const showDots = (isBuilding || isAiStreaming) && messages.length === 0 && aiActiveMessages.length === 0
 
+  // Show a dedicated "Thinking" box whenever the AI is working on a user prompt
+  // but hasn't emitted a reasoning part yet. Hides as soon as real reasoning streams in.
+  const hasReasoningPart = aiActiveMessages.some(m =>
+    m.parts.some(p => p.type === 'reasoning' && p.text.trim().length > 0)
+  )
+  const showThinkingBox = isAiStreaming && !hasReasoningPart
+
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
       <div
@@ -76,6 +83,8 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
             ))}
           </div>
         )}
+
+        {showThinkingBox && <ThinkingBox />}
 
         {messages.map((msg, i) => (
           <MessageRow

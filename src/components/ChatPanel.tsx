@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
-import type { UIMessage, ChatStatus } from "ai"
-
 export interface BuildMessage {
   id: string
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error"
@@ -23,24 +21,20 @@ interface ChatPanelProps {
   currentAgent?: string
   className?: string
   projectName?: string
-  aiMessages?: UIMessage[]
-  aiStatus?: ChatStatus
 }
 
-export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName, aiMessages, aiStatus }: ChatPanelProps) {
+export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
   void currentAgent
   void projectName
 
-  const aiActiveMessages = aiMessages?.filter(m => m.role === 'assistant') ?? []
-
   useEffect(() => {
     if (isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages, aiMessages])
+  }, [messages])
 
   const handleScroll = () => {
     if (!containerRef.current) return
@@ -49,15 +43,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   }
 
   const lastMsg = messages[messages.length - 1]
-  const isAiStreaming = aiStatus === 'streaming' || aiStatus === 'submitted'
-  const showDots = (isBuilding || isAiStreaming) && messages.length === 0 && aiActiveMessages.length === 0
-
-  // Show a dedicated "Thinking" box whenever the AI is working on a user prompt
-  // but hasn't emitted a reasoning part yet. Hides as soon as real reasoning streams in.
-  const hasReasoningPart = aiActiveMessages.some(m =>
-    m.parts.some(p => p.type === 'reasoning' && p.text.trim().length > 0)
-  )
-  const showThinkingBox = isAiStreaming && !hasReasoningPart
+  const showDots = isBuilding && messages.length === 0
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -66,7 +52,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
         onScroll={handleScroll}
         className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20"
       >
-        {messages.length === 0 && aiActiveMessages.length === 0 && !isBuilding && !isAiStreaming && (
+        {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
             <span className="text-3xl">⚡</span>
             <p className="text-sm text-muted-foreground">Start a build to see agent output</p>
@@ -84,69 +70,16 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
           </div>
         )}
 
-        {showThinkingBox && <ThinkingBox />}
-
         {messages.map((msg, i) => (
           <MessageRow
             key={msg.id}
             msg={msg}
-            isLast={i === messages.length - 1 && aiActiveMessages.length === 0}
+            isLast={i === messages.length - 1}
           />
         ))}
 
-        {/* AI SDK streaming parts: reasoning → ThinkingCard, text → L-bubble, rest → skip */}
-        {aiActiveMessages.map((msg, msgIdx) => {
-          const isLastMsg = msgIdx === aiActiveMessages.length - 1
-          return msg.parts.map((part, partIdx) => {
-            const isLastPart = isLastMsg && partIdx === msg.parts.length - 1
-            const streaming = isAiStreaming && isLastPart
-
-            if (part.type === 'reasoning') {
-              if (!part.text.trim()) return null
-              const partStreaming = isAiStreaming && part.state === 'streaming'
-              return (
-                <ThinkingCard
-                  key={`${msg.id}-r${partIdx}`}
-                  msg={{ id: `${msg.id}-r${partIdx}`, type: 'thinking', text: part.text, streaming: partStreaming }}
-                  isLast={partStreaming}
-                />
-              )
-            }
-            if (part.type === 'text') {
-              if (!part.text.trim()) return null
-              return (
-                <div key={`${msg.id}-t${partIdx}`} className="flex items-start gap-2.5">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-[10px] font-bold text-orange-400 mt-0.5">
-                    L
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
-                      {part.text}
-                      {streaming && part.state === 'streaming' && <BlinkCursor />}
-                    </p>
-                  </div>
-                </div>
-              )
-            }
-            return null
-          })
-        })}
-
-        {/* Loading dots while AI is submitted but not yet streaming */}
-        {aiStatus === 'submitted' && aiActiveMessages.length === 0 && (
-          <div className="flex gap-1 items-center px-1 py-2">
-            {[0, 150, 300].map(delay => (
-              <span
-                key={delay}
-                className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
-                style={{ animationDelay: `${delay}ms` }}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Loading dots when building via socket (no AI stream) */}
-        {isBuilding && !isAiStreaming && lastMsg && !lastMsg.streaming && (
+        {/* Loading dots while socket build is active */}
+        {isBuilding && lastMsg && !lastMsg.streaming && (
           <div className="flex gap-1 items-center px-1 py-2">
             {[0, 150, 300].map(delay => (
               <span
@@ -164,17 +97,17 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   )
 }
 
-// Thinking card — auto-expands while streaming, stays open after; user can collapse.
+// Thinking card — auto-expands while streaming, auto-collapses when done unless user toggled it.
 function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
   const [expanded, setExpanded] = useState(() => msg.streaming !== false)
   const [userToggled, setUserToggled] = useState(false)
   const showCursor = isLast && msg.streaming === true
 
-  // Auto-expand while streaming, auto-collapse when done — unless user toggled it.
   useEffect(() => {
     if (userToggled) return
     setExpanded(msg.streaming === true)
   }, [msg.streaming, userToggled])
+
   const text = msg.text?.trim() ?? ""
   if (!text) return null
 
@@ -330,38 +263,5 @@ function MessageRow({
 function BlinkCursor() {
   return (
     <span className="ml-px inline-block h-[0.85em] w-px animate-pulse align-text-bottom bg-current" />
-  )
-}
-
-// Dedicated thinking box — shows while the LLM is processing a user prompt
-// but hasn't streamed any reasoning text yet.
-function ThinkingBox() {
-  return (
-    <div className="rounded-xl border border-violet-500/[0.2] bg-violet-500/[0.05] overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <span className="shrink-0 text-sm leading-none">🧠</span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-300/80">
-          Thinking
-        </span>
-        <span className="relative ml-1 flex h-1.5 w-1.5 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
-        </span>
-        <div className="ml-auto flex gap-1 items-center">
-          {[0, 150, 300].map(delay => (
-            <span
-              key={delay}
-              className="w-1 h-1 bg-violet-300/70 rounded-full animate-bounce"
-              style={{ animationDelay: `${delay}ms` }}
-            />
-          ))}
-        </div>
-      </div>
-      <div className="border-t border-violet-500/[0.12] px-3 py-2">
-        <p className="text-xs italic leading-relaxed text-white/40">
-          Lampcode is reasoning through your request…
-        </p>
-      </div>
-    </div>
   )
 }

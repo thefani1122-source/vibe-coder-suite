@@ -16,8 +16,6 @@ import {
   type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
 import {
   ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
@@ -169,31 +167,9 @@ function WorkspacePage() {
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
-  const currentStreamSessionIdRef = useRef<string | null>(null);
   const chatPanelRef            = usePanelRef();
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
-
-  const { messages: aiMessages, status: aiStatus, sendMessage, stop: stopAi } = useChat({
-    transport: new DefaultChatTransport({
-      api: `${import.meta.env.VITE_BACKEND_URL ?? ""}/api/build/stream`,
-      prepareSendMessagesRequest: ({ messages }) => {
-        const lastUser = [...messages].reverse().find(m => m.role === "user");
-        const prompt = lastUser?.parts?.find((p: { type: string }) => p.type === "text")
-          ? (lastUser.parts.find((p: { type: string }) => p.type === "text") as { type: string; text: string }).text
-          : "";
-        const token = useAuthStore.getState().session?.access_token;
-        return {
-          body: {
-            projectId,
-            sessionId: currentStreamSessionIdRef.current ?? "",
-            prompt,
-          },
-          headers: token ? { Authorization: `Bearer ${token}` } as Record<string, string> : {} as Record<string, string>,
-        };
-      },
-    }),
-  });
 
   // Fetch project name with auth via apiGet (handles token automatically).
   // API returns { project: { name, description } }; fall back to flat shapes.
@@ -224,7 +200,6 @@ function WorkspacePage() {
 
   // F5: Stop the AI stream and emit cancel-build to the backend.
   const handleStopBuild = useCallback(() => {
-    stopAi();
     const socket = socketRef.current;
     if (socket?.connected) {
       socket.emit("cancel-build", { sessionId: currentSessionIdRef.current });
@@ -233,7 +208,7 @@ function WorkspacePage() {
     setCurrentAgent(undefined);
     setActivityStatus(null);
     toast("Stopping build…");
-  }, [stopAi]);
+  }, []);
 
   const registerHandlers = useCallback((socket: Socket) => {
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
@@ -618,20 +593,32 @@ function WorkspacePage() {
     setPreviewLoading(false);
     setPreviewError(null);
 
-    // Generate a UUID on the frontend — used for both the WS room and the build session
-    const newSessionId = crypto.randomUUID();
-    currentSessionIdRef.current = newSessionId;
-    currentStreamSessionIdRef.current = newSessionId;
+    const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
+      project_id: projectId,
+      prompt: enrichedPrompt,
+    });
 
-    // Connect socket so we receive build:file_write / build:complete events
+    const newSessionId = (
+      (buildRes?.session as Record<string, unknown>)?.sessionId
+      ?? (buildRes?.session as Record<string, unknown>)?.session_id
+      ?? buildRes?.sessionId
+      ?? buildRes?.session_id
+    ) as string | undefined;
+
+    if (!newSessionId) {
+      setBuildStatus("error");
+      setMessages(prev => [...prev, newMsg({ type: "error", text: "Build failed to start — no session ID returned." })]);
+      return;
+    }
+
+    currentSessionIdRef.current = newSessionId;
+
+    // Connect socket to receive build events from fast path
     socketRef.current?.disconnect();
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-
-    // Kick off the SSE stream via useChat
-    sendMessage({ text: enrichedPrompt });
-  }, [projectId, registerHandlers, sendMessage]);
+  }, [projectId, registerHandlers]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -770,8 +757,6 @@ function WorkspacePage() {
                 onCollapse={toggleChat}
                 showHistory={showHistory}
                 onToggleHistory={() => setShowHistory(v => !v)}
-                aiMessages={aiMessages}
-                aiStatus={aiStatus}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -1084,7 +1069,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
-  chatCollapsed, onCollapse, showHistory, onToggleHistory, aiMessages, aiStatus,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1097,8 +1082,6 @@ function ChatColumn({
   onCollapse?: () => void;
   showHistory?: boolean;
   onToggleHistory?: () => void;
-  aiMessages?: import("ai").UIMessage[];
-  aiStatus?: import("ai").ChatStatus;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1150,8 +1133,6 @@ function ChatColumn({
           messages={messages}
           isBuilding={isBuilding}
           currentAgent={currentAgent}
-          aiMessages={aiMessages}
-          aiStatus={aiStatus}
           className="h-full !bg-transparent"
           projectName={projectName}
         />

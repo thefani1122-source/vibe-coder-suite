@@ -103,11 +103,12 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
 
             if (part.type === 'reasoning') {
               if (!part.text.trim()) return null
+              const partStreaming = isAiStreaming && part.state === 'streaming'
               return (
                 <ThinkingCard
                   key={`${msg.id}-r${partIdx}`}
-                  msg={{ id: `${msg.id}-r${partIdx}`, type: 'thinking', text: part.text, streaming: part.state === 'streaming' }}
-                  isLast={streaming}
+                  msg={{ id: `${msg.id}-r${partIdx}`, type: 'thinking', text: part.text, streaming: partStreaming }}
+                  isLast={partStreaming}
                 />
               )
             }

@@ -103,8 +103,19 @@ const BACKEND_CONTENT_RE = [
   /\bcreateServerFn\s*\(/,
   /\bexpress\s*\(/,
   /\bapp\.(get|post|put|patch|delete)\s*\(/,
+  /fetch\(["']\/api\//,
   /\bnew\s+PrismaClient\b/,
 ];
+
+const SANDBOX_PREVIEW_CONSTRAINTS = `
+
+---
+Sandbox preview compatibility requirements:
+- The live preview runs inside a Vite browser sandbox. Do not generate Express, Node server files, src/server/*, src/db/* API handlers, or app/page API routes unless the platform explicitly provides a backend runtime.
+- Do not make browser components call fetch('/api/...') unless you also generate a working Vite-compatible mock/fallback for that endpoint. Prefer direct client-side state/localStorage for demo persistence.
+- If auth or database features are requested, the preview must still be fully clickable without configured environment variables: show a demo auth path and in-memory/localStorage data fallback, while keeping real integration code isolated behind env checks.
+- Never leave buttons dependent on missing env vars; New/Edit/Delete/Done/Sign In should visibly work in the preview demo.
+`;
 
 function hasBackendFiles(files: Record<string, string>): boolean {
   return Object.entries(files).some(([path, content]) =>

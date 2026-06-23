@@ -86,7 +86,11 @@ export function E2BPreview({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", textDecoration: "underline" }}
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.55)",
+                  textDecoration: "underline",
+                }}
               >
                 Open preview in a new tab
               </a>

@@ -360,6 +360,8 @@ function WorkspacePage() {
 
     socket.on("build:preview_loading", () => {
       console.log("[Preview] E2B sandbox starting…");
+      setIsFullstack(true);
+      setActiveTab("preview");
       setPreviewError(null);
       setPreviewLoading(true);
       setPreviewUrl(null);

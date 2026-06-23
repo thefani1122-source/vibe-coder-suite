@@ -117,7 +117,12 @@ function extractPreviewUrl(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
   const direct = record.url ?? record.previewUrl ?? record.preview_url ?? record.previewURL;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  if (typeof direct === "string" && direct.trim()) {
+    const trimmed = direct.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/^http:\/\//i, "https://");
+    if (/^(5173-|[a-z0-9-]+\.)/i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }
   return extractPreviewUrl(record.data) ?? extractPreviewUrl(record.preview) ?? extractPreviewUrl(record.sandbox);
 }
 

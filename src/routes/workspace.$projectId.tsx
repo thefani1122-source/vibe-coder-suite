@@ -355,7 +355,17 @@ function WorkspacePage() {
     );
 
     socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string; url?: string; previewUrl?: string; preview_url?: string }) => {
-      if (completedRef.current) return;
+      if (completedRef.current) {
+        const latePreviewUrl = extractPreviewUrl(data);
+        if (latePreviewUrl) {
+          setIsFullstack(true);
+          setActiveTab("preview");
+          setPreviewError(null);
+          setPreviewUrl(latePreviewUrl);
+          setPreviewLoading(false);
+        }
+        return;
+      }
       completedRef.current = true;
       setActivityStatus(null);
 

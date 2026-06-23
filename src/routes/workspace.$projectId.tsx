@@ -762,7 +762,7 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const enrichedPrompt = prompt + answerContext;
+    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
     setMessages(prev => [
       ...closeStreaming(prev),

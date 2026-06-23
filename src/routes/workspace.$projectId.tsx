@@ -375,7 +375,7 @@ function WorkspacePage() {
       setActivityStatus(null);
 
       // Merge build:complete files into what file_write events already accumulated.
-      let mergedFiles = { ...filesRef.current };
+      const mergedFiles = { ...filesRef.current };
       if (data?.files) {
         for (const [path, content] of Object.entries(data.files)) {
           if (!mergedFiles[path]) mergedFiles[path] = content;

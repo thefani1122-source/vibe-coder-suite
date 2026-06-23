@@ -121,6 +121,46 @@ function extractPreviewUrl(payload: unknown): string | null {
   return extractPreviewUrl(record.data) ?? extractPreviewUrl(record.preview) ?? extractPreviewUrl(record.sandbox);
 }
 
+function extractFilesMap(payload: unknown): Record<string, string> {
+  const filesMap: Record<string, string> = {};
+  if (!payload || typeof payload !== "object") return filesMap;
+  const record = payload as Record<string, unknown>;
+  const addFile = (file: unknown) => {
+    if (!file || typeof file !== "object") return;
+    const item = file as Record<string, unknown>;
+    const path = item.path ?? item.file ?? item.filename;
+    const content = item.content ?? item.code;
+    if (typeof path === "string" && typeof content === "string") filesMap[path] = content;
+  };
+
+  if (Array.isArray(record.groups)) {
+    record.groups.forEach(group => {
+      if (!group || typeof group !== "object") return;
+      const g = group as Record<string, unknown>;
+      if (Array.isArray(g.files)) g.files.forEach(addFile);
+      if (Array.isArray(g.items)) g.items.forEach(addFile);
+    });
+  }
+  if (Array.isArray(record.files)) record.files.forEach(addFile);
+  if (record.files && typeof record.files === "object" && !Array.isArray(record.files)) {
+    for (const [path, content] of Object.entries(record.files as Record<string, unknown>)) {
+      if (typeof content === "string") filesMap[path] = content;
+    }
+  }
+  return filesMap;
+}
+
+function extractBuildStatus(payload: unknown): BuildStatus | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const raw = record.status ?? (record.session && typeof record.session === "object" ? (record.session as Record<string, unknown>).status : undefined);
+  if (typeof raw !== "string") return null;
+  if (/^(complete|completed|success)$/i.test(raw)) return "complete";
+  if (/^(error|failed|cancelled|canceled)$/i.test(raw)) return "error";
+  if (/^(running|pending|processing|building)$/i.test(raw)) return "running";
+  return null;
+}
+
 // Heuristic truncation check — flags code files that don't end with a closing
 // brace or JSX tag, a strong signal the AI was cut off mid-file (e.g. token limit).
 const CODE_FILE_RE = /\.(tsx?|jsx?|css|json)$/;
@@ -556,34 +596,12 @@ function WorkspacePage() {
       signal: controller.signal,
     })
       .then(r => r.ok ? r.json() : null)
-      .then((data: {
-        groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
-        files?: Record<string, string>;
-        url?: string;
-        previewUrl?: string;
-        preview_url?: string;
-      } | null) => {
+      .then((data: unknown | null) => {
         if (!data) return;
-
-        const filesMap: Record<string, string> = {};
-
-        if (Array.isArray(data.groups)) {
-          data.groups.forEach(g => {
-            (g.files ?? g.items ?? []).forEach(f => {
-              if (f.path && (f.content ?? f.code)) {
-                filesMap[f.path] = (f.content ?? f.code)!;
-              }
-            });
-          });
-        }
-
-        if (data.files && typeof data.files === "object") {
-          Object.assign(filesMap, data.files);
-        }
-
+        const filesMap = extractFilesMap(data);
         if (Object.keys(filesMap).length === 0) return;
         setFiles(filesMap);
-        setBuildStatus("complete");
+        setBuildStatus(extractBuildStatus(data) ?? "complete");
         setActiveTab("preview");
         // Same fullstack detection as the live build:complete handler — otherwise
         // historical fullstack sessions render Sandpack instead of E2B.

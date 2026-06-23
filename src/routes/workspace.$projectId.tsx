@@ -103,8 +103,19 @@ const BACKEND_CONTENT_RE = [
   /\bcreateServerFn\s*\(/,
   /\bexpress\s*\(/,
   /\bapp\.(get|post|put|patch|delete)\s*\(/,
+  /fetch\(["']\/api\//,
   /\bnew\s+PrismaClient\b/,
 ];
+
+const SANDBOX_PREVIEW_CONSTRAINTS = `
+
+---
+Sandbox preview compatibility requirements:
+- The live preview runs inside a Vite browser sandbox. Do not generate Express, Node server files, src/server/*, src/db/* API handlers, or app/page API routes unless the platform explicitly provides a backend runtime.
+- Do not make browser components call fetch('/api/...') unless you also generate a working Vite-compatible mock/fallback for that endpoint. Prefer direct client-side state/localStorage for demo persistence.
+- If auth or database features are requested, the preview must still be fully clickable without configured environment variables: show a demo auth path and in-memory/localStorage data fallback, while keeping real integration code isolated behind env checks.
+- Never leave buttons dependent on missing env vars; New/Edit/Delete/Done/Sign In should visibly work in the preview demo.
+`;
 
 function hasBackendFiles(files: Record<string, string>): boolean {
   return Object.entries(files).some(([path, content]) =>
@@ -117,7 +128,12 @@ function extractPreviewUrl(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;
   const record = payload as Record<string, unknown>;
   const direct = record.url ?? record.previewUrl ?? record.preview_url ?? record.previewURL;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  if (typeof direct === "string" && direct.trim()) {
+    const trimmed = direct.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/^http:\/\//i, "https://");
+    if (/^(5173-|[a-z0-9-]+\.)/i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }
   return extractPreviewUrl(record.data) ?? extractPreviewUrl(record.preview) ?? extractPreviewUrl(record.sandbox);
 }
 
@@ -370,7 +386,7 @@ function WorkspacePage() {
       setActivityStatus(null);
 
       // Merge build:complete files into what file_write events already accumulated.
-      let mergedFiles = { ...filesRef.current };
+      const mergedFiles = { ...filesRef.current };
       if (data?.files) {
         for (const [path, content] of Object.entries(data.files)) {
           if (!mergedFiles[path]) mergedFiles[path] = content;
@@ -746,7 +762,7 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const enrichedPrompt = prompt + answerContext;
+    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
     setMessages(prev => [
       ...closeStreaming(prev),
@@ -1025,10 +1041,6 @@ function WorkspacePage() {
                           files={files}
                           device={device}
                         />
-                        {/* Overlay to hide E2B sandbox toolbar at top of iframe */}
-                        {previewUrl && (
-                          <div className="pointer-events-none absolute left-0 right-0 top-0 z-20 h-10 bg-[#080808]" />
-                        )}
                       </div>
                     ) : (
                       <SandpackPreview

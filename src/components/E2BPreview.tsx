@@ -1,20 +1,30 @@
-import { useState, useRef } from "react"
-import { SandpackPreview } from "@/components/SandpackPreview"
+import { useEffect, useRef, useState } from "react";
+import { SandpackPreview } from "@/components/SandpackPreview";
 
 interface E2BPreviewProps {
-  url: string | null
-  loading: boolean
-  error?: string | null
-  isFullstack: boolean
-  files: Record<string, string>
-  device?: "desktop" | "mobile" | "tablet"
+  url: string | null;
+  loading: boolean;
+  error?: string | null;
+  isFullstack: boolean;
+  files: Record<string, string>;
+  device?: "desktop" | "mobile" | "tablet";
 }
 
-export function E2BPreview({ url, loading, error, isFullstack, files, device = "desktop" }: E2BPreviewProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const [, setIframeError] = useState(false)
+export function E2BPreview({
+  url,
+  loading,
+  error,
+  isFullstack,
+  files,
+  device = "desktop",
+}: E2BPreviewProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeError, setIframeError] = useState(false);
 
-  // Frontend-only: use Sandpack (already working)
+  useEffect(() => {
+    setIframeError(false);
+  }, [url]);
+
   if (!isFullstack) {
     return (
       <SandpackPreview
@@ -23,11 +33,12 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
         externalDevice={device}
         className="h-full w-full"
       />
-    )
+    );
   }
 
-  // Fullstack: show E2B preview — a real public URL that loads directly in an
-  // iframe (no Service Workers, no COEP headers, no cross-origin issues).
+  const visibleError =
+    error || (iframeError ? "Preview iframe could not load. Try opening it in a new tab." : null);
+
   return (
     <div
       style={{
@@ -35,161 +46,129 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
         height: "100%",
         position: "relative",
         background: "#080808",
+        padding: 24,
         display: "flex",
-        flexDirection: "column",
+        justifyContent: "center",
       }}
     >
-      {/* Error state — shows WHY the preview failed instead of an infinite spinner */}
-      {error && (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            padding: 24,
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(248,113,113,0.9)" }}>
-            Preview failed: {error}
-          </div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-            Check Railway logs for details
-          </div>
-        </div>
-      )}
-
-      {/* Loading state */}
-      {loading && !url && !error && (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 16,
-          }}
-        >
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          maxWidth: device === "mobile" ? 420 : device === "tablet" ? 768 : "none",
+          overflow: "hidden",
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: url ? "#fff" : "#0c0c10",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {visibleError && (
           <div
             style={{
-              width: 48,
-              height: 48,
-              border: "2px solid rgba(255,255,255,0.08)",
-              borderTop: "2px solid rgba(255,255,255,0.8)",
-              borderRadius: "50%",
-              animation: "spin 1s linear infinite",
-            }}
-          />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>
-              Starting preview...
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-              Installing dependencies and starting dev server
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Preview iframe — loads directly, no SW needed */}
-      {url && (
-        <>
-          {/* Tiny toolbar */}
-          <div
-            style={{
+              flex: 1,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
+              justifyContent: "center",
               gap: 8,
-              padding: "4px 8px",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-              background: "#0f0f0f",
+              padding: 24,
+              textAlign: "center",
             }}
           >
-            <button
-              onClick={() => iframeRef.current?.contentWindow?.location.reload()}
-              title="Refresh"
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 14,
-                padding: "2px 4px",
-              }}
-            >
-              ↺
-            </button>
-            {/* Neutral label — the raw E2B sandbox URL is intentionally hidden
-                (it's an internal preview host the end user shouldn't see). */}
+            <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(248,113,113,0.9)" }}>
+              Preview failed: {visibleError}
+            </div>
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.55)",
+                  textDecoration: "underline",
+                }}
+              >
+                Open preview in a new tab
+              </a>
+            )}
+          </div>
+        )}
+
+        {loading && !url && !visibleError && (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 16,
+            }}
+          >
             <div
               style={{
-                flex: 1,
-                fontSize: 11,
-                color: "rgba(255,255,255,0.4)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                width: 48,
+                height: 48,
+                border: "2px solid rgba(255,255,255,0.08)",
+                borderTop: "2px solid rgba(255,255,255,0.8)",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite",
               }}
-            >
-              Live Preview
+            />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>
+                Starting preview...
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+                Installing dependencies and starting dev server
+              </div>
             </div>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in new tab"
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 14,
-                padding: "2px 4px",
-                textDecoration: "none",
-              }}
-            >
-              ↗
-            </a>
           </div>
+        )}
 
-          {/* The actual preview iframe */}
+        {url && !visibleError && (
           <iframe
             ref={iframeRef}
             src={url}
+            title="App Preview"
+            loading="eager"
+            referrerPolicy="no-referrer"
+            allow="accelerometer; camera; clipboard-read; clipboard-write; encrypted-media; fullscreen; geolocation; gyroscope; microphone; payment"
             style={{
               flex: 1,
               width: "100%",
+              height: "100%",
               border: "none",
+              display: "block",
+              background: "#fff",
             }}
-            title="App Preview"
             onError={() => setIframeError(true)}
           />
-        </>
-      )}
+        )}
 
-      {/* No preview yet and not loading */}
-      {!url && !loading && !error && (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "rgba(255,255,255,0.4)",
-            fontSize: 13,
-          }}
-        >
-          Preview will appear here after build completes
-        </div>
-      )}
+        {!url && !loading && !visibleError && (
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "rgba(255,255,255,0.4)",
+              fontSize: 13,
+            }}
+          >
+            Preview will appear here after build completes
+          </div>
+        )}
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+      </div>
     </div>
-  )
+  );
 }

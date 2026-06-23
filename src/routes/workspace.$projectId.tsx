@@ -87,10 +87,38 @@ const HARDCODED_PATTERNS: RegExp[] = [
   /^Editing existing project/i,
 ];
 
-// Paths that indicate a fullstack build requiring the E2B sandbox preview instead of Sandpack.
-const BACKEND_PATH_RE = [/^src\/server\//, /^src\/db\//, /^src\/lib\/api\./];
+// Paths/content that indicate a fullstack build requiring the E2B sandbox preview instead of Sandpack.
+const BACKEND_PATH_RE = [
+  /^src\/server\//,
+  /^src\/db\//,
+  /^src\/lib\/api\./,
+  /^src\/routes\/api\//,
+  /^api\//,
+  /^app\/api\//,
+  /^pages\/api\//,
+  /(^|\/)(server|middleware)\.(ts|tsx|js|jsx|mjs|cjs)$/,
+  /(^|\/)(next\.config|drizzle\.config|prisma\/schema\.prisma|schema\.sql)$/,
+];
+const BACKEND_CONTENT_RE = [
+  /\bcreateServerFn\s*\(/,
+  /\bexpress\s*\(/,
+  /\bapp\.(get|post|put|patch|delete)\s*\(/,
+  /\bnew\s+PrismaClient\b/,
+];
+
 function hasBackendFiles(files: Record<string, string>): boolean {
-  return Object.keys(files).some(p => BACKEND_PATH_RE.some(r => r.test(p)));
+  return Object.entries(files).some(([path, content]) =>
+    BACKEND_PATH_RE.some(r => r.test(path)) || BACKEND_CONTENT_RE.some(r => r.test(content)),
+  );
+}
+
+function extractPreviewUrl(payload: unknown): string | null {
+  if (typeof payload === "string") return payload;
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const direct = record.url ?? record.previewUrl ?? record.preview_url ?? record.previewURL;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  return extractPreviewUrl(record.data) ?? extractPreviewUrl(record.preview) ?? extractPreviewUrl(record.sandbox);
 }
 
 // Heuristic truncation check — flags code files that don't end with a closing
@@ -286,7 +314,7 @@ function WorkspacePage() {
       },
     );
 
-    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string }) => {
+    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string; url?: string; previewUrl?: string; preview_url?: string }) => {
       if (completedRef.current) return;
       completedRef.current = true;
       setActivityStatus(null);
@@ -314,8 +342,17 @@ function WorkspacePage() {
         ...closeStreaming(prev),
         newMsg({ type: "assistant", text: summaryText, hint: data?.hint }),
       ]);
-      // Detect fullstack builds from file paths — fallback if build:backend_ready wasn't fired.
-      if (hasBackendFiles(mergedFiles)) setIsFullstack(true);
+      const completePreviewUrl = extractPreviewUrl(data);
+      if (completePreviewUrl) {
+        setIsFullstack(true);
+        setPreviewError(null);
+        setPreviewUrl(completePreviewUrl);
+        setPreviewLoading(false);
+      } else if (hasBackendFiles(mergedFiles)) {
+        // Detect fullstack builds from file paths/content — fallback if build:backend_ready wasn't fired.
+        setIsFullstack(true);
+        setPreviewLoading(true);
+      }
     });
 
     socket.on("build:warning", ({ message, truncated }: { message: string; truncated?: boolean }) => {
@@ -347,30 +384,52 @@ function WorkspacePage() {
       console.log("[FRONTEND] build:backend_ready received — switching to E2B preview");
       setIsFullstack(true);
       setActiveTab("preview");
+      setPreviewError(null);
+      setPreviewLoading(true);
     });
 
     // E2B sandbox preview — the backend emits the public URL once the sandbox
     // dev server is live. The iframe loads it directly, no SW required.
-    socket.on("build:preview_url", ({ url }: { url: string }) => {
+    const handlePreviewUrl = (payload: unknown) => {
+      const url = extractPreviewUrl(payload);
+      if (!url) return;
       console.log("[Preview] E2B URL received:", url);
+      setIsFullstack(true);
+      setActiveTab("preview");
       setPreviewError(null);
       setPreviewUrl(url);
       setPreviewLoading(false);
+    };
+    ["build:preview_url", "build:preview_ready", "build:preview", "preview_url", "preview_ready", "preview:ready"].forEach(event => {
+      socket.on(event, handlePreviewUrl);
     });
 
-    socket.on("build:preview_loading", () => {
+    const handlePreviewLoading = () => {
       console.log("[Preview] E2B sandbox starting…");
       setIsFullstack(true);
       setActiveTab("preview");
       setPreviewError(null);
       setPreviewLoading(true);
       setPreviewUrl(null);
+    };
+    ["build:preview_loading", "build:preview_starting", "preview_loading", "preview:loading"].forEach(event => {
+      socket.on(event, handlePreviewLoading);
     });
 
-    socket.on("build:preview_error", ({ message }: { message: string }) => {
+    const handlePreviewError = (payload: unknown) => {
+      const message = typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message?: unknown }).message ?? "Preview failed")
+        : "Preview failed";
       console.error("[Preview] E2B sandbox error:", message);
+      setIsFullstack(true);
+      setActiveTab("preview");
       setPreviewLoading(false);
       setPreviewError(message);
+    };
+    ["build:preview_error", "preview_error", "preview:error"].forEach(event => {
+      socket.on(event, handlePreviewError);
     });
 
     socket.on("build:cancelled", () => {
@@ -428,6 +487,7 @@ function WorkspacePage() {
             buildStatus?: BuildStatus;
             activeTab?: ActiveTab;
             previewUrl?: string | null;
+            isFullstack?: boolean;
           };
           if (data.files && Object.keys(data.files).length > 0) {
             setFiles(data.files);
@@ -440,8 +500,12 @@ function WorkspacePage() {
             setActiveTab(data.activeTab ?? "preview");
             // Restore fullstack detection + E2B preview URL — without this, reloading
             // a fullstack session silently downgrades to the Sandpack preview.
-            if (hasBackendFiles(data.files)) setIsFullstack(true);
-            if (data.previewUrl) setPreviewUrl(data.previewUrl);
+            const cachedPreviewUrl = extractPreviewUrl(data);
+            if (data.isFullstack || cachedPreviewUrl || hasBackendFiles(data.files)) {
+              setIsFullstack(true);
+              if (!cachedPreviewUrl) setPreviewLoading(true);
+            }
+            if (cachedPreviewUrl) setPreviewUrl(cachedPreviewUrl);
             hadCache = true;
           }
         }
@@ -495,6 +559,9 @@ function WorkspacePage() {
       .then((data: {
         groups?: { files?: { path?: string; content?: string; code?: string }[]; items?: { path?: string; content?: string; code?: string }[] }[];
         files?: Record<string, string>;
+        url?: string;
+        previewUrl?: string;
+        preview_url?: string;
       } | null) => {
         if (!data) return;
 
@@ -520,7 +587,16 @@ function WorkspacePage() {
         setActiveTab("preview");
         // Same fullstack detection as the live build:complete handler — otherwise
         // historical fullstack sessions render Sandpack instead of E2B.
-        if (hasBackendFiles(filesMap)) setIsFullstack(true);
+        const restoredPreviewUrl = extractPreviewUrl(data);
+        if (restoredPreviewUrl || hasBackendFiles(filesMap)) {
+          setIsFullstack(true);
+          if (restoredPreviewUrl) {
+            setPreviewUrl(restoredPreviewUrl);
+            setPreviewLoading(false);
+          } else {
+            setPreviewLoading(true);
+          }
+        }
         // Use functional updater — never overwrite messages that already exist
         // (e.g. live build messages). Only set the restore note when chat is empty.
         setMessages(prev =>
@@ -542,10 +618,10 @@ function WorkspacePage() {
     if (!sessionId || Object.keys(files).length === 0) return;
     try {
       sessionStorage.setItem(`build_${sessionId}`, JSON.stringify({
-        files, messages, buildStatus, activeTab, previewUrl,
+        files, messages, buildStatus, activeTab, previewUrl, isFullstack,
       }));
     } catch { /* ignore quota errors */ }
-  }, [files, messages, buildStatus, activeTab, previewUrl, sessionId]);
+  }, [files, messages, buildStatus, activeTab, previewUrl, isFullstack, sessionId]);
 
   // 3. Reconnect the socket when the user returns to this tab mid-build.
   useEffect(() => {

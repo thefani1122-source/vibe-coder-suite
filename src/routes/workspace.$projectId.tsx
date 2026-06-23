@@ -631,6 +631,66 @@ function WorkspacePage() {
     return () => controller.abort();
   }, [sessionId]);
 
+  // If the preview socket event is missed (common when a build finishes before
+  // the workspace reconnects), poll the session endpoint for a saved preview URL.
+  useEffect(() => {
+    const activeSessionId = currentSessionIdRef.current ?? sessionId;
+    if (!activeSessionId || !isFullstack || previewUrl || previewError || buildStatus === "error") return;
+
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    let stopped = false;
+
+    const pollPreview = async () => {
+      if (stopped) return;
+      try {
+        const data = await apiGet<unknown>(`/api/build/${activeSessionId}/files`, {
+          silent: true,
+          signal: controller.signal,
+        });
+        const url = extractPreviewUrl(data);
+        if (url) {
+          setPreviewError(null);
+          setPreviewUrl(url);
+          setPreviewLoading(false);
+          return;
+        }
+
+        const restoredFiles = extractFilesMap(data);
+        if (Object.keys(restoredFiles).length > 0) {
+          filesRef.current = { ...filesRef.current, ...restoredFiles };
+          setFiles(prev => ({ ...prev, ...restoredFiles }));
+        }
+
+        const status = extractBuildStatus(data);
+        if (status === "error") {
+          setPreviewLoading(false);
+          setPreviewError("Build finished, but the preview server failed to start.");
+          return;
+        }
+
+        if (Date.now() - startedAt > 120_000) {
+          setPreviewLoading(false);
+          setPreviewError("Build finished, but no preview URL was returned. Check the backend preview/E2B logs.");
+        }
+      } catch {
+        if (Date.now() - startedAt > 120_000) {
+          setPreviewLoading(false);
+          setPreviewError("Preview URL could not be fetched from the backend.");
+        }
+      }
+    };
+
+    setPreviewLoading(true);
+    void pollPreview();
+    const interval = window.setInterval(() => void pollPreview(), 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      controller.abort();
+    };
+  }, [buildStatus, isFullstack, previewError, previewUrl, sessionId]);
+
   // 2. Persist build state to sessionStorage whenever files/messages/buildStatus change.
   useEffect(() => {
     if (!sessionId || Object.keys(files).length === 0) return;

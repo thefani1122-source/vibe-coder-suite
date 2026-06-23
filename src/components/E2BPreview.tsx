@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { SandpackPreview } from "@/components/SandpackPreview"
 
 interface E2BPreviewProps {
@@ -12,7 +12,11 @@ interface E2BPreviewProps {
 
 export function E2BPreview({ url, loading, error, isFullstack, files, device = "desktop" }: E2BPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const [, setIframeError] = useState(false)
+  const [iframeError, setIframeError] = useState(false)
+
+  useEffect(() => {
+    setIframeError(false)
+  }, [url])
 
   // Frontend-only: use Sandpack (already working)
   if (!isFullstack) {
@@ -26,8 +30,10 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
     )
   }
 
+  const visibleError = error || (iframeError ? "Preview iframe could not load. Try opening it in a new tab." : null)
+
   // Fullstack: show E2B preview — a real public URL that loads directly in an
-  // iframe (no Service Workers, no COEP headers, no cross-origin issues).
+  // iframe, framed like the built-in preview instead of a raw rectangular page.
   return (
     <div
       style={{
@@ -35,12 +41,27 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
         height: "100%",
         position: "relative",
         background: "#080808",
+        padding: 24,
         display: "flex",
-        flexDirection: "column",
+        justifyContent: "center",
       }}
     >
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          maxWidth: device === "mobile" ? 420 : device === "tablet" ? 768 : "none",
+          overflow: "hidden",
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: url ? "#fff" : "#0c0c10",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
       {/* Error state — shows WHY the preview failed instead of an infinite spinner */}
-      {error && (
+      {visibleError && (
         <div
           style={{
             flex: 1,
@@ -54,16 +75,23 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(248,113,113,0.9)" }}>
-            Preview failed: {error}
+            Preview failed: {visibleError}
           </div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-            Check Railway logs for details
-          </div>
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", textDecoration: "underline" }}
+            >
+              Open preview in a new tab
+            </a>
+          )}
         </div>
       )}
 
       {/* Loading state */}
-      {loading && !url && !error && (
+      {loading && !url && !visibleError && (
         <div
           style={{
             flex: 1,
@@ -96,83 +124,28 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
       )}
 
       {/* Preview iframe — loads directly, no SW needed */}
-      {url && (
-        <>
-          {/* Tiny toolbar */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "4px 8px",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
-              background: "#0f0f0f",
-            }}
-          >
-            <button
-              onClick={() => iframeRef.current?.contentWindow?.location.reload()}
-              title="Refresh"
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 14,
-                padding: "2px 4px",
-              }}
-            >
-              ↺
-            </button>
-            {/* Neutral label — the raw E2B sandbox URL is intentionally hidden
-                (it's an internal preview host the end user shouldn't see). */}
-            <div
-              style={{
-                flex: 1,
-                fontSize: 11,
-                color: "rgba(255,255,255,0.4)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Live Preview
-            </div>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open in new tab"
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 14,
-                padding: "2px 4px",
-                textDecoration: "none",
-              }}
-            >
-              ↗
-            </a>
-          </div>
-
-          {/* The actual preview iframe */}
-          <iframe
-            ref={iframeRef}
-            src={url}
-            style={{
-              flex: 1,
-              width: "100%",
-              border: "none",
-            }}
-            title="App Preview"
-            onError={() => setIframeError(true)}
-          />
-        </>
+      {url && !visibleError && (
+        <iframe
+          ref={iframeRef}
+          src={url}
+          title="App Preview"
+          loading="eager"
+          referrerPolicy="no-referrer"
+          allow="accelerometer; camera; clipboard-read; clipboard-write; encrypted-media; fullscreen; geolocation; gyroscope; microphone; payment"
+          style={{
+            flex: 1,
+            width: "100%",
+            height: "100%",
+            border: "none",
+            display: "block",
+            background: "#fff",
+          }}
+          onError={() => setIframeError(true)}
+        />
       )}
 
       {/* No preview yet and not loading */}
-      {!url && !loading && !error && (
+      {!url && !loading && !visibleError && (
         <div
           style={{
             flex: 1,
@@ -190,6 +163,7 @@ export function E2BPreview({ url, loading, error, isFullstack, files, device = "
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
+      </div>
     </div>
   )
 }

@@ -515,6 +515,7 @@ function WorkspacePage() {
   //    never race. If cache exists, skip the "blank slate" setMessages(initial).
   useEffect(() => {
     completedRef.current = false;
+    currentSessionIdRef.current = sessionId;
 
     let hadCache = false;
     if (sessionId) {
@@ -530,6 +531,7 @@ function WorkspacePage() {
             isFullstack?: boolean;
           };
           if (data.files && Object.keys(data.files).length > 0) {
+            filesRef.current = data.files;
             setFiles(data.files);
             // Strip any hardcoded system messages that leaked into previous snapshots.
             const clean = (data.messages ?? []).filter(

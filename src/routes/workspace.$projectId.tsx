@@ -1119,37 +1119,33 @@ function WorkspaceTopBar({
   };
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-white/[0.07] bg-[#0f0f0f] px-3">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#0a0a0a] px-4">
 
-      {/* ── Left: brand + nav ─────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-2">
-        <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
+      {/* ── Left: brand + project ─────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-2.5">
+        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
           <Lamp className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="flex flex-col leading-tight">
-          <span className="text-xs font-bold tracking-tight text-white">Lampcode</span>
-          <span className="text-[9px] uppercase tracking-[0.18em] text-white/40">vibe coder</span>
+          <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">vibe coder</span>
         </div>
-        <div className="mx-1 h-4 w-px bg-white/[0.08]" />
-        <button className="flex items-center gap-0.5 text-sm font-semibold text-white/90 transition hover:text-white max-w-[180px]">
-          <span className="truncate">{displayName}</span>
-          <ChevronDown className="h-3 w-3 shrink-0 text-white/40" />
+        <button className="ml-0.5 flex h-7 w-5 items-center justify-center rounded-md text-white/40 transition hover:bg-white/[0.06] hover:text-white/80" title="Switch project">
+          <ChevronDown className="h-3.5 w-3.5" />
         </button>
         {hasFilledContext(businessContext) && !showContextPanel && (
-          <span className="flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-            🧠 AI context set
+          <span className="hidden lg:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            🧠 AI context
           </span>
         )}
       </div>
 
-      <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
-
-      {/* ── Left of iframe: tab pills ─────────────────────────────────── */}
-      <div className="flex items-center gap-0.5 rounded-lg bg-white/5 p-0.5">
+      {/* ── Center-left: tab pills ─────────────────────────────────── */}
+      <div className="ml-2 flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
         <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
           <Globe className="h-4 w-4" />
         </IconTab>
-        <IconTab active={false} onClick={() => {}} title="Docs">
+        <IconTab active={false} onClick={() => toast("Docs coming soon")} title="Docs">
           <FileText className="h-4 w-4" />
         </IconTab>
         <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
@@ -1157,34 +1153,41 @@ function WorkspaceTopBar({
         </IconTab>
       </div>
 
-      {/* ── Center: single device-cycle button + code search ─────────── */}
+      {/* ── Center: device + route ─────────────────────────────────── */}
       <div className="flex flex-1 items-center justify-center gap-3">
         {activeTab === "preview" && (() => {
           const cycle: Device[] = ["desktop", "mobile", "tablet"];
           const next = cycle[(cycle.indexOf(device) + 1) % cycle.length];
           const Icon = device === "desktop" ? Monitor : device === "mobile" ? Smartphone : Tablet;
-          const label = device.charAt(0).toUpperCase() + device.slice(1);
           return (
             <button
               onClick={() => setDevice(next)}
-              title={`${label} — click to switch`}
-              className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10"
+              title={`${device} — click to switch`}
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-white/70 transition hover:bg-white/[0.06] hover:text-white"
             >
-              <Icon size={14} />
-              <span>{label}</span>
+              <Icon size={15} />
             </button>
           );
         })()}
 
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5 min-w-[220px] max-w-[360px] flex-1">
-          <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
-          <input
-            value={codeQuery}
-            onChange={(e) => onCodeQueryChange(e.target.value)}
-            placeholder="Search code…"
-            className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
-          />
-        </div>
+        {activeTab === "preview" && (
+          <button className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-white/80 transition hover:bg-white/[0.06] min-w-[200px] justify-between">
+            <span className="truncate">Homepage</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/40" />
+          </button>
+        )}
+
+        {activeTab === "code" && (
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 min-w-[240px] max-w-[420px] flex-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
+            <input
+              value={codeQuery}
+              onChange={(e) => onCodeQueryChange(e.target.value)}
+              placeholder="Search code…"
+              className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
+            />
+          </div>
+        )}
 
         {isBuilding && (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
@@ -1194,45 +1197,38 @@ function WorkspaceTopBar({
         )}
       </div>
 
-      {/* ── Right: actions ─────────────────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* ── Right: actions ─────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-1">
         {activeTab === "preview" && (
           <>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
-              <RotateCw className="h-3.5 w-3.5" />
+              <RotateCw className="h-4 w-4" />
             </button>
             <button
-              className={cn(
-                "ws-iconbtn",
-                !previewUrl && "cursor-not-allowed opacity-40",
-              )}
+              className={cn("ws-iconbtn", !previewUrl && "cursor-not-allowed opacity-40")}
               title={previewUrl ? "Open preview in new tab" : "Preview not ready yet"}
               disabled={!previewUrl}
-              onClick={() => {
-                if (previewUrl) window.open(previewUrl, "_blank", "noopener,noreferrer");
-              }}
+              onClick={() => previewUrl && window.open(previewUrl, "_blank", "noopener,noreferrer")}
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-4 w-4" />
             </button>
-            <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
           </>
         )}
-
         <button className="ws-iconbtn" title="GitHub" onClick={() => toast("GitHub integration coming soon")}>
           <Github className="h-4 w-4" />
         </button>
         <button className="ws-iconbtn" title="Download codebase" onClick={handleDownload}>
           <Download className="h-4 w-4" />
         </button>
-        <div className="mx-0.5 h-4 w-px bg-white/[0.08]" />
+        <div className="mx-1.5 h-5 w-px bg-white/[0.08]" />
         <button
-          className="inline-flex items-center rounded-lg border border-white/[0.12] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:bg-white/[0.06]"
+          className="inline-flex h-8 items-center rounded-lg border border-white/[0.12] px-3.5 text-xs font-semibold text-white/85 transition hover:bg-white/[0.06]"
           onClick={() => toast("Share link coming soon")}
         >
           Share
         </button>
         <button
-          className="inline-flex items-center rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-400 active:bg-orange-600"
+          className="ml-1 inline-flex h-8 items-center rounded-lg bg-orange-500 px-3.5 text-xs font-semibold text-white transition hover:bg-orange-400 active:bg-orange-600"
           onClick={() => toast("Deploy to Vercel coming soon")}
         >
           Publish

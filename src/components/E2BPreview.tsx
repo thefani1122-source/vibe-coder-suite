@@ -20,9 +20,11 @@ export function E2BPreview({
 }: E2BPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeError, setIframeError] = useState(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
 
   useEffect(() => {
     setIframeError(false);
+    setIframeLoaded(false);
   }, [url]);
 
   if (!isFullstack) {
@@ -46,7 +48,7 @@ export function E2BPreview({
         height: "100%",
         position: "relative",
         background: "#080808",
-        padding: 24,
+        padding: 10,
         display: "flex",
         justifyContent: "center",
       }}
@@ -57,12 +59,13 @@ export function E2BPreview({
           height: "100%",
           maxWidth: device === "mobile" ? 420 : device === "tablet" ? 768 : "none",
           overflow: "hidden",
-          borderRadius: 12,
+          borderRadius: 14,
           border: "1px solid rgba(255,255,255,0.08)",
-          background: url ? "#fff" : "#0c0c10",
+          background: "#0c0c10",
           boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
           display: "flex",
           flexDirection: "column",
+          position: "relative",
         }}
       >
         {visibleError && (
@@ -98,15 +101,18 @@ export function E2BPreview({
           </div>
         )}
 
-        {loading && !url && !visibleError && (
+        {(loading || (url && !iframeLoaded)) && !visibleError && (
           <div
             style={{
-              flex: 1,
+              position: "absolute",
+              inset: 0,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               gap: 16,
+              background: "#0c0c10",
+              zIndex: 2,
             }}
           >
             <div
@@ -121,10 +127,10 @@ export function E2BPreview({
             />
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>
-                Starting preview...
+                {url ? "Loading preview..." : "Starting preview..."}
               </div>
               <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-                Installing dependencies and starting dev server
+                {url ? "Fetching your app" : "Installing dependencies and starting dev server"}
               </div>
             </div>
           </div>
@@ -144,8 +150,11 @@ export function E2BPreview({
               height: "100%",
               border: "none",
               display: "block",
-              background: "#fff",
+              background: iframeLoaded ? "#fff" : "#0c0c10",
+              opacity: iframeLoaded ? 1 : 0,
+              transition: "opacity 200ms ease",
             }}
+            onLoad={() => setIframeLoaded(true)}
             onError={() => setIframeError(true)}
           />
         )}

@@ -1035,6 +1035,10 @@ function RegistryConnectModal({
   const [showPass, setShowPass] = useState<Record<string, boolean>>({});
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState<string | null>(null);
+  // Stable random suffix per dialog mount — defeats browser autofill (Chrome/Safari)
+  // and password managers (1Password/LastPass) from injecting saved Supabase /
+  // login credentials into MCP credential fields.
+  const nameSuffix = useMemo(() => Math.random().toString(36).slice(2, 10), []);
 
   const fields = def.fields ?? [];
   const requiredKeys = fields.filter(f => !f.optional).map(f => f.key);
@@ -1091,7 +1095,7 @@ function RegistryConnectModal({
                     onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
                     placeholder={f.placeholder}
                     className={isPass ? "pr-14" : ""}
-                    name={`mcp-${def.provider}-${f.key}-${Math.random().toString(36).slice(2, 8)}`}
+                    name={`mcp-${def.provider}-${f.key}-${nameSuffix}`}
                     autoComplete={isPass ? "new-password" : "off"}
                     data-lpignore="true"
                     data-1p-ignore="true"

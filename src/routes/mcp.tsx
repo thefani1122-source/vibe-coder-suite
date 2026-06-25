@@ -1091,7 +1091,12 @@ function RegistryConnectModal({
                     onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
                     placeholder={f.placeholder}
                     className={isPass ? "pr-14" : ""}
-                    autoComplete="off"
+                    name={`mcp-${def.provider}-${f.key}-${Math.random().toString(36).slice(2, 8)}`}
+                    autoComplete={isPass ? "new-password" : "off"}
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    spellCheck={false}
                   />
                   {isPass && (
                     <button

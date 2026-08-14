@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useEffect, useState } from "react";
-import { Bell, Copy, Github, Plug, Eye, EyeOff, Lock, Loader2 } from "lucide-react";
+import { Bell, Copy, Eye, EyeOff, Lock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
@@ -39,13 +39,11 @@ function SettingsPage() {
           <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
           <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>
-          <TabsContent value="integrations" className="mt-4"><IntegrationsPanel /></TabsContent>
           <TabsContent value="security" className="mt-4"><SecurityPanel /></TabsContent>
         </Tabs>
       </div>
@@ -115,16 +113,32 @@ function ProfilePanel() {
 }
 
 function PasswordPanel() {
+  const { user } = useAuth();
   const [show, setShow] = useState({ current: false, next: false, confirm: false });
   const [vals, setVals] = useState({ current: "", next: "", confirm: "" });
+  const [submitting, setSubmitting] = useState(false);
   const submit = async () => {
     if (!vals.current || !vals.next) return toast.error("Fill in all fields");
     if (vals.next.length < 8) return toast.error("Password must be at least 8 characters");
     if (vals.next !== vals.confirm) return toast.error("Passwords do not match");
-    const { error } = await supabase.auth.updateUser({ password: vals.next });
-    if (error) return toast.error(error.message);
-    toast.success("Password updated");
-    setVals({ current: "", next: "", confirm: "" });
+    if (!user?.email) return toast.error("Could not verify your account email");
+    setSubmitting(true);
+    try {
+      // updateUser() alone doesn't re-verify the caller still knows the current
+      // password — it just needs a valid session. Confirm it first with a real
+      // sign-in attempt before writing the new one.
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: vals.current,
+      });
+      if (reauthError) return toast.error("Current password is incorrect");
+      const { error } = await supabase.auth.updateUser({ password: vals.next });
+      if (error) return toast.error(error.message);
+      toast.success("Password updated");
+      setVals({ current: "", next: "", confirm: "" });
+    } finally {
+      setSubmitting(false);
+    }
   };
   const field = (key: "current" | "next" | "confirm", label: string) => (
     <div className="space-y-2">
@@ -163,7 +177,9 @@ function PasswordPanel() {
           {field("next", "New password")}
           {field("confirm", "Confirm new password")}
         </div>
-        <Button onClick={submit}>Update password</Button>
+        <Button onClick={submit} disabled={submitting}>
+          {submitting ? "Updating…" : "Update password"}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -266,105 +282,6 @@ function NotificationsPanel() {
               />
             </div>
           ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/* ─── Integrations ────────────────────────────────────────────────────────── */
-
-const INTEGRATION_DEFS = [
-  { id: "github",   label: "GitHub",   desc: "Sync your projects to a repo",  Icon: Github },
-  { id: "vercel",   label: "Vercel",   desc: "Deploy your apps",              Icon: Plug   },
-  { id: "supabase", label: "Supabase", desc: "Managed backend & auth",        Icon: Plug   },
-  { id: "stripe",   label: "Stripe",   desc: "Accept payments",               Icon: Plug   },
-] as const;
-
-type IntegrationRow = { id: string; status: string };
-
-function IntegrationsPanel() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
-
-  // Query the integrations table directly — avoids the duplicate
-  // /api/users/me/settings call that NotificationsPanel already makes.
-  useEffect(() => {
-    if (!user?.id) { setLoading(false); return; }
-    supabase
-      .from("integrations")
-      .select("id, provider, status")
-      .eq("user_id", user.id)
-      .in("provider", ["github", "vercel", "supabase", "stripe"])
-      .then(({ data }) => {
-        const map: Record<string, IntegrationRow> = {};
-        for (const row of (data ?? []) as { id: string; provider: string; status: string }[]) {
-          map[row.provider] = { id: row.id, status: row.status };
-        }
-        setRows(map);
-        setLoading(false);
-      });
-  }, [user?.id]);
-
-  const handleAction = async (id: string, row: IntegrationRow | undefined) => {
-    const isConnected = row?.status === "connected";
-    if (isConnected && row) {
-      const { error } = await supabase
-        .from("integrations")
-        .update({ status: "disconnected" })
-        .eq("id", row.id);
-      if (error) { toast.error("Failed to disconnect"); return; }
-      setRows((r) => ({ ...r, [id]: { ...row, status: "disconnected" } }));
-      toast.success(`${id} disconnected`);
-    } else {
-      toast(`${id} OAuth coming soon`);
-    }
-  };
-
-  return (
-    <Card className="border-border/60 bg-card/60 backdrop-blur">
-      <CardHeader><CardTitle>Integrations</CardTitle></CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2">
-        {loading ? (
-          <div className="col-span-2 flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          INTEGRATION_DEFS.map(({ id, label, desc, Icon }) => {
-            const row = rows[id];
-            const connected = row?.status === "connected";
-            return (
-              <div key={id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card/40 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-content-center rounded-md bg-secondary">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{label}</span>
-                      <span className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                        connected
-                          ? "bg-emerald-500/15 text-emerald-400"
-                          : "bg-muted/40 text-muted-foreground",
-                      )}>
-                        {connected ? "Connected" : "Not connected"}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">{desc}</div>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant={connected ? "outline" : "default"}
-                  onClick={() => handleAction(id, row)}
-                >
-                  {connected ? "Disconnect" : "Connect"}
-                </Button>
-              </div>
-            );
-          })
         )}
       </CardContent>
     </Card>

@@ -298,9 +298,9 @@ function LoginPage() {
                   <div className="chk-box"><input type="checkbox" /></div>
                   <span className="chk-txt">Keep me signed in</span>
                 </label>
-                <a href="#" className="fgt-link" onClick={(e) => e.preventDefault()}>
+                <Link to="/forgot-password" className="fgt-link">
                   Forgot password?
-                </a>
+                </Link>
               </div>
 
               <button className="btn" onClick={doLogin} disabled={liLoading}>

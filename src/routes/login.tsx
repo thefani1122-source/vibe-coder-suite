@@ -93,7 +93,9 @@ function LoginPage() {
     try {
       await login(liEm, liPw);
       toast("Welcome back!");
-      navigate({ to: "/", replace: true });
+      // Navigation happens via the reactive useEffect above once the store
+      // reflects the new session — not here. A direct navigate() call
+      // duplicated that trigger and raced it, see git history.
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";
       toast.error(msg);
@@ -110,7 +112,7 @@ function LoginPage() {
       await register({ email: suEm, password: suPw, name: `${suFn} ${suLn}`.trim() });
       toast("Account created! Signing you in…");
       await login(suEm, suPw);
-      navigate({ to: "/", replace: true });
+      // Navigation happens via the reactive useEffect above, same as doLogin.
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Sign up failed";
       toast.error(msg);

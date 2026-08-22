@@ -23,7 +23,6 @@ import { Route as DocsRouteImport } from './routes/docs'
 import { Route as BillingRouteImport } from './routes/billing'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceProjectIdRouteImport } from './routes/workspace.$projectId'
-import { Route as PlanSessionIdRouteImport } from './routes/plan.$sessionId'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 
 const UsageRoute = UsageRouteImport.update({
@@ -96,11 +95,6 @@ const WorkspaceProjectIdRoute = WorkspaceProjectIdRouteImport.update({
   path: '/workspace/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlanSessionIdRoute = PlanSessionIdRouteImport.update({
-  id: '/plan/$sessionId',
-  path: '/plan/$sessionId',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
@@ -122,7 +116,6 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/plan/$sessionId': typeof PlanSessionIdRoute
   '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesByTo {
@@ -140,7 +133,6 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/plan/$sessionId': typeof PlanSessionIdRoute
   '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRoutesById {
@@ -159,7 +151,6 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
-  '/plan/$sessionId': typeof PlanSessionIdRoute
   '/workspace/$projectId': typeof WorkspaceProjectIdRoute
 }
 export interface FileRouteTypes {
@@ -179,7 +170,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/plan/$sessionId'
     | '/workspace/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -197,7 +187,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/plan/$sessionId'
     | '/workspace/$projectId'
   id:
     | '__root__'
@@ -215,7 +204,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/usage'
     | '/auth/callback'
-    | '/plan/$sessionId'
     | '/workspace/$projectId'
   fileRoutesById: FileRoutesById
 }
@@ -234,7 +222,6 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UsageRoute: typeof UsageRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
-  PlanSessionIdRoute: typeof PlanSessionIdRoute
   WorkspaceProjectIdRoute: typeof WorkspaceProjectIdRoute
 }
 
@@ -338,13 +325,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plan/$sessionId': {
-      id: '/plan/$sessionId'
-      path: '/plan/$sessionId'
-      fullPath: '/plan/$sessionId'
-      preLoaderRoute: typeof PlanSessionIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -370,7 +350,6 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UsageRoute: UsageRoute,
   AuthCallbackRoute: AuthCallbackRoute,
-  PlanSessionIdRoute: PlanSessionIdRoute,
   WorkspaceProjectIdRoute: WorkspaceProjectIdRoute,
 }
 export const routeTree = rootRouteImport

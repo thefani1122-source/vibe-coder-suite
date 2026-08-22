@@ -19,7 +19,6 @@ import {
   Link2,
   ChevronDown,
   Zap,
-  ClipboardList,
   Code2,
   X,
   Figma,
@@ -30,10 +29,9 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type Mode = "fast" | "plan" | "editor";
+type Mode = "fast" | "editor";
 const MODES: { id: Mode; label: string; icon: typeof Zap; soon?: boolean; desc: string }[] = [
   { id: "fast", label: "Fast Mode", icon: Zap, desc: "Quick build for simple projects (2–5 min)" },
-  { id: "plan", label: "Plan Mode", icon: ClipboardList, desc: "Full multi-agent build with verification (15–30 min)" },
   { id: "editor", label: "Editor Mode", icon: Code2, soon: true, desc: "Tweak code directly" },
 ];
 
@@ -137,8 +135,7 @@ export function PromptComposer() {
         throw new Error(`No project ID in server response — got: ${JSON.stringify(projectRes)}`);
       }
 
-      const buildPath = mode === "plan" ? "/api/plan/start" : "/api/build/fast";
-      const buildRes = await apiPost<Record<string, unknown>>(buildPath, {
+      const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
         project_id: pid,
         prompt: value.trim(),
       });
@@ -151,27 +148,18 @@ export function PromptComposer() {
         ?? buildRes?.session_id) as string | undefined;
 
       setSubmitting(false);
-      if (mode === "plan") {
-        if (!sessionId) throw new Error("No session ID from /api/plan/start");
-        navigate({
-          to: "/plan/$sessionId",
-          params: { sessionId },
-          search: { projectId: pid },
-        });
-      } else {
-        // Preserve the user's original prompt so the workspace can render it
-        // as the first chat bubble (Lovable parity).
-        if (sessionId && typeof window !== "undefined") {
-          try {
-            window.sessionStorage.setItem(`prompt:${sessionId}`, value.trim());
-          } catch { /* ignore quota / privacy mode */ }
-        }
-        navigate({
-          to: "/workspace/$projectId",
-          params: { projectId: pid },
-          search: { sessionId, mode: "fast" },
-        });
+      // Preserve the user's original prompt so the workspace can render it
+      // as the first chat bubble (Lovable parity).
+      if (sessionId && typeof window !== "undefined") {
+        try {
+          window.sessionStorage.setItem(`prompt:${sessionId}`, value.trim());
+        } catch { /* ignore quota / privacy mode */ }
       }
+      navigate({
+        to: "/workspace/$projectId",
+        params: { projectId: pid },
+        search: { sessionId, mode: "fast" },
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to start build";
       if (!(err instanceof ApiError)) {

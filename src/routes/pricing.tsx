@@ -3,7 +3,7 @@ import { Shell } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap, ClipboardList, Wrench, Rocket, Eye, Pencil, Brain, Shuffle, PiggyBank, Plus } from "lucide-react";
+import { Check, Zap, Wrench, Rocket, Eye, Pencil, Brain, Shuffle, PiggyBank, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/pricing")({ component: PricingPage });
@@ -21,7 +21,7 @@ const plans = [
     name: "Starter",
     price: "Free",
     credits: "500 credits / month",
-    features: ["~25 Fast Mode builds", "OR ~3 Plan Mode builds", "Community support"],
+    features: ["~25 Fast Mode builds", "Community support"],
     cta: "Current",
     current: true,
     highlight: false,
@@ -31,7 +31,7 @@ const plans = [
     price: "$29",
     suffix: "/mo",
     credits: "2,500 credits / month",
-    features: ["~125 Fast Mode builds", "OR ~15 Plan Mode builds", "OR mix & match", "Priority support"],
+    features: ["~125 Fast Mode builds", "Priority support"],
     cta: "Upgrade",
     highlight: true,
   },
@@ -40,7 +40,7 @@ const plans = [
     price: "$79",
     suffix: "/mo",
     credits: "10,000 credits / month",
-    features: ["~500 Fast Mode builds", "OR ~60 Plan Mode builds", "OR mix & match", "Team workspaces"],
+    features: ["~500 Fast Mode builds", "Team workspaces"],
     cta: "Start Trial",
     highlight: false,
   },
@@ -56,7 +56,6 @@ const plans = [
 
 const costs = [
   { icon: Zap, label: "Fast Mode build", credits: "20 credits", cost: "~$0.20", color: "text-primary" },
-  { icon: ClipboardList, label: "Plan Mode build", credits: "150 credits", cost: "~$1.50", color: "text-[oklch(0.7_0.18_280)]" },
   { icon: Wrench, label: "Fix round (auto-fix)", credits: "30 credits", cost: "~$0.30", color: "text-[oklch(0.78_0.17_155)]" },
   { icon: Rocket, label: "Deploy", credits: "10 credits", cost: "~$0.10", color: "text-[oklch(0.72_0.20_35)]" },
   { icon: Eye, label: "Monitor (per day)", credits: "5 credits", cost: "~$0.05", color: "text-[oklch(0.7_0.15_220)]" },
@@ -65,7 +64,7 @@ const costs = [
 ];
 
 const why = [
-  { icon: Shuffle, title: "Mix & Match", desc: "Use Fast for quick prototypes, Plan for production apps. Your choice." },
+  { icon: Shuffle, title: "Pay Per Action", desc: "Only the credits an action actually costs — a fix round is cheaper than a full build. Spend exactly where you need it." },
   { icon: PiggyBank, title: "No Waste", desc: "Unused credits roll over for 30 days. Never lose what you paid for." },
   { icon: Plus, title: "Top Up Anytime", desc: "Run out mid-project? Buy a credit pack instantly. No plan upgrade needed." },
 ];

@@ -12,38 +12,44 @@ import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/billing")({ component: BillingPage });
 
-type Invoice = {
-  id: string;
-  date: string;
-  amount: string;
-  status: string;
-};
-
-type BillingData = {
-  plan: string;
-  credits_used: number;
-  credits_total: number;
-  has_payment_method: boolean;
-  card_brand?: string;
-  card_last4?: string;
-  invoices: Invoice[];
+// Real response shape from Lampcode's GET /api/users/me/billing
+// (src/server/routes/billing.ts) — usage is billed in real USD, not an
+// integer credit count. Payment-method details and invoices are NOT part of
+// this response (invoices live on the separate GET .../billing/invoices
+// endpoint, and there is no payment-method endpoint at all yet), so those
+// two cards below intentionally show their static fallback state rather than
+// binding to fields that were never actually returned here.
+type BillingResponse = {
+  billing: {
+    plan: string;
+    monthlyLimitUsd: number;
+    rolloverUsd: number;
+    usageUsd: number;
+    remainingUsd: number;
+    currentPeriodStart?: string;
+    currentPeriodEnd?: string;
+    cancelAtPeriodEnd: boolean;
+    stripeCustomerId: string | null;
+  };
 };
 
 function BillingPage() {
   const { isAuthenticated } = useAuth();
-  const { data, isPending } = useQuery<BillingData>({
+  const { data, isPending } = useQuery<BillingResponse>({
     queryKey: ["billing"],
-    queryFn: () => apiGet<BillingData>("/api/users/me/billing"),
+    queryFn: () => apiGet<BillingResponse>("/api/users/me/billing"),
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const planLabel = data?.plan
-    ? data.plan.charAt(0).toUpperCase() + data.plan.slice(1)
+  const billing = data?.billing;
+  const planLabel = billing?.plan
+    ? billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1)
     : "—";
-  const creditsUsed = data?.credits_used ?? 0;
-  const creditsTotal = data?.credits_total ?? 0;
-  const invoices = data?.invoices ?? [];
+  const usageUsd = billing?.usageUsd ?? 0;
+  const availableUsd = (billing?.monthlyLimitUsd ?? 0) + (billing?.rolloverUsd ?? 0);
+  const rolloverUsd = billing?.rolloverUsd ?? 0;
+  const invoices: { id: string; date: string; amount: string; status: string }[] = [];
 
   return (
     <RequireAuth>
@@ -51,7 +57,9 @@ function BillingPage() {
         <div className="mx-auto max-w-4xl space-y-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Manage your plan and payment method.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Manage your plan and payment method.
+            </p>
           </div>
 
           <Card className="border-border/60 bg-card/60 backdrop-blur">
@@ -68,7 +76,8 @@ function BillingPage() {
                 <Skeleton className="h-4 w-48" />
               ) : (
                 <div className="text-sm text-muted-foreground">
-                  {creditsUsed} / {creditsTotal} credits used this month.
+                  ${usageUsd.toFixed(2)} / ${availableUsd.toFixed(2)} used this month
+                  {rolloverUsd > 0 && ` (includes $${rolloverUsd.toFixed(2)} rolled over)`}.
                 </div>
               )}
               <Button
@@ -81,28 +90,24 @@ function BillingPage() {
           </Card>
 
           <Card className="border-border/60 bg-card/60 backdrop-blur">
-            <CardHeader><CardTitle>Payment method</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Payment method</CardTitle>
+            </CardHeader>
             <CardContent className="flex items-center gap-3 text-sm">
               <div className="flex h-9 w-12 items-center justify-center rounded-md bg-secondary">
                 <CreditCard className="h-4 w-4" />
               </div>
-              {isPending ? (
-                <Skeleton className="h-4 w-32" />
-              ) : data?.has_payment_method ? (
-                <div>
-                  {data.card_brand ?? "Card"} ending in {data.card_last4 ?? "••••"}
-                </div>
-              ) : (
-                <div>No card on file.</div>
-              )}
+              {isPending ? <Skeleton className="h-4 w-32" /> : <div>No card on file.</div>}
               <Button variant="outline" size="sm" className="ml-auto">
-                {data?.has_payment_method ? "Manage" : "Add card"}
+                Add card
               </Button>
             </CardContent>
           </Card>
 
           <Card className="border-border/60 bg-card/60 backdrop-blur">
-            <CardHeader><CardTitle>Invoices</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Invoices</CardTitle>
+            </CardHeader>
             <CardContent className="divide-y divide-border/60">
               {isPending ? (
                 Array.from({ length: 3 }).map((_, i) => (
@@ -123,7 +128,9 @@ function BillingPage() {
                     <div className="flex items-center gap-4">
                       <span>{i.amount}</span>
                       <Badge variant="secondary">{i.status}</Badge>
-                      <Button variant="ghost" size="icon"><Download className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon">
+                        <Download className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 ))

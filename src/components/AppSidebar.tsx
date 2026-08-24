@@ -52,13 +52,30 @@ export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (path: string) => currentPath === path;
   const { isAuthenticated } = useAuth();
-  const { data: billing } = useQuery({
+  // Real shape from GET /api/users/me/billing (Lampcode's billing.ts) — usage
+  // is billed in real USD, not an integer credit count.
+  const { data } = useQuery({
     queryKey: ["billing"],
-    queryFn: () => apiGet<{ creditsUsed: number; creditsLimit: number }>("/api/users/me/billing"),
+    queryFn: () =>
+      apiGet<{
+        billing: {
+          plan: string;
+          monthlyLimitUsd: number;
+          rolloverUsd: number;
+          usageUsd: number;
+          remainingUsd: number;
+        };
+      }>("/api/users/me/billing"),
     staleTime: 60_000,
     retry: false,
     enabled: isAuthenticated,
   });
+  const billing = data?.billing;
+  const planLabel = billing?.plan
+    ? billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1)
+    : "Free";
+  const availableUsd = (billing?.monthlyLimitUsd ?? 3) + (billing?.rolloverUsd ?? 0);
+  const remainingUsd = billing?.remainingUsd ?? availableUsd;
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -68,7 +85,9 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-bold tracking-tight">Lampcode</span>
-            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">vibe coder</span>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              vibe coder
+            </span>
           </div>
         </Link>
       </SidebarHeader>
@@ -135,10 +154,10 @@ export function AppSidebar() {
         >
           <Sparkles className="h-4 w-4 text-primary" />
           <div className="flex-1 text-xs">
-            <div className="font-medium">Starter</div>
+            <div className="font-medium">{planLabel}</div>
             <div className="text-muted-foreground">
-                {(billing?.creditsLimit ?? 500) - (billing?.creditsUsed ?? 0)} / {billing?.creditsLimit ?? 500} credits
-              </div>
+              ${remainingUsd.toFixed(2)} / ${availableUsd.toFixed(2)} left
+            </div>
           </div>
         </Link>
       </SidebarFooter>

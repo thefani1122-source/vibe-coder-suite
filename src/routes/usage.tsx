@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -11,46 +11,66 @@ import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/usage")({ component: UsagePage });
 
-type UsageData = {
-  /** Nested shape: { usage: { creditsUsed, creditsLimit } } */
-  usage?: {
-    creditsUsed?: number;
-    creditsLimit?: number;
-    projectsBuilt?: number;
-    plan?: string;
+// Real response shapes from Lampcode:
+// GET /api/users/me/billing/usage (src/server/routes/billing.ts) — real USD
+// usage plus the per-category breakdown; there is no separate "projects
+// built" field here, but totalSessions counts the same buildSessions rows
+// GET /api/users/me/usage does, so it's reused for that stat.
+// GET /api/users/me/billing — only source for `plan`.
+type UsageResponse = {
+  usage: {
+    monthlyLimitUsd: number;
+    rolloverUsd: number;
+    usageUsd: number;
+    remainingUsd: number;
+    totalSessions: number;
+    categoryBreakdown: { category: string; usageUsd: number; taskCount: number }[];
   };
-  /** Flat snake_case shape */
-  credits_used?: number;
-  credits_total?: number;
-  projects_built?: number;
-  plan?: string;
-  plan_limit?: number;
-  monthly?: Array<{ month: string; value: number }>;
 };
 
-const EMPTY_MONTHLY = [
-  "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec",
-].map((month) => ({ month, value: 0 }));
+type BillingResponse = { billing: { plan: string } };
+
+const CATEGORY_LABELS: Record<string, string> = {
+  build: "Builds",
+  empty_output_fix: "Empty-output fixes",
+  missing_files_retry: "Missing-files retries",
+  syntax_fix: "Syntax fixes",
+  security_fix: "Security fixes",
+  backend_crash_fix: "Backend-crash fixes",
+  typecheck_fix: "Type-check fixes",
+};
 
 function UsagePage() {
   const { isAuthenticated } = useAuth();
-  const { data, isPending } = useQuery<UsageData>({
-    queryKey: ["usage"],
-    queryFn: () => apiGet<UsageData>("/api/users/me/usage"),
+  const { data, isPending } = useQuery<UsageResponse>({
+    queryKey: ["billing-usage"],
+    queryFn: () => apiGet<UsageResponse>("/api/users/me/billing/usage"),
+    enabled: isAuthenticated,
+    retry: false,
+  });
+  const { data: billingData } = useQuery<BillingResponse>({
+    queryKey: ["billing"],
+    queryFn: () => apiGet<BillingResponse>("/api/users/me/billing"),
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const creditsUsed  = data?.usage?.creditsUsed  ?? data?.credits_used  ?? 0;
-  const creditsTotal = data?.usage?.creditsLimit  ?? data?.credits_total ?? 500;
-  const projectsBuilt = data?.usage?.projectsBuilt ?? data?.projects_built ?? 0;
-  const rawPlan = data?.usage?.plan ?? data?.plan ?? "";
+  const usage = data?.usage;
+  const usageUsd = usage?.usageUsd ?? 0;
+  const monthlyLimitUsd = usage?.monthlyLimitUsd ?? 0;
+  const availableUsd = monthlyLimitUsd + (usage?.rolloverUsd ?? 0);
+  const remainingUsd = usage?.remainingUsd ?? 0;
+  const projectsBuilt = usage?.totalSessions ?? 0;
+  const rawPlan = billingData?.billing?.plan ?? "";
   const plan = rawPlan ? rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1) : "—";
-  const planLimit = data?.plan_limit ?? 0;
-  const monthly = data?.monthly ?? EMPTY_MONTHLY;
+  // Usage breakdown by category is a Pro-and-up perk (pricing.tsx); free-plan
+  // users see an upsell instead. This is a UI-only gate — the API itself
+  // returns categoryBreakdown for every plan.
+  const showBreakdown = rawPlan !== "" && rawPlan !== "free";
+  const categoryBreakdown = usage?.categoryBreakdown ?? [];
 
-  const pct = creditsTotal > 0 ? Math.round((creditsUsed / creditsTotal) * 100) : 0;
-  const maxBar = Math.max(...monthly.map((x) => x.value), 1);
+  const pct = availableUsd > 0 ? Math.round((usageUsd / availableUsd) * 100) : 0;
+  const maxCategoryUsd = Math.max(...categoryBreakdown.map((c) => c.usageUsd), 0.01);
 
   return (
     <RequireAuth>
@@ -59,31 +79,31 @@ function UsagePage() {
           <div className="flex items-center gap-2 text-sm">
             <span className="font-semibold text-foreground">Usage</span>
             <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">Credits</span>
+            <span className="text-muted-foreground">Billing</span>
           </div>
 
           <div>
-            <h1 className="text-4xl font-bold tracking-tight">Usage &amp; Credits</h1>
+            <h1 className="text-4xl font-bold tracking-tight">Usage &amp; Billing</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Track your AI generation usage and credit consumption.
+              Track your real AI generation spend for this billing period.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="border-border/60 bg-card/60 p-5 backdrop-blur">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Credits Used
+                Used This Period
               </div>
               {isPending ? (
                 <Skeleton className="mt-3 h-12 w-24" />
               ) : (
-                <div className="mt-3 text-5xl font-bold text-primary">{creditsUsed}</div>
+                <div className="mt-3 text-5xl font-bold text-primary">${usageUsd.toFixed(2)}</div>
               )}
               <div className="mt-2 text-xs text-muted-foreground">
                 {isPending ? (
                   <Skeleton className="h-3 w-20" />
                 ) : (
-                  `${creditsTotal - creditsUsed} remaining`
+                  `$${remainingUsd.toFixed(2)} remaining`
                 )}
               </div>
             </Card>
@@ -99,7 +119,7 @@ function UsagePage() {
                   {projectsBuilt}
                 </div>
               )}
-              <div className="mt-2 text-xs text-muted-foreground">This month</div>
+              <div className="mt-2 text-xs text-muted-foreground">All time</div>
             </Card>
 
             <Card className="border-border/60 bg-card/60 p-5 backdrop-blur">
@@ -112,14 +132,18 @@ function UsagePage() {
                 <div className="mt-3 text-5xl font-bold text-[oklch(0.82_0.17_85)]">{plan}</div>
               )}
               <div className="mt-2 text-xs text-muted-foreground">
-                {isPending ? <Skeleton className="h-3 w-20" /> : `${planLimit} projects/mo`}
+                {isPending ? (
+                  <Skeleton className="h-3 w-20" />
+                ) : (
+                  `$${monthlyLimitUsd.toFixed(2)}/mo included`
+                )}
               </div>
             </Card>
           </div>
 
           <Card className="border-border/60 bg-card/60 p-6 backdrop-blur">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Credit Usage</h2>
+              <h2 className="text-lg font-semibold">Period Usage</h2>
               <span className="text-sm font-semibold text-primary">{pct}% used</span>
             </div>
             <div className="mt-4">
@@ -129,24 +153,55 @@ function UsagePage() {
               />
             </div>
             <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-              <span>{creditsUsed} credits used</span>
-              <span>{creditsTotal} total</span>
+              <span>${usageUsd.toFixed(2)} used</span>
+              <span>${availableUsd.toFixed(2)} total</span>
             </div>
           </Card>
 
           <Card className="border-border/60 bg-card/60 p-6 backdrop-blur">
-            <h2 className="text-lg font-semibold">Monthly Activity</h2>
-            <div className="mt-6 flex h-48 items-end gap-3">
-              {monthly.map((d) => (
-                <div key={d.month} className="flex flex-1 flex-col items-center gap-2">
-                  <div
-                    className="w-full rounded-t-md bg-[oklch(0.55_0.14_265)] transition hover:bg-[oklch(0.65_0.18_265)]"
-                    style={{ height: `${(d.value / maxBar) * 100}%` }}
-                  />
-                  <span className="text-[11px] text-muted-foreground">{d.month}</span>
-                </div>
-              ))}
-            </div>
+            <h2 className="text-lg font-semibold">Usage by Category</h2>
+            {!showBreakdown ? (
+              <div className="mt-4 flex flex-col items-start gap-2 rounded-lg border border-dashed border-border/60 p-4 text-sm text-muted-foreground">
+                <span>
+                  Category breakdown (builds, fixes, deploys) is available on Pro and above.
+                </span>
+                <Link to="/pricing" className="font-medium text-primary hover:underline">
+                  View plans
+                </Link>
+              </div>
+            ) : isPending ? (
+              <div className="mt-4 space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-8 w-full" />
+                ))}
+              </div>
+            ) : categoryBreakdown.length === 0 ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No usage recorded yet this period.
+              </p>
+            ) : (
+              <div className="mt-5 space-y-4">
+                {categoryBreakdown.map((c) => (
+                  <div key={c.category}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-foreground/85">
+                        {CATEGORY_LABELS[c.category] ?? c.category}
+                      </span>
+                      <span className="text-muted-foreground">
+                        ${c.usageUsd.toFixed(2)} · {c.taskCount}{" "}
+                        {c.taskCount === 1 ? "task" : "tasks"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary to-[oklch(0.65_0.20_280)]"
+                        style={{ width: `${(c.usageUsd / maxCategoryUsd) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       </Shell>

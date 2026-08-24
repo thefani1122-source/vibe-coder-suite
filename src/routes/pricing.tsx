@@ -3,70 +3,123 @@ import { Shell } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap, Wrench, Rocket, Eye, Pencil, Brain, Shuffle, PiggyBank, Plus } from "lucide-react";
+import { Check, Minus, Shuffle, PiggyBank, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/pricing")({ component: PricingPage });
 
+// Direct dollar top-ups — added straight to the current period's balance
+// (Lampcode's POST-free addTopUp helper bumps monthlyLimitUsd; there's no
+// purchase endpoint wired up yet, so "Buy" is a mock like it was before).
 const packs = [
-  { credits: 500, price: 5, popular: false },
-  { credits: 1000, price: 9, popular: true },
-  { credits: 2500, price: 20, popular: false },
-  { credits: 5000, price: 35, popular: false },
-  { credits: 10000, price: 60, popular: false },
+  { amount: 5, popular: false },
+  { amount: 15, popular: true },
+  { amount: 30, popular: false },
+  { amount: 75, popular: false },
 ];
 
+// Monthly price vs. real usage budget — matches Lampcode's PLAN_USAGE_USD
+// (src/db/schema.ts): free=$3, pro=$15, max=$45, power=$100.
 const plans = [
   {
-    name: "Starter",
-    price: "Free",
-    credits: "500 credits / month",
-    features: ["~25 Fast Mode builds", "Community support"],
+    name: "Free",
+    price: "$0",
+    usage: "$3 usage / month",
+    features: ["Fast Mode generation", "Community support"],
     cta: "Current",
     current: true,
     highlight: false,
   },
   {
     name: "Pro",
-    price: "$29",
+    price: "$19",
     suffix: "/mo",
-    credits: "2,500 credits / month",
-    features: ["~125 Fast Mode builds", "Priority support"],
+    usage: "$15 usage / month",
+    features: ["Everything in Free", "Security review + auto-fix", "Usage breakdown by category"],
+    cta: "Upgrade",
+    highlight: false,
+  },
+  {
+    name: "Max",
+    price: "$49",
+    suffix: "/mo",
+    usage: "$45 usage / month",
+    features: ["Everything in Pro", "Priority queue", "MCP write actions"],
     cta: "Upgrade",
     highlight: true,
   },
   {
-    name: "Team",
-    price: "$79",
+    name: "Power",
+    price: "$99",
     suffix: "/mo",
-    credits: "10,000 credits / month",
-    features: ["~500 Fast Mode builds", "Team workspaces"],
-    cta: "Start Trial",
+    usage: "$100 usage / month",
+    features: ["Everything in Max", "Rollover up to $100 unused", "Highest priority queue"],
+    cta: "Upgrade",
     highlight: false,
   },
   {
     name: "Enterprise",
     price: "Custom",
-    credits: "Unlimited credits",
-    features: ["Everything in Pro", "SSO + roles", "Audit logs", "Custom models"],
+    usage: "Custom usage budget",
+    features: ["Everything in Power", "SSO + roles", "Audit logs", "Dedicated support"],
     cta: "Contact Us",
     highlight: false,
   },
 ];
 
-const costs = [
-  { icon: Zap, label: "Fast Mode build", credits: "20 credits", cost: "~$0.20", color: "text-primary" },
-  { icon: Wrench, label: "Fix round (auto-fix)", credits: "30 credits", cost: "~$0.30", color: "text-[oklch(0.78_0.17_155)]" },
-  { icon: Rocket, label: "Deploy", credits: "10 credits", cost: "~$0.10", color: "text-[oklch(0.72_0.20_35)]" },
-  { icon: Eye, label: "Monitor (per day)", credits: "5 credits", cost: "~$0.05", color: "text-[oklch(0.7_0.15_220)]" },
-  { icon: Pencil, label: "Editor Mode request", credits: "5 credits", cost: "~$0.05", color: "text-muted-foreground" },
-  { icon: Brain, label: "Planning interview", credits: "Free", cost: "$0", color: "text-[oklch(0.78_0.17_155)]" },
+// Real, live features only — no parallel agents, planning/conversational
+// agent, or model-routing tiers exist in the product.
+const featureRows: { label: string; tiers: Record<string, boolean> }[] = [
+  {
+    label: "Fast Mode generation",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "Security review",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "Repo / project memory",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "Type-check + auto-fix",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "MCP read integrations",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "MCP write actions (approval-gated)",
+    tiers: { Free: true, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "Usage breakdown by category",
+    tiers: { Free: false, Pro: true, Max: true, Power: true, Enterprise: true },
+  },
+  {
+    label: "Priority queue",
+    tiers: { Free: false, Pro: false, Max: true, Power: true, Enterprise: true },
+  },
 ];
 
 const why = [
-  { icon: Shuffle, title: "Pay Per Action", desc: "Only the credits an action actually costs — a fix round is cheaper than a full build. Spend exactly where you need it." },
-  { icon: PiggyBank, title: "No Waste", desc: "Unused credits roll over for 30 days. Never lose what you paid for." },
-  { icon: Plus, title: "Top Up Anytime", desc: "Run out mid-project? Buy a credit pack instantly. No plan upgrade needed." },
+  {
+    icon: Shuffle,
+    title: "Pay For Real Usage",
+    desc: "Every request bills at its actual cost — a small fix costs less than a full build. Spend exactly where you need it.",
+  },
+  {
+    icon: PiggyBank,
+    title: "Power Rolls Over",
+    desc: "Free, Pro, and Max usage resets each period. Power carries up to $100 of unused balance into the next month.",
+  },
+  {
+    icon: Plus,
+    title: "Top Up Anytime",
+    desc: "Need more mid-project? Add $5–$75 to your balance instantly. No plan change required.",
+  },
 ];
 
 function PricingPage() {
@@ -75,27 +128,31 @@ function PricingPage() {
       <div className="mx-auto max-w-6xl space-y-12 pb-12">
         <div className="text-center">
           <h1 className="bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl">
-            Simple, transparent credits.
+            Simple, transparent usage-based pricing.
           </h1>
           <p className="mt-3 text-lg text-foreground/80">Pay for what you use.</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            No hidden fees. No vendor lock-in. Your credits, your choice.
+            No hidden fees. No vendor lock-in. Your usage, your choice.
           </p>
         </div>
 
-        {/* Credit packs */}
+        {/* Top up */}
         <Card className="border-border/60 bg-card/60 p-6 backdrop-blur">
           <div className="mb-5 flex items-center justify-between flex-wrap gap-2">
             <div>
               <h2 className="text-lg font-semibold">Need more? Top up anytime.</h2>
-              <p className="text-xs text-muted-foreground">Credits never expire on top-ups.</p>
+              <p className="text-xs text-muted-foreground">
+                Applies to your current billing period.
+              </p>
             </div>
-            <Badge variant="secondary" className="bg-primary/15 text-primary border-0">One-time purchase</Badge>
+            <Badge variant="secondary" className="bg-primary/15 text-primary border-0">
+              One-time purchase
+            </Badge>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {packs.map((p) => (
               <div
-                key={p.credits}
+                key={p.amount}
                 className={`relative flex flex-col items-center gap-2 rounded-xl border bg-background/40 p-4 transition hover:border-primary/50 ${
                   p.popular ? "border-primary/60 shadow-[var(--shadow-glow)]" : "border-border/60"
                 }`}
@@ -105,14 +162,15 @@ function PricingPage() {
                     Most popular
                   </span>
                 )}
-                <div className="text-2xl font-bold">{p.credits.toLocaleString()}</div>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">credits</div>
-                <div className="text-xl font-semibold text-primary">${p.price}</div>
+                <div className="text-2xl font-bold text-primary">${p.amount}</div>
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  added to balance
+                </div>
                 <Button
                   size="sm"
                   variant={p.popular ? "default" : "secondary"}
                   className={`w-full ${p.popular ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90" : ""}`}
-                  onClick={() => toast.success(`Buying ${p.credits} credits for $${p.price}`)}
+                  onClick={() => toast.success(`Adding $${p.amount} to your balance`)}
                 >
                   Buy
                 </Button>
@@ -126,10 +184,11 @@ function PricingPage() {
           <div className="mb-6 text-center">
             <h2 className="text-2xl font-bold">Monthly plans</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              All plans include the same AI quality, security checks, and deploy pipeline. Only credits differ.
+              All plans include the same AI quality, security checks, and deploy pipeline. Only the
+              usage budget differs.
             </p>
           </div>
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-5">
             {plans.map((t) => (
               <div
                 key={t.name}
@@ -143,7 +202,9 @@ function PricingPage() {
                   </span>
                 )}
                 {t.current && (
-                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[oklch(0.78_0.17_155)] text-background border-0">Current</Badge>
+                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[oklch(0.78_0.17_155)] text-background border-0">
+                    Current
+                  </Badge>
                 )}
                 <h3 className="text-lg font-semibold">{t.name}</h3>
                 <div className="mt-2 flex items-baseline gap-1">
@@ -151,7 +212,7 @@ function PricingPage() {
                   {t.suffix && <span className="text-sm text-muted-foreground">{t.suffix}</span>}
                 </div>
                 <div className="mt-3 rounded-md bg-background/50 px-2.5 py-1.5 text-xs font-medium text-primary">
-                  {t.credits}
+                  {t.usage}
                 </div>
                 <ul className="mt-5 flex-1 space-y-2">
                   {t.features.map((f) => (
@@ -177,38 +238,46 @@ function PricingPage() {
           </div>
         </div>
 
-        {/* What costs credits */}
+        {/* Feature comparison */}
         <Card className="border-border/60 bg-card/60 p-6 backdrop-blur">
-          <h2 className="text-xl font-bold">What costs credits?</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Transparent pricing for every action.</p>
-          <div className="mt-5 overflow-hidden rounded-xl border border-border/60">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-border/60 bg-background/40 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <span>Action</span>
-              <span>Credits</span>
-              <span className="text-right w-24">Est. Cost</span>
-            </div>
-            {costs.map((c) => {
-              const Icon = c.icon;
-              return (
+          <h2 className="text-xl font-bold">Compare plans</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Every plan shares the same product — only usage budget and a few perks scale up.
+          </p>
+          <div className="mt-5 overflow-x-auto rounded-xl border border-border/60">
+            <div className="min-w-[640px]">
+              <div className="grid grid-cols-[1.5fr_repeat(5,1fr)] gap-2 border-b border-border/60 bg-background/40 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <span>Feature</span>
+                {plans.map((t) => (
+                  <span key={t.name} className="text-center">
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+              {featureRows.map((row) => (
                 <div
-                  key={c.label}
-                  className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b border-border/40 px-4 py-3 text-sm last:border-0"
+                  key={row.label}
+                  className="grid grid-cols-[1.5fr_repeat(5,1fr)] items-center gap-2 border-b border-border/40 px-4 py-3 text-sm last:border-0"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className={`h-4 w-4 ${c.color}`} />
-                    <span>{c.label}</span>
-                  </div>
-                  <span className="text-sm font-medium tabular-nums">{c.credits}</span>
-                  <span className="w-24 text-right text-sm text-muted-foreground tabular-nums">{c.cost}</span>
+                  <span>{row.label}</span>
+                  {plans.map((t) => (
+                    <span key={t.name} className="flex justify-center">
+                      {row.tiers[t.name] ? (
+                        <Check className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Minus className="h-4 w-4 text-muted-foreground/40" />
+                      )}
+                    </span>
+                  ))}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </Card>
 
-        {/* Why credits */}
+        {/* Why usage-based pricing */}
         <div>
-          <h2 className="mb-5 text-center text-2xl font-bold">Why credits?</h2>
+          <h2 className="mb-5 text-center text-2xl font-bold">Why usage-based pricing?</h2>
           <div className="grid gap-4 md:grid-cols-3">
             {why.map((w) => {
               const Icon = w.icon;

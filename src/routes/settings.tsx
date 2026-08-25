@@ -28,26 +28,34 @@ export const Route = createFileRoute("/settings")({ component: SettingsPage });
 function SettingsPage() {
   return (
     <RequireAuth>
-    <Shell>
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage your account, workspace and security.</p>
+      <Shell>
+        <div className="mx-auto max-w-5xl space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Manage your account, workspace and security.
+            </p>
+          </div>
+
+          <Tabs defaultValue="profile" className="w-full">
+            <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
+              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              <TabsTrigger value="security">Security</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="profile" className="mt-4">
+              <ProfilePanel />
+            </TabsContent>
+            <TabsContent value="notifications" className="mt-4">
+              <NotificationsPanel />
+            </TabsContent>
+            <TabsContent value="security" className="mt-4">
+              <SecurityPanel />
+            </TabsContent>
+          </Tabs>
         </div>
-
-        <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="bg-card/60 backdrop-blur flex-wrap h-auto">
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="profile" className="mt-4"><ProfilePanel /></TabsContent>
-          <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>
-          <TabsContent value="security" className="mt-4"><SecurityPanel /></TabsContent>
-        </Tabs>
-      </div>
-    </Shell>
+      </Shell>
     </RequireAuth>
   );
 }
@@ -84,7 +92,9 @@ function ProfilePanel() {
   return (
     <div className="space-y-6">
       <Card className="border-border/60 bg-card/60 backdrop-blur">
-        <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Profile</CardTitle>
+        </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -98,13 +108,25 @@ function ProfilePanel() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="bio">Bio</Label>
-            <Input id="bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Building vibes with code" />
+            <Input
+              id="bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Building vibes with code"
+            />
           </div>
-          <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
         </CardContent>
       </Card>
       <PasswordPanel />
@@ -169,7 +191,9 @@ function PasswordPanel() {
           <Lock className="h-4 w-4 text-primary" />
           <CardTitle>Password</CardTitle>
         </div>
-        <p className="text-xs text-muted-foreground">Change your account password. Use at least 8 characters.</p>
+        <p className="text-xs text-muted-foreground">
+          Change your account password. Use at least 8 characters.
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {field("current", "Current password")}
@@ -193,16 +217,46 @@ interface NotifSettings {
 }
 
 const NOTIF_OPTIONS = [
-  { id: "email",     label: "Email notifications",  desc: "Project updates and weekly digest",      apiKey: "email_notifications" as keyof NotifSettings },
-  { id: "build",     label: "Build complete",        desc: "When an agent finishes building",        apiKey: "build_notifications" as keyof NotifSettings },
-  { id: "browser",   label: "Browser notifications", desc: "Real-time build status alerts",          apiKey: null },
-  { id: "credits",   label: "Credit low alerts",     desc: "When you have 10% credits remaining",    apiKey: null },
-  { id: "invites",   label: "Team invites",          desc: "When someone invites you to a project",  apiKey: null },
-  { id: "marketing", label: "Marketing",             desc: "Product updates and tips",               apiKey: null },
+  {
+    id: "email",
+    label: "Email notifications",
+    desc: "Project updates and weekly digest",
+    apiKey: "email_notifications" as keyof NotifSettings,
+  },
+  {
+    id: "build",
+    label: "Build complete",
+    desc: "When an agent finishes building",
+    apiKey: "build_notifications" as keyof NotifSettings,
+  },
+  {
+    id: "browser",
+    label: "Browser notifications",
+    desc: "Real-time build status alerts",
+    apiKey: null,
+  },
+  {
+    id: "credits",
+    label: "Usage low alerts",
+    desc: "When you have 10% of your usage budget remaining",
+    apiKey: null,
+  },
+  {
+    id: "invites",
+    label: "Team invites",
+    desc: "When someone invites you to a project",
+    apiKey: null,
+  },
+  { id: "marketing", label: "Marketing", desc: "Product updates and tips", apiKey: null },
 ] as const;
 
 const NOTIF_DEFAULTS: Record<string, boolean> = {
-  email: true, build: true, browser: false, credits: true, invites: false, marketing: false,
+  email: true,
+  build: true,
+  browser: false,
+  credits: true,
+  invites: false,
+  marketing: false,
 };
 
 function NotificationsPanel() {
@@ -216,7 +270,7 @@ function NotificationsPanel() {
         setState((prev) => ({
           ...prev,
           ...(data.email_notifications !== undefined ? { email: data.email_notifications } : {}),
-          ...(data.build_notifications  !== undefined ? { build: data.build_notifications  } : {}),
+          ...(data.build_notifications !== undefined ? { build: data.build_notifications } : {}),
         }));
       })
       .catch(() => {})
@@ -236,7 +290,7 @@ function NotificationsPanel() {
       const emailOpt = NOTIF_OPTIONS.find((o) => o.apiKey === "email_notifications");
       const buildOpt = NOTIF_OPTIONS.find((o) => o.apiKey === "build_notifications");
       patch.email_notifications = id === emailOpt?.id ? value : state[emailOpt?.id ?? "email"];
-      patch.build_notifications  = id === buildOpt?.id  ? value : state[buildOpt?.id  ?? "build"];
+      patch.build_notifications = id === buildOpt?.id ? value : state[buildOpt?.id ?? "build"];
       await apiPatch("/api/users/me/settings", patch);
       toast.success("Preference saved");
     } catch {
@@ -257,7 +311,12 @@ function NotificationsPanel() {
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={() => toast("Test notification", { description: "This is how it will look.", icon: <Bell className="h-4 w-4" /> })}
+            onClick={() =>
+              toast("Test notification", {
+                description: "This is how it will look.",
+                icon: <Bell className="h-4 w-4" />,
+              })
+            }
           >
             <Bell className="h-4 w-4" /> Test
           </Button>
@@ -270,7 +329,10 @@ function NotificationsPanel() {
           </div>
         ) : (
           NOTIF_OPTIONS.map((o) => (
-            <div key={o.id} className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition">
+            <div
+              key={o.id}
+              className="flex items-center justify-between rounded-lg border border-transparent px-3 py-3 hover:border-border/50 hover:bg-card/40 transition"
+            >
               <div>
                 <div className="text-sm font-medium">{o.label}</div>
                 <div className="text-xs text-muted-foreground">{o.desc}</div>
@@ -316,9 +378,11 @@ function toAuditEntry(row: DbAuditRow, email: string): AuditEntry {
     sev === "warning" ? "Warning" : sev === "error" || sev === "critical" ? "Error" : "Info";
 
   const cat = (row.entity_type ?? "").toLowerCase();
-  const category: Category =
-    /bill|payment|credit|stripe/.test(cat) ? "Billing" :
-    /project/.test(cat) ? "Project" : "Security";
+  const category: Category = /bill|payment|credit|stripe/.test(cat)
+    ? "Billing"
+    : /project/.test(cat)
+      ? "Project"
+      : "Security";
 
   const ms = Date.now() - new Date(row.created_at).getTime();
   const h = Math.floor(ms / 3_600_000);
@@ -337,12 +401,15 @@ const sevColor: Record<Severity, string> = {
 function SecurityPanel() {
   const { user } = useAuth();
   const [filter, setFilter] = useState<"All" | Category>("All");
-  const [auditLog, setAuditLog]   = useState<AuditEntry[]>([]);
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [auditLoading, setAuditLoading] = useState(true);
-  const [auditError,   setAuditError]   = useState(false);
+  const [auditError, setAuditError] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) { setAuditLoading(false); return; }
+    if (!user?.id) {
+      setAuditLoading(false);
+      return;
+    }
     const email = user.email ?? user.id.slice(0, 8);
     supabase
       .from("audit_log")
@@ -351,8 +418,11 @@ function SecurityPanel() {
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data, error }) => {
-        if (error) { setAuditError(true); }
-        else { setAuditLog((data as DbAuditRow[] ?? []).map(r => toAuditEntry(r, email))); }
+        if (error) {
+          setAuditError(true);
+        } else {
+          setAuditLog(((data as DbAuditRow[]) ?? []).map((r) => toAuditEntry(r, email)));
+        }
         setAuditLoading(false);
       });
   }, [user?.id]);
@@ -369,7 +439,14 @@ function SecurityPanel() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {(["All", "Security", "Billing", "Project"] as const).map((f) => (
-              <Button key={f} size="sm" variant={filter === f ? "default" : "outline"} onClick={() => setFilter(f)}>{f}</Button>
+              <Button
+                key={f}
+                size="sm"
+                variant={filter === f ? "default" : "outline"}
+                onClick={() => setFilter(f)}
+              >
+                {f}
+              </Button>
             ))}
           </div>
 
@@ -400,7 +477,9 @@ function SecurityPanel() {
                     <TableRow key={i}>
                       <TableCell className="font-medium">{r.action}</TableCell>
                       <TableCell className="text-muted-foreground">{r.user}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{r.ip}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {r.ip}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{r.time}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center gap-2">
@@ -426,8 +505,8 @@ function SecurityPanel() {
 
 function TwoFactorCard() {
   const { user } = useAuth();
-  const [loading,   setLoading]   = useState(true);
-  const [factorId,  setFactorId]  = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [factorId, setFactorId] = useState<string | null>(null);
   const [enrolling, setEnrolling] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [enrollData, setEnrollData] = useState<{
@@ -456,7 +535,10 @@ function TwoFactorCard() {
       friendlyName: user?.email ?? "account",
     });
     setEnrolling(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setEnrollData({ id: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
   };
 
@@ -468,7 +550,10 @@ function TwoFactorCard() {
       code: code.replace(/\s/g, ""),
     });
     setVerifying(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await supabase.auth.refreshSession();
     setFactorId(enrollData.id);
     setEnrollData(null);
@@ -479,7 +564,10 @@ function TwoFactorCard() {
   const disable = async () => {
     if (!factorId) return;
     const { error } = await supabase.auth.mfa.unenroll({ factorId });
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setFactorId(null);
     setEnrollData(null);
     toast.success("Two-factor authentication disabled");
@@ -491,7 +579,9 @@ function TwoFactorCard() {
     <Card className="border-border/60 bg-card/60 backdrop-blur">
       <CardHeader>
         <CardTitle>Two-Factor Authentication</CardTitle>
-        <p className="text-xs text-muted-foreground">TOTP via authenticator app (Google Authenticator, 1Password, Authy).</p>
+        <p className="text-xs text-muted-foreground">
+          TOTP via authenticator app (Google Authenticator, 1Password, Authy).
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
@@ -504,13 +594,18 @@ function TwoFactorCard() {
               <div>
                 <div className="text-sm font-medium">Enable 2FA</div>
                 <div className="text-xs text-muted-foreground">
-                  {isFullyEnabled ? "Active — required at sign-in." : "Off — your account uses password only."}
+                  {isFullyEnabled
+                    ? "Active — required at sign-in."
+                    : "Off — your account uses password only."}
                 </div>
               </div>
               <Switch
                 checked={isFullyEnabled}
                 onCheckedChange={(v) => {
-                  if (!v) { disable(); return; }
+                  if (!v) {
+                    disable();
+                    return;
+                  }
                   if (!enrollData) startSetup();
                 }}
                 disabled={enrolling}
@@ -534,7 +629,10 @@ function TwoFactorCard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => { navigator.clipboard?.writeText(enrollData.secret); toast("Secret copied"); }}
+                      onClick={() => {
+                        navigator.clipboard?.writeText(enrollData.secret);
+                        toast("Secret copied");
+                      }}
                     >
                       <Copy className="h-3.5 w-3.5" />
                     </Button>

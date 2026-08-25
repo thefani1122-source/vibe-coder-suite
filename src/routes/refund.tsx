@@ -44,9 +44,10 @@ function RefundPage() {
 
       <h2>3. Payment Processor</h2>
       <p>
-        Payments are processed by Paddle. Approved refunds are issued back to your original payment
-        method through Paddle and may take several business days to appear, depending on your bank
-        or card issuer.
+        Payments are processed by one or more of the following payment processors: Stripe, Paddle.
+        Approved refunds are issued back to your original payment method through the processor used
+        for that purchase and may take several business days to appear, depending on your bank or
+        card issuer.
       </p>
 
       <h2>4. Changes</h2>

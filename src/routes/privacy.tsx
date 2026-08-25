@@ -36,7 +36,8 @@ function PrivacyPage() {
       </p>
       <h3>Payment data</h3>
       <p>
-        Processed by Paddle, our payment processor. We never store full card numbers on our servers.
+        Processed by one or more of the following payment processors: Stripe, Paddle. We never store
+        full card numbers on our servers.
       </p>
 
       <h2>2. How We Use Information</h2>

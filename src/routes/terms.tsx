@@ -60,7 +60,8 @@ function TermsPage() {
           additional month's allotment ($100).
         </li>
         <li>
-          Payments are processed by Paddle, our payment processor. See our{" "}
+          Payments are processed by one or more of the following payment processors: Stripe, Paddle.
+          See our{" "}
           <Link to="/refund" className="text-primary hover:underline">
             Refund Policy
           </Link>{" "}

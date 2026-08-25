@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { LegalPage } from "@/components/LegalPage";
 
 export const Route = createFileRoute("/terms")({
@@ -16,7 +16,7 @@ function TermsPage() {
     <LegalPage>
       <h1>Terms of Service</h1>
       <p>
-        <em>Last updated: May 18, 2026</em>
+        <em>Last updated: August 25, 2026</em>
       </p>
       <p>
         These Terms of Service ("Terms") govern your access to and use of Lampcode ("Service"). By
@@ -60,8 +60,11 @@ function TermsPage() {
           additional month's allotment ($100).
         </li>
         <li>
-          All purchases are final; refunds are at our discretion for unused balance within 7 days of
-          purchase.
+          Payments are processed by Paddle, our payment processor. See our{" "}
+          <Link to="/refund" className="text-primary hover:underline">
+            Refund Policy
+          </Link>{" "}
+          for details on refunds.
         </li>
         <li>Prices may change with 30 days' notice.</li>
       </ul>
@@ -74,6 +77,11 @@ function TermsPage() {
       </p>
 
       <h2>6. AI-Generated Output</h2>
+      <p>
+        The Service uses artificial intelligence systems, including large language models, to
+        generate code and other content based on your input. AI-generated output may contain errors
+        and should be reviewed before use.
+      </p>
       <ul>
         <li>
           Output may be inaccurate, incomplete, or similar to output produced for other users.
@@ -86,8 +94,17 @@ function TermsPage() {
 
       <h2>7. Third-Party Services</h2>
       <p>
-        The Service may integrate with third-party providers (hosting, AI, GitHub, payments). Your
-        use of those services is subject to their own terms.
+        The Service may integrate with third-party providers (hosting, AI, GitHub, Vercel,
+        payments). Your use of those services is subject to their own terms.
+      </p>
+      <p>
+        If you connect a third-party account (such as GitHub or Vercel), actions that only read
+        information may happen automatically; actions that would change something in your account
+        always require your explicit approval before they occur.
+      </p>
+      <p>
+        The Service may retrieve stock images from a third-party image provider for use in generated
+        applications.
       </p>
 
       <h2>8. Termination</h2>

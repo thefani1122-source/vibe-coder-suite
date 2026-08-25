@@ -32,10 +32,6 @@ function DocsPage() {
           prototypes.
         </li>
         <li>
-          <strong>Planning Mode</strong> (coming soon) — Lampcode interviews you, drafts a plan,
-          then builds.
-        </li>
-        <li>
           <strong>Editor Mode</strong> (coming soon) — surgical edits to an existing project.
         </li>
       </ul>
@@ -104,9 +100,6 @@ function DocsPage() {
           Keep prompts <strong>specific</strong> — colors, fonts, sections, and behaviors.
         </li>
         <li>Iterate in small steps — one change per send beats a 20-item wishlist.</li>
-        <li>
-          Use <strong>Planning Mode</strong> for anything with auth, payments, or a database schema.
-        </li>
       </ul>
     </LegalPage>
   );

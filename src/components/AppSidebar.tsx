@@ -15,6 +15,7 @@ import {
   FileText,
   Lock,
   ScrollText,
+  Undo2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,7 @@ const legalNav = [
   { title: "Docs", url: "/docs", icon: FileText },
   { title: "Privacy", url: "/privacy", icon: Lock },
   { title: "Terms", url: "/terms", icon: ScrollText },
+  { title: "Refund Policy", url: "/refund", icon: Undo2 },
 ];
 
 export function AppSidebar() {

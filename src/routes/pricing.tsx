@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Minus, Shuffle, PiggyBank, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,9 +20,30 @@ const packs = [
   { amount: 75, popular: false },
 ];
 
+type BillingCycle = "monthly" | "yearly";
+
+type Plan = {
+  name: string;
+  price: string;
+  suffix?: string;
+  usage: string;
+  features: string[];
+  cta: string;
+  current?: boolean;
+  highlight?: boolean;
+  // Present only for paid, recurring plans — Free and Enterprise have a
+  // single flat `price` instead and are unaffected by the billing toggle.
+  monthlyPrice?: number;
+  yearlyPrice?: number;
+  monthlyPriceId?: string;
+  yearlyPriceId?: string;
+};
+
 // Monthly price vs. real usage budget — matches Lampcode's PLAN_USAGE_USD
 // (src/db/schema.ts): free=$3, pro=$15, max=$45, power=$100.
-const plans = [
+// Yearly prices are 10x the monthly price (2 months free) — Paddle sandbox
+// price IDs below (billing cycle: month / year, single USD price each).
+const plans: Plan[] = [
   {
     name: "Free",
     price: "$0",
@@ -38,6 +61,10 @@ const plans = [
     features: ["Everything in Free", "Security review + auto-fix", "Usage breakdown by category"],
     cta: "Upgrade",
     highlight: false,
+    monthlyPrice: 19,
+    yearlyPrice: 190,
+    monthlyPriceId: "pri_01m133kyahg29222xcwphx1k12",
+    yearlyPriceId: "pri_01m133xk366b68h67vwe3176c3",
   },
   {
     name: "Max",
@@ -47,6 +74,10 @@ const plans = [
     features: ["Everything in Pro", "Priority queue", "MCP write actions"],
     cta: "Upgrade",
     highlight: true,
+    monthlyPrice: 49,
+    yearlyPrice: 490,
+    monthlyPriceId: "pri_01m133kyg1vkev9r3k04d8c322",
+    yearlyPriceId: "pri_01m133xk7rz5dnvnqxr1vj9bk5",
   },
   {
     name: "Power",
@@ -56,6 +87,10 @@ const plans = [
     features: ["Everything in Max", "Rollover up to $100 unused", "Highest priority queue"],
     cta: "Upgrade",
     highlight: false,
+    monthlyPrice: 99,
+    yearlyPrice: 990,
+    monthlyPriceId: "pri_01m133kynjh78pk0e63ebed834",
+    yearlyPriceId: "pri_01m133xk9w6533v3r25r25ve5t",
   },
   {
     name: "Enterprise",
@@ -123,6 +158,8 @@ const why = [
 ];
 
 function PricingPage() {
+  const [billing, setBilling] = useState<BillingCycle>("monthly");
+
   return (
     <Shell>
       <div className="mx-auto max-w-6xl space-y-12 pb-12">
@@ -179,62 +216,95 @@ function PricingPage() {
           </div>
         </Card>
 
-        {/* Monthly plans */}
+        {/* Plans */}
         <div>
           <div className="mb-6 text-center">
-            <h2 className="text-2xl font-bold">Monthly plans</h2>
+            <h2 className="text-2xl font-bold">Plans</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               All plans include the same AI quality, security checks, and deploy pipeline. Only the
               usage budget differs.
             </p>
+            <Tabs
+              value={billing}
+              onValueChange={(v) => setBilling(v as BillingCycle)}
+              className="mt-5 inline-flex"
+            >
+              <TabsList>
+                <TabsTrigger value="monthly">Monthly</TabsTrigger>
+                <TabsTrigger value="yearly">Yearly</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-5">
-            {plans.map((t) => (
-              <div
-                key={t.name}
-                className={`relative flex flex-col rounded-2xl border bg-card/60 p-6 backdrop-blur ${
-                  t.highlight ? "border-primary/60 shadow-[var(--shadow-glow)]" : "border-border"
-                }`}
-              >
-                {t.highlight && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary-foreground">
-                    Most popular
-                  </span>
-                )}
-                {t.current && (
-                  <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[oklch(0.78_0.17_155)] text-background border-0">
-                    Current
-                  </Badge>
-                )}
-                <h3 className="text-lg font-semibold">{t.name}</h3>
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-4xl font-bold">{t.price}</span>
-                  {t.suffix && <span className="text-sm text-muted-foreground">{t.suffix}</span>}
-                </div>
-                <div className="mt-3 rounded-md bg-background/50 px-2.5 py-1.5 text-xs font-medium text-primary">
-                  {t.usage}
-                </div>
-                <ul className="mt-5 flex-1 space-y-2">
-                  {t.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      <span className="text-foreground/85">{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className={`mt-6 w-full ${
-                    t.highlight
-                      ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90"
-                      : ""
+            {plans.map((t) => {
+              const hasBilling = t.monthlyPrice !== undefined && t.yearlyPrice !== undefined;
+              const displayPrice = hasBilling
+                ? `$${billing === "yearly" ? t.yearlyPrice : t.monthlyPrice}`
+                : t.price;
+              const displaySuffix = hasBilling ? (billing === "yearly" ? "/yr" : "/mo") : t.suffix;
+              const activePriceId = hasBilling
+                ? billing === "yearly"
+                  ? t.yearlyPriceId
+                  : t.monthlyPriceId
+                : undefined;
+
+              return (
+                <div
+                  key={t.name}
+                  className={`relative flex flex-col rounded-2xl border bg-card/60 p-6 backdrop-blur ${
+                    t.highlight ? "border-primary/60 shadow-[var(--shadow-glow)]" : "border-border"
                   }`}
-                  variant={t.highlight ? "default" : t.current ? "outline" : "secondary"}
-                  disabled={t.current}
                 >
-                  {t.cta}
-                </Button>
-              </div>
-            ))}
+                  {t.highlight && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary-foreground">
+                      Most popular
+                    </span>
+                  )}
+                  {t.current && (
+                    <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[oklch(0.78_0.17_155)] text-background border-0">
+                      Current
+                    </Badge>
+                  )}
+                  <h3 className="text-lg font-semibold">{t.name}</h3>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <span className="text-4xl font-bold">{displayPrice}</span>
+                    {displaySuffix && <span className="text-sm text-muted-foreground">{displaySuffix}</span>}
+                  </div>
+                  {hasBilling && billing === "yearly" && (
+                    <Badge variant="secondary" className="mt-1.5 w-fit bg-primary/15 text-primary border-0">
+                      2 months free
+                    </Badge>
+                  )}
+                  <div className="mt-3 rounded-md bg-background/50 px-2.5 py-1.5 text-xs font-medium text-primary">
+                    {t.usage}
+                  </div>
+                  <ul className="mt-5 flex-1 space-y-2">
+                    {t.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2 text-sm">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <span className="text-foreground/85">{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className={`mt-6 w-full ${
+                      t.highlight
+                        ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90"
+                        : ""
+                    }`}
+                    variant={t.highlight ? "default" : t.current ? "outline" : "secondary"}
+                    disabled={t.current}
+                    onClick={
+                      activePriceId
+                        ? () => toast.success(`Selecting ${t.name} (${billing}) — price ${activePriceId}`)
+                        : undefined
+                    }
+                  >
+                    {t.cta}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         </div>
 

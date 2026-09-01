@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { initializePaddle, CheckoutEventNames, type Paddle } from "@paddle/paddle-js";
 import { Shell } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -7,8 +9,22 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Minus, Shuffle, PiggyBank, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { apiGet, apiPost } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/pricing")({ component: PricingPage });
+
+// Real response shapes from Lampcode:
+// GET /api/users/me/billing/paddle/config — client-side token + top-up price
+// IDs (plan price IDs are already hardcoded per-plan below, matching the
+// sandbox catalog; only top-ups don't have a static ID anywhere yet).
+// GET /api/users/me/billing — only source for the real current `plan`.
+type PaddleConfigResponse = {
+  clientToken: string;
+  environment: "sandbox" | "production";
+  prices: { topups: Record<string, string | undefined> };
+};
+type BillingResponse = { billing: { plan: string } };
 
 // Direct dollar top-ups — added straight to the current period's balance
 // (Lampcode's POST-free addTopUp helper bumps monthlyLimitUsd; there's no
@@ -29,7 +45,6 @@ type Plan = {
   usage: string;
   features: string[];
   cta: string;
-  current?: boolean;
   highlight?: boolean;
   // Present only for paid, recurring plans — Free and Enterprise have a
   // single flat `price` instead and are unaffected by the billing toggle.
@@ -49,8 +64,10 @@ const plans: Plan[] = [
     price: "$0",
     usage: "$3 usage / month",
     features: ["Fast Mode generation", "Community support"],
-    cta: "Current",
-    current: true,
+    // Overridden to "Current" in render when this really is the user's
+    // plan — "Downgrade" only ever shows (inert, no purchase flow wired for
+    // it) when it isn't.
+    cta: "Downgrade",
     highlight: false,
   },
   {
@@ -159,6 +176,99 @@ const why = [
 
 function PricingPage() {
   const [billing, setBilling] = useState<BillingCycle>("monthly");
+  const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
+
+  // pendingKey identifies which specific button is mid-flow ("pro", "max",
+  // "topup-15", ...) so only that one button shows a busy state — the rest
+  // of the page stays interactive. syncing tracks the post-payment
+  // /paddle/sync call specifically (separate from "opening", since a
+  // checkout.closed after a successful payment must not undo a success state).
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const paddleRef = useRef<Paddle | undefined>(undefined);
+  // eventCallback below is registered once, at init — it must read the
+  // LATEST syncing value without Paddle being re-initialized every time
+  // syncing changes, so it reads this ref instead of closing over the state.
+  const syncingRef = useRef(false);
+  useEffect(() => {
+    syncingRef.current = syncing;
+  }, [syncing]);
+
+  const { data: paddleConfig } = useQuery<PaddleConfigResponse>({
+    queryKey: ["paddle-config"],
+    queryFn: () => apiGet<PaddleConfigResponse>("/api/users/me/billing/paddle/config"),
+    enabled: isAuthenticated,
+    retry: false,
+    staleTime: Infinity,
+  });
+
+  const { data: billingData } = useQuery<BillingResponse>({
+    queryKey: ["billing"],
+    queryFn: () => apiGet<BillingResponse>("/api/users/me/billing"),
+    enabled: isAuthenticated,
+    retry: false,
+  });
+  const currentPlan = billingData?.billing?.plan ?? "free";
+
+  useEffect(() => {
+    if (!paddleConfig || paddleRef.current) return;
+    initializePaddle({
+      token: paddleConfig.clientToken,
+      environment: paddleConfig.environment,
+      eventCallback: (event) => {
+        if (event.name === CheckoutEventNames.CHECKOUT_COMPLETED) {
+          const transactionId = event.data?.transaction_id;
+          if (!transactionId) return;
+          setSyncing(true);
+          apiPost("/api/users/me/billing/paddle/sync", { transactionId }, { silent: true })
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: ["billing"] });
+              queryClient.invalidateQueries({ queryKey: ["billing-usage"] });
+              toast.success("Payment confirmed — your plan is updated.");
+            })
+            .catch(() => {
+              // The webhook is still the ultimate source of truth — a sync
+              // failure here doesn't mean the payment failed, just that this
+              // instant-confirmation path didn't land. Don't scare the user.
+              toast("Payment received — your balance will update shortly.");
+            })
+            .finally(() => {
+              setSyncing(false);
+              setPendingKey(null);
+            });
+        } else if (event.name === CheckoutEventNames.CHECKOUT_CLOSED) {
+          // Closed without completing (or closed after completing — the
+          // completed branch above already owns syncing/success handling and
+          // this must not undo it, hence reading the live ref, not a stale
+          // closure over the `syncing` state from whenever Paddle was set up).
+          if (!syncingRef.current) setPendingKey(null);
+        }
+      },
+    }).then((instance) => {
+      paddleRef.current = instance;
+    });
+  }, [paddleConfig, queryClient]);
+
+  function openCheckout(key: string, priceId: string | undefined) {
+    if (!priceId) {
+      toast.error("This price isn't available right now.");
+      return;
+    }
+    if (!user) {
+      toast.error("Please sign in first.");
+      return;
+    }
+    if (!paddleRef.current) {
+      toast.error("Checkout is still loading — try again in a moment.");
+      return;
+    }
+    setPendingKey(key);
+    paddleRef.current.Checkout.open({
+      items: [{ priceId, quantity: 1 }],
+      customData: { userId: user.id },
+    });
+  }
 
   return (
     <Shell>
@@ -187,32 +297,38 @@ function PricingPage() {
             </Badge>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {packs.map((p) => (
-              <div
-                key={p.amount}
-                className={`relative flex flex-col items-center gap-2 rounded-xl border bg-background/40 p-4 transition hover:border-primary/50 ${
-                  p.popular ? "border-primary/60 shadow-[var(--shadow-glow)]" : "border-border/60"
-                }`}
-              >
-                {p.popular && (
-                  <span className="absolute -top-2 rounded-full bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
-                    Most popular
-                  </span>
-                )}
-                <div className="text-2xl font-bold text-primary">${p.amount}</div>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  added to balance
-                </div>
-                <Button
-                  size="sm"
-                  variant={p.popular ? "default" : "secondary"}
-                  className={`w-full ${p.popular ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90" : ""}`}
-                  onClick={() => toast.success(`Adding $${p.amount} to your balance`)}
+            {packs.map((p) => {
+              const key = `topup-${p.amount}`;
+              const priceId = paddleConfig?.prices.topups[String(p.amount)];
+              const busy = pendingKey === key;
+              return (
+                <div
+                  key={p.amount}
+                  className={`relative flex flex-col items-center gap-2 rounded-xl border bg-background/40 p-4 transition hover:border-primary/50 ${
+                    p.popular ? "border-primary/60 shadow-[var(--shadow-glow)]" : "border-border/60"
+                  }`}
                 >
-                  Buy
-                </Button>
-              </div>
-            ))}
+                  {p.popular && (
+                    <span className="absolute -top-2 rounded-full bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
+                      Most popular
+                    </span>
+                  )}
+                  <div className="text-2xl font-bold text-primary">${p.amount}</div>
+                  <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    added to balance
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={p.popular ? "default" : "secondary"}
+                    className={`w-full ${p.popular ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90" : ""}`}
+                    disabled={busy}
+                    onClick={() => openCheckout(key, priceId)}
+                  >
+                    {busy ? (syncing ? "Confirming…" : "Opening…") : "Buy"}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
         </Card>
 
@@ -247,6 +363,12 @@ function PricingPage() {
                   ? t.yearlyPriceId
                   : t.monthlyPriceId
                 : undefined;
+              // Real current plan (GET /billing), not the old hardcoded
+              // `current: true` on Free only — required so this reflects
+              // reality after a real purchase, not just on first load.
+              const isCurrent = currentPlan === t.name.toLowerCase();
+              const key = `plan-${t.name.toLowerCase()}-${billing}`;
+              const busy = pendingKey === key;
 
               return (
                 <div
@@ -260,7 +382,7 @@ function PricingPage() {
                       Most popular
                     </span>
                   )}
-                  {t.current && (
+                  {isCurrent && (
                     <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[oklch(0.78_0.17_155)] text-background border-0">
                       Current
                     </Badge>
@@ -292,15 +414,11 @@ function PricingPage() {
                         ? "bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90"
                         : ""
                     }`}
-                    variant={t.highlight ? "default" : t.current ? "outline" : "secondary"}
-                    disabled={t.current}
-                    onClick={
-                      activePriceId
-                        ? () => toast.success(`Selecting ${t.name} (${billing}) — price ${activePriceId}`)
-                        : undefined
-                    }
+                    variant={t.highlight ? "default" : isCurrent ? "outline" : "secondary"}
+                    disabled={isCurrent || busy}
+                    onClick={activePriceId ? () => openCheckout(key, activePriceId) : undefined}
                   >
-                    {t.cta}
+                    {busy ? (syncing ? "Confirming…" : "Opening…") : isCurrent ? "Current" : t.cta}
                   </Button>
                 </div>
               );

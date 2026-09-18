@@ -62,13 +62,15 @@ function DocsPage() {
         </li>
       </ul>
       <p>
-        Use <strong>Open in new tab</strong> for a full-screen preview, and the{" "}
-        <strong>Publish</strong> menu to deploy to Vercel or push to GitHub.
+        Use <strong>Open in new tab</strong> for a full-screen preview. One-click deploy to Vercel
+        and push to GitHub are not available yet — the <strong>Publish</strong> button is a
+        placeholder for now. In the meantime, <strong>Download codebase</strong> saves your
+        generated files as a single text file.
       </p>
 
       <h2>Usage & Billing</h2>
       <p>
-        Lampcode bills real usage, not a fixed price list. Every build, fix round, or deploy costs
+        Lampcode bills real usage, not a fixed price list. Every build or fix round costs
         whatever it actually took the AI to do the work — there's no flat per-action price, so a
         quick fix costs less than a full build. Each plan includes a monthly usage budget (see{" "}
         <a href="/pricing">Pricing</a>); the Power plan rolls over up to $100 of unused balance into

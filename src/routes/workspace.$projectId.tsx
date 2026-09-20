@@ -1129,8 +1129,11 @@ function WorkspaceTopBar({
 
       {/* ── Left: brand + project ─────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-2.5">
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-[var(--shadow-glow)]">
-          <Lamp className="h-4 w-4 text-primary-foreground" />
+        {/* Matches the sidebar mark exactly (AppSidebar.tsx) — this used to be a
+            primary→accent gradient, which read as a different brand colour on
+            the one screen where both are never seen side by side. */}
+        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[var(--shadow-glow)]">
+          <Lamp className="h-4 w-4 text-primary" />
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
@@ -1144,10 +1147,29 @@ function WorkspaceTopBar({
             🧠 AI context
           </span>
         )}
+        {/* Chat controls sit with the chat side of the header, above the panel
+            they actually act on, rather than across the header with the
+            preview actions. */}
+        <div className="ml-1 flex items-center gap-0.5">
+          <button
+            onClick={onToggleHistory}
+            className={cn("ws-iconbtn", showHistory && "text-orange-400")}
+            title="Build history"
+          >
+            <History className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onCollapse}
+            className="ws-iconbtn"
+            title={chatCollapsed ? "Show chat" : "Hide chat"}
+          >
+            {chatCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
       {/* ── Center-left: tab pills ─────────────────────────────────── */}
-      <div className="ml-2 flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
+      <div className="ml-8 flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
         <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
           <Globe className="h-4 w-4" />
         </IconTab>
@@ -1202,21 +1224,6 @@ function WorkspaceTopBar({
 
       {/* ── Right: actions ─────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-1">
-        <button
-          onClick={onToggleHistory}
-          className={cn("ws-iconbtn", showHistory && "text-orange-400")}
-          title="Build history"
-        >
-          <History className="h-4 w-4" />
-        </button>
-        <button
-          onClick={onCollapse}
-          className="ws-iconbtn"
-          title={chatCollapsed ? "Show chat" : "Hide chat"}
-        >
-          {chatCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-        </button>
-        <div className="mx-1.5 h-5 w-px bg-white/[0.08]" />
         {activeTab === "preview" && (
           <>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
@@ -1283,6 +1290,31 @@ function ChatColumn({
     setDraft("");
   };
 
+  // Same idea as the landing composer: put the link in the prompt, because the
+  // builder reads the prompt. Web links resolve through the always-on Firecrawl
+  // tool; Figma links through the Figma MCP server once connected on /mcp.
+  const addReference = (kind: "web" | "figma") => {
+    const entered = window.prompt(
+      kind === "figma" ? "Paste a Figma file link" : "Paste a link to use as a reference",
+    );
+    if (entered === null) return;
+    const trimmed = entered.trim();
+    if (!trimmed) return;
+    if (!/^https?:\/\/\S+$/i.test(trimmed)) {
+      toast.error("That doesn't look like a valid link — it should start with https://");
+      return;
+    }
+    if (kind === "figma" && !/figma\.com/i.test(trimmed)) {
+      toast.error("That isn't a Figma link. Use the link button for other sites.");
+      return;
+    }
+    const line = kind === "figma"
+      ? `Match this Figma design: ${trimmed}`
+      : `Use this page as a reference: ${trimmed}`;
+    setDraft((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
+    toast.success(kind === "figma" ? "Figma link added to your message" : "Link added to your message");
+  };
+
   return (
     <div className="flex h-full flex-col">
 
@@ -1333,10 +1365,10 @@ function ChatColumn({
                   if (f) toast.success(`Attached ${f.name}`);
                 }}
               />
-              <button onClick={() => toast("Import from URL — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
+              <button onClick={() => addReference("web")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>
-              <button onClick={() => toast("Figma import — coming soon!")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
+              <button onClick={() => addReference("figma")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
                 <Figma className="h-4 w-4" />
               </button>
             </div>

@@ -1132,8 +1132,11 @@ function WorkspaceTopBar({
         {/* Matches the sidebar mark exactly (AppSidebar.tsx) — this used to be a
             primary→accent gradient, which read as a different brand colour on
             the one screen where both are never seen side by side. */}
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[var(--shadow-glow)]">
-          <Lamp className="h-4 w-4 text-primary" />
+        {/* Identical to the sidebar mark (AppSidebar.tsx), size included — it
+            was a primary→accent gradient with a dark glyph, which read as a
+            different colour from the orange lamp on the dashboard. */}
+        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[var(--shadow-glow)]">
+          <Lamp className="h-5 w-5 text-primary" />
         </div>
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
@@ -1194,13 +1197,6 @@ function WorkspaceTopBar({
             </button>
           );
         })()}
-
-        {activeTab === "preview" && (
-          <button className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 text-xs text-white/80 transition hover:bg-white/[0.06] min-w-[200px] justify-between">
-            <span className="truncate">Homepage</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-white/40" />
-          </button>
-        )}
 
         {activeTab === "code" && (
           <div className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 min-w-[240px] max-w-[420px] flex-1">

@@ -60,6 +60,8 @@ export function PromptComposer() {
   const [mode, setMode] = useState<Mode>("fast");
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
+  // "figma" reuses the same input row, just with its own label and validation.
+  const [urlKind, setUrlKind] = useState<"web" | "figma">("web");
   const [submitting, setSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<{ id: string; file: File; url?: string }[]>([]);
   const [animatedIdea, setAnimatedIdea] = useState("");
@@ -67,6 +69,37 @@ export function PromptComposer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Append the reference to the prompt itself. The builder can genuinely act on
+  // it: web links are fetched through the always-on Firecrawl tool, and Figma
+  // links through the Figma MCP server once the user connects it on /mcp. This
+  // is why it lands in the prompt rather than being held as separate state —
+  // the model reads the prompt, so a link in the prompt is a link it can open.
+  const addUrl = () => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    if (!/^https?:\/\/\S+$/i.test(trimmed)) {
+      toast.error("That doesn't look like a valid link — it should start with https://");
+      return;
+    }
+    if (urlKind === "figma" && !/figma\.com/i.test(trimmed)) {
+      toast.error("That isn't a Figma link. Use the link button for other sites.");
+      return;
+    }
+    const line = urlKind === "figma"
+      ? `Match this Figma design: ${trimmed}`
+      : `Use this page as a reference: ${trimmed}`;
+    setValue((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
+    setUrl("");
+    setUrlOpen(false);
+    if (urlKind === "figma") {
+      toast.success("Figma link added", {
+        description: "Connect Figma on the MCP page if you haven't — that's what lets the builder read the file.",
+      });
+    } else {
+      toast.success("Link added to your prompt");
+    }
+  };
 
   // Animate rotating placeholder ideas (typewriter)
   useEffect(() => {
@@ -241,14 +274,17 @@ export function PromptComposer() {
 
         {urlOpen && (
           <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
-            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+            {urlKind === "figma"
+              ? <Figma className="h-3.5 w-3.5 text-muted-foreground" />
+              : <Link2 className="h-3.5 w-3.5 text-muted-foreground" />}
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com"
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
+              placeholder={urlKind === "figma" ? "https://figma.com/file/…" : "https://example.com"}
               className="h-7 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
             />
-            <Button size="sm" className="h-7 rounded-md px-3 text-xs" onClick={() => { if (url) { toast.success("URL added"); setUrl(""); setUrlOpen(false); } }}>Add</Button>
+            <Button size="sm" className="h-7 rounded-md px-3 text-xs" onClick={addUrl}>Add</Button>
             <button type="button" onClick={() => { setUrlOpen(false); setUrl(""); }} className="text-muted-foreground hover:text-foreground">
               <X className="h-3.5 w-3.5" />
             </button>
@@ -273,7 +309,7 @@ export function PromptComposer() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => toast("Import from URL — coming soon!")}
+                  onClick={() => { setUrlKind("web"); setUrl(""); setUrlOpen(true); }}
                   className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
                   <Link2 className="h-4 w-4" />
@@ -285,7 +321,7 @@ export function PromptComposer() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => toast("Figma import — coming soon!")}
+                  onClick={() => { setUrlKind("figma"); setUrl(""); setUrlOpen(true); }}
                   className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
                   <Figma className="h-4 w-4" />

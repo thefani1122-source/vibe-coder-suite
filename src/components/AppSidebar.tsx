@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
+import { BrandMark } from "@/components/BrandMark";
 import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard,
@@ -10,7 +11,6 @@ import {
   Plug,
   BarChart3,
   Tag,
-  Lamp,
   Sparkles,
   FileText,
   Lock,
@@ -82,9 +82,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <Link to="/" className="flex items-center gap-2 px-2 py-3">
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[var(--shadow-glow)]">
-            <Lamp className="h-5 w-5 text-primary" />
-          </div>
+          <BrandMark />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="text-sm font-bold tracking-tight">Lampcode</span>
             <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">

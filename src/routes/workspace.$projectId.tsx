@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { Group, Panel, Separator, usePanelRef, type PanelImperativeHandle } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { FileTree } from "@/components/FileTree";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Lamp, Zap, Plus,
+  ArrowUp, ChevronDown, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
@@ -306,11 +307,21 @@ function WorkspacePage() {
     });
 
     socket.on("build:thinking", (data: { text?: string; content?: string; internal?: boolean }) => {
-      completedRef.current = false;
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
       setActivityStatus(chunk.trim());
+
+      // Once the build has reported complete, repair work still runs in the
+      // background (typecheck fix, render fix). Those emit thinking too, and
+      // appending it would drop "Fixing a type error…" UNDER the summary that
+      // just said the app was ready — which reads like the agent answered and
+      // then started thinking. After completion it stays in the status chip
+      // only, so the chat's order always matches what actually happened.
+      // NOTE: this handler used to reset completedRef itself, which is what let
+      // that trailing thinking through in the first place. The flag is reset
+      // where a build genuinely begins — on session mount and on send.
+      if (completedRef.current) return;
 
       // Pipeline status lines ("Writing src/App.tsx") belong in the status chip
       // above; only the model's actual reasoning goes in the chat. The backend
@@ -336,6 +347,9 @@ function WorkspacePage() {
     socket.on("build:token", (data: { text?: string; token?: string }) => {
       const text = data.text ?? data.token ?? "";
       if (!text) return;
+      // Same rule as build:thinking above — nothing lands in the chat after the
+      // build has reported complete.
+      if (completedRef.current) return;
       setMessages(prev => {
         const last = prev[prev.length - 1];
         if (last?.type === "thinking" && last.streaming) {
@@ -1151,12 +1165,7 @@ function WorkspaceTopBar({
         {/* Matches the sidebar mark exactly (AppSidebar.tsx) — this used to be a
             primary→accent gradient, which read as a different brand colour on
             the one screen where both are never seen side by side. */}
-        {/* Identical to the sidebar mark (AppSidebar.tsx), size included — it
-            was a primary→accent gradient with a dark glyph, which read as a
-            different colour from the orange lamp on the dashboard. */}
-        <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 shadow-[var(--shadow-glow)]">
-          <Lamp className="h-5 w-5 text-primary" />
-        </div>
+        <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
           <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">vibe coder</span>

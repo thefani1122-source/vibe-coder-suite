@@ -310,8 +310,27 @@ function WorkspacePage() {
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
-      // All thinking shown via activity status chip only (AI content comes through SSE)
       setActivityStatus(chunk.trim());
+
+      // Pipeline status lines ("Writing src/App.tsx") belong in the status chip
+      // above; only the model's actual reasoning goes in the chat. The backend
+      // marks the difference with `internal`, with a keyword fallback for events
+      // sent before that flag existed.
+      const isPipelineStatus = data.internal === true
+        || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
+      if (isPipelineStatus) return;
+
+      // Stream into one collapsible card rather than a bubble per chunk —
+      // ThinkingCard expands while streaming and collapses itself when done.
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last?.type === "thinking" && last.streaming) {
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
+          );
+        }
+        return [...prev, newMsg({ type: "thinking", text: chunk, streaming: true })];
+      });
     });
 
     socket.on("build:token", (data: { text?: string; token?: string }) => {

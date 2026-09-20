@@ -27,6 +27,9 @@ type Project = {
   updated_at?: string;
   lastBuildStatus?: "success" | "error" | "pending" | string;
   fileCount?: number;
+  /** Short-lived signed URL for the captured preview screenshot; null until a
+   *  build has produced one, or if signing failed. */
+  previewImage?: string | null;
 };
 
 function ProjectsPage() {
@@ -125,19 +128,35 @@ function ProjectsPage() {
                       onClick={() => handleProjectClick(p.id)}
                       className="group cursor-pointer overflow-hidden rounded-xl border border-border/60 bg-card/60 backdrop-blur transition hover:border-primary/40 hover:shadow-[var(--shadow-glow)]"
                     >
-                      {/* Thumbnail */}
-                      <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-gradient-to-br from-[#0d0d12] to-[#1a1a2e] flex flex-col justify-between p-4">
-                        <div className="text-white/15 text-xs font-mono">lampcode.dev</div>
-                        <div>
-                          <div className="text-white/70 text-sm font-medium line-clamp-2 mb-2">
-                            {p.name || p.description || "Untitled"}
+                      {/* Thumbnail — a real screenshot of the built app once one
+                          has been captured, otherwise the placeholder card. */}
+                      <div className="relative aspect-video w-full overflow-hidden rounded-t-xl bg-gradient-to-br from-[#0d0d12] to-[#1a1a2e]">
+                        {p.previewImage ? (
+                          <img
+                            src={p.previewImage}
+                            alt={`Preview of ${p.name || "this project"}`}
+                            loading="lazy"
+                            className="h-full w-full object-cover object-top transition duration-300 group-hover:scale-[1.02]"
+                            // Signed URLs expire; rather than showing a broken
+                            // image, fall back to the placeholder underneath.
+                            onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          />
+                        ) : null}
+                        <div className="absolute inset-0 flex flex-col justify-between p-4">
+                          <div className="text-white/15 text-xs font-mono">lampcode.dev</div>
+                          <div>
+                            {!p.previewImage && (
+                              <div className="text-white/70 text-sm font-medium line-clamp-2 mb-2">
+                                {p.name || p.description || "Untitled"}
+                              </div>
+                            )}
+                            {built && (
+                              <div className="inline-flex items-center gap-1 text-xs text-green-400/70 bg-green-400/10 px-2 py-0.5 rounded-full backdrop-blur">
+                                <span className="w-1 h-1 rounded-full bg-green-400" />
+                                Built
+                              </div>
+                            )}
                           </div>
-                          {built && (
-                            <div className="inline-flex items-center gap-1 text-xs text-green-400/70 bg-green-400/10 px-2 py-0.5 rounded-full">
-                              <span className="w-1 h-1 rounded-full bg-green-400" />
-                              Built
-                            </div>
-                          )}
                         </div>
                       </div>
 

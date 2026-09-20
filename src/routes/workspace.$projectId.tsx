@@ -20,7 +20,7 @@ import {
   ArrowUp, ChevronDown, Lamp, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2,
-  History, PanelLeft, PanelLeftClose, PanelLeftOpen, FileText, Github, Download,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
   Square, ExternalLink, Link2, Figma, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -396,9 +396,10 @@ function WorkspacePage() {
       setFiles(mergedFiles);
       setSelectedFile(prev => prev ?? Object.keys(mergedFiles)[0] ?? null);
 
-      const count = Object.keys(mergedFiles).length;
-      const summaryText = data?.summary ||
-        `Built your app with ${count > 0 ? count : "your"} files. Preview is live on the right — click Code to explore.`
+      // The backend normally sends a written summary; this only shows if that
+      // call failed. Keep it plain — a file count isn't what someone wants to
+      // read back after asking for an app.
+      const summaryText = data?.summary || "Your app is ready — the preview is on the right."
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
@@ -912,6 +913,10 @@ function WorkspacePage() {
           previewUrl={previewUrl}
           codeQuery={codeQuery}
           onCodeQueryChange={setCodeQuery}
+          chatCollapsed={chatCollapsed}
+          onCollapse={toggleChat}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(v => !v)}
         />
 
         <Group
@@ -937,10 +942,6 @@ function WorkspacePage() {
                 onStop={handleStopBuild}
                 projectName={projectName}
                 isClarifying={isClarifying}
-                chatCollapsed={chatCollapsed}
-                onCollapse={toggleChat}
-                showHistory={showHistory}
-                onToggleHistory={() => setShowHistory(v => !v)}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -1079,6 +1080,7 @@ function WorkspaceTopBar({
   buildStatus, onReload, files,
   businessContext, showContextPanel,
   previewUrl, codeQuery, onCodeQueryChange,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
   projectId: string;
   projectName: string;
@@ -1094,6 +1096,10 @@ function WorkspaceTopBar({
   previewUrl: string | null;
   codeQuery: string;
   onCodeQueryChange: (v: string) => void;
+  chatCollapsed: boolean;
+  onCollapse: () => void;
+  showHistory: boolean;
+  onToggleHistory: () => void;
 }) {
   const navigate = useNavigate();
   void navigate;
@@ -1144,9 +1150,6 @@ function WorkspaceTopBar({
       <div className="ml-2 flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
         <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
           <Globe className="h-4 w-4" />
-        </IconTab>
-        <IconTab active={false} onClick={() => toast("Docs coming soon")} title="Docs">
-          <FileText className="h-4 w-4" />
         </IconTab>
         <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
           <Code2 className="h-4 w-4" />
@@ -1199,6 +1202,21 @@ function WorkspaceTopBar({
 
       {/* ── Right: actions ─────────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-1">
+        <button
+          onClick={onToggleHistory}
+          className={cn("ws-iconbtn", showHistory && "text-orange-400")}
+          title="Build history"
+        >
+          <History className="h-4 w-4" />
+        </button>
+        <button
+          onClick={onCollapse}
+          className="ws-iconbtn"
+          title={chatCollapsed ? "Show chat" : "Hide chat"}
+        >
+          {chatCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </button>
+        <div className="mx-1.5 h-5 w-px bg-white/[0.08]" />
         {activeTab === "preview" && (
           <>
             <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
@@ -1245,7 +1263,6 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
-  chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1254,10 +1271,6 @@ function ChatColumn({
   onStop?: () => void;
   projectName?: string;
   isClarifying?: boolean;
-  chatCollapsed?: boolean;
-  onCollapse?: () => void;
-  showHistory?: boolean;
-  onToggleHistory?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1272,36 +1285,6 @@ function ChatColumn({
 
   return (
     <div className="flex h-full flex-col">
-
-      {/* Chat header with collapse button */}
-      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-white/25">Chat</span>
-        <div className="flex items-center gap-0.5">
-          {onToggleHistory && (
-            <button
-              onClick={onToggleHistory}
-              className={cn(
-                "p-1.5 rounded transition-colors hover:bg-white/5",
-                showHistory ? "text-orange-400" : "text-white/40 hover:text-white/70",
-              )}
-              title="Build history"
-            >
-              <History size={14} />
-            </button>
-          )}
-          {onCollapse && (
-            <button
-              onClick={onCollapse}
-              className="p-1.5 rounded text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors"
-              title={chatCollapsed ? "Show chat" : "Hide chat"}
-            >
-              {chatCollapsed
-                ? <PanelLeft size={14} />
-                : <PanelLeftClose size={14} />}
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Messages */}
       <div className="flex-1 min-h-0">

@@ -57,12 +57,37 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
     throw err;
   }
 
+  // A 401 is not proof the user is signed out — most often it means we sent no
+  // credentials. On a fresh tab, getAccessToken() reads the session while
+  // Supabase is still restoring it from storage (or mid token-refresh) and
+  // returns null, so the request above goes out with no Authorization header at
+  // all. Signing out on that first 401 is what made reopening a tab bounce
+  // people to /login at random, and it threw away a perfectly valid session.
+  //
+  // So: ask Supabase to settle the session and retry once. Only a 401 on a
+  // request that DID carry a token means the session is genuinely dead.
   if (res.status === 401) {
-    useAuthStore.getState().signOut();
-    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-      window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+    const hadToken = h.has("Authorization");
+    if (!hadToken) {
+      const refreshed = await getAccessToken({ waitForRestore: true });
+      if (refreshed) {
+        h.set("Authorization", `Bearer ${refreshed}`);
+        try {
+          res = await fetch(url, { ...rest, headers: h });
+        } catch (err) {
+          if (!silent) toast.error("Network error. Please try again.");
+          throw err;
+        }
+      }
     }
-    throw new ApiError("Unauthorized", 401);
+
+    if (res.status === 401) {
+      useAuthStore.getState().signOut();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+      }
+      throw new ApiError("Unauthorized", 401);
+    }
   }
 
   const contentType = res.headers.get("content-type") ?? "";

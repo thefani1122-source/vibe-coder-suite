@@ -147,9 +147,23 @@ export function useAuth() {
 }
 
 /** Get the current access token for authenticated API calls. */
-export async function getAccessToken(): Promise<string | null> {
+export async function getAccessToken(
+  opts: { waitForRestore?: boolean } = {},
+): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+  if (data.session?.access_token) return data.session.access_token;
+  if (!opts.waitForRestore) return null;
+
+  // getSession() returns null both when the user is signed out AND while the
+  // client is still rehydrating from storage or refreshing an expired token.
+  // refreshSession() resolves that ambiguity: it returns a session if the
+  // refresh token is still good, and an error if the user really is signed out.
+  try {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    return refreshed.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

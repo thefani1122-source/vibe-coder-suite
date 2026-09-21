@@ -3,6 +3,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
 import { PromptComposer } from "@/components/PromptComposer";
+import { WaitlistDialog } from "@/components/WaitlistDialog";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -11,6 +12,7 @@ export const Route = createFileRoute("/")({
 function Index() {
   return (
     <SidebarProvider>
+      <WaitlistDialog />
       <div className="relative flex min-h-screen w-full bg-background text-foreground">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]" />

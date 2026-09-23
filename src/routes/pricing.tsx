@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Minus, Shuffle, PiggyBank, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { WAITLIST_MODE } from "@/lib/waitlist";
 import { apiGet, apiPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -251,6 +252,17 @@ function PricingPage() {
   }, [paddleConfig, queryClient]);
 
   function openCheckout(key: string, priceId: string | undefined) {
+    // Prices stay visible while the waitlist is up — that's what someone
+    // arriving from a launch post wants to know — but checkout must not open.
+    // Taking money for a product the payer cannot use yet creates a refund
+    // obligation and a bad first impression, and every plan here is billed
+    // immediately on purchase.
+    if (WAITLIST_MODE) {
+      toast("Plans open when we launch", {
+        description: "You're on the waitlist — we'll email you when your access is ready, and you can pick a plan then.",
+      });
+      return;
+    }
     if (!priceId) {
       toast.error("This price isn't available right now.");
       return;
@@ -324,7 +336,7 @@ function PricingPage() {
                     disabled={busy}
                     onClick={() => openCheckout(key, priceId)}
                   >
-                    {busy ? (syncing ? "Confirming…" : "Opening…") : "Buy"}
+                    {WAITLIST_MODE ? "At launch" : busy ? (syncing ? "Confirming…" : "Opening…") : "Buy"}
                   </Button>
                 </div>
               );
@@ -416,9 +428,9 @@ function PricingPage() {
                     }`}
                     variant={t.highlight ? "default" : isCurrent ? "outline" : "secondary"}
                     disabled={isCurrent || busy}
-                    onClick={activePriceId ? () => openCheckout(key, activePriceId) : undefined}
+                    onClick={() => openCheckout(key, activePriceId)}
                   >
-                    {busy ? (syncing ? "Confirming…" : "Opening…") : isCurrent ? "Current" : t.cta}
+                    {WAITLIST_MODE ? "At launch" : busy ? (syncing ? "Confirming…" : "Opening…") : isCurrent ? "Current" : t.cta}
                   </Button>
                 </div>
               );

@@ -18,3 +18,23 @@
  */
 export const WAITLIST_MODE =
   (import.meta.env.VITE_WAITLIST_MODE as string | undefined)?.toLowerCase() !== "false";
+
+/**
+ * Emails that see the real product while the waitlist is up — us, so the thing
+ * can be tested before it opens. Mirrors the backend's ADMIN_EMAILS.
+ *
+ * This is a UI-visibility check only, and it is safe for it to be client-side:
+ * the backend does its own independent isAdmin() check before it will start a
+ * build or touch billing, and it does not trust anything this file says. The
+ * worst a forged value gets you is a dashboard whose buttons all refuse.
+ */
+const ADMIN_EMAILS = ((import.meta.env.VITE_ADMIN_EMAILS as string | undefined) ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter((e) => e.length > 0);
+
+/** Whether this signed-in user should bypass the waitlist screen. */
+export function bypassesWaitlist(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return ADMIN_EMAILS.includes(email.toLowerCase());
+}

@@ -233,6 +233,10 @@ function WorkspacePage() {
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError,   setPreviewError]   = useState<string | null>(null);
+  // The sandbox being reclaimed is the normal end of its life, not an error —
+  // kept apart from previewError so it reads as an offer, not a failure.
+  const [previewExpired, setPreviewExpired] = useState<string | null>(null);
+  const [previewRestoring, setPreviewRestoring] = useState(false);
 
   const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
   const [isMcpActive, setIsMcpActive] = useState(false);
@@ -249,6 +253,17 @@ function WorkspacePage() {
   const [showContextPanel,  setShowContextPanel]  = useState(false);
 
   const socketRef               = useRef<Socket | null>(null);
+
+  // Ask the backend to rebuild the preview from the project's saved files.
+  // Not automatic: it starts a fresh sandbox, so it waits for the user.
+  const handleRestorePreview = useCallback(() => {
+    const socket = socketRef.current;
+    const sid = currentSessionIdRef.current;
+    if (!socket || !sid) return;
+    setPreviewRestoring(true);
+    setPreviewError(null);
+    socket.emit("build:restore_preview", { sessionId: sid });
+  }, []);
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
@@ -497,6 +512,8 @@ function WorkspacePage() {
       setIsFullstack(true);
       setActiveTab("preview");
       setPreviewError(null);
+      setPreviewExpired(null);
+      setPreviewRestoring(false);
       setPreviewUrl(url);
       setPreviewLoading(false);
     };
@@ -530,6 +547,34 @@ function WorkspacePage() {
     };
     ["build:preview_error", "preview_error", "preview:error"].forEach(event => {
       socket.on(event, handlePreviewError);
+    });
+
+    // Backend found nothing to resume — offer a restore rather than leaving a
+    // dead pane reporting that no preview URL was returned.
+    socket.on("build:preview_expired", (payload: unknown) => {
+      const message =
+        payload && typeof payload === "object" && "message" in payload
+          ? String((payload as { message?: unknown }).message ?? "")
+          : "";
+      console.log("[Preview] sandbox expired — restore offered");
+      setIsFullstack(true);
+      setPreviewLoading(false);
+      setPreviewRestoring(false);
+      setPreviewUrl(null);
+      setPreviewError(null);
+      setPreviewExpired(message || "The preview sandbox has expired.");
+    });
+
+    // A restore that could not finish. Stays on the restore screen so the user
+    // can try again, with the reason shown rather than a silent no-op.
+    socket.on("build:preview_failed", (payload: unknown) => {
+      const message =
+        payload && typeof payload === "object" && "message" in payload
+          ? String((payload as { message?: unknown }).message ?? "")
+          : "";
+      console.error("[Preview] restore failed:", message);
+      setPreviewRestoring(false);
+      setPreviewExpired(message || "The preview could not be restored.");
     });
 
     socket.on("build:cancelled", () => {
@@ -1068,6 +1113,9 @@ function WorkspacePage() {
                     {isFullstack ? (
                       <div className="relative h-full w-full">
                         <E2BPreview
+                          expired={previewExpired}
+                          restoring={previewRestoring}
+                          onRestore={handleRestorePreview}
                           url={previewUrl}
                           loading={previewLoading}
                           error={previewError}

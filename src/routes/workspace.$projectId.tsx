@@ -296,6 +296,15 @@ function WorkspacePage() {
   }, []);
 
   const registerHandlers = useCallback((socket: Socket) => {
+    // The server is about to replay a finished session's stored messages.
+    // Clear first: this arrives when the chat was restored from the local
+    // sessionStorage snapshot as well, and appending to that would show the
+    // whole conversation twice.
+    socket.on("build:history", () => {
+      completedRef.current = false;
+      setMessages([]);
+    });
+
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;

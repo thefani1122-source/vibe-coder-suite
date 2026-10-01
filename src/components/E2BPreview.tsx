@@ -8,11 +8,6 @@ interface E2BPreviewProps {
   isFullstack: boolean;
   files: Record<string, string>;
   device?: "desktop" | "mobile" | "tablet";
-  /** Set when the sandbox has been reclaimed — the ordinary end of its life,
-   *  not a failure, so it reads as an offer to restore rather than an error. */
-  expired?: string | null;
-  restoring?: boolean;
-  onRestore?: () => void;
 }
 
 export function E2BPreview({
@@ -22,9 +17,6 @@ export function E2BPreview({
   isFullstack,
   files,
   device = "desktop",
-  expired = null,
-  restoring = false,
-  onRestore,
 }: E2BPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeError, setIframeError] = useState(false);
@@ -46,10 +38,8 @@ export function E2BPreview({
     );
   }
 
-  const showExpired = Boolean(expired) && !url && !restoring;
-  const visibleError = showExpired
-    ? null
-    : error || (iframeError ? "Preview iframe could not load. Try opening it in a new tab." : null);
+  const visibleError =
+    error || (iframeError ? "Preview iframe could not load. Try opening it in a new tab." : null);
 
   return (
     <div
@@ -78,48 +68,6 @@ export function E2BPreview({
           position: "relative",
         }}
       >
-        {showExpired && (
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 14,
-              padding: 24,
-              textAlign: "center",
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.78)" }}>
-              {expired}
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", maxWidth: 340 }}>
-              Your code is saved. Restoring starts a fresh sandbox and puts the project back
-              exactly as you left it.
-            </div>
-            {onRestore && (
-              <button
-                type="button"
-                onClick={onRestore}
-                style={{
-                  marginTop: 4,
-                  padding: "8px 18px",
-                  fontSize: 13,
-                  fontWeight: 500,
-                  color: "#0c0c10",
-                  background: "rgba(255,255,255,0.92)",
-                  border: "none",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                }}
-              >
-                Restore preview
-              </button>
-            )}
-          </div>
-        )}
-
         {visibleError && (
           <div
             style={{
@@ -153,7 +101,7 @@ export function E2BPreview({
           </div>
         )}
 
-        {(loading || restoring || (url && !iframeLoaded)) && !visibleError && !showExpired && (
+        {(loading || (url && !iframeLoaded)) && !visibleError && (
           <div
             style={{
               position: "absolute",
@@ -179,14 +127,10 @@ export function E2BPreview({
             />
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.7)" }}>
-                {restoring ? "Restoring preview..." : url ? "Loading preview..." : "Starting preview..."}
+                {url ? "Loading preview..." : "Starting preview..."}
               </div>
               <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-                {restoring
-                  ? "Starting a fresh sandbox and writing your saved files"
-                  : url
-                    ? "Fetching your app"
-                    : "Installing dependencies and starting dev server"}
+                {url ? "Fetching your app" : "Installing dependencies and starting dev server"}
               </div>
             </div>
           </div>
@@ -215,7 +159,7 @@ export function E2BPreview({
           />
         )}
 
-        {!url && !loading && !restoring && !visibleError && !showExpired && (
+        {!url && !loading && !visibleError && (
           <div
             style={{
               flex: 1,

@@ -31,3 +31,6 @@ dist-ssr
 *.sw?
 .env
 package-lock.json
+
+# Cloudflare Wrangler build output
+.wrangler/

@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
+import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
@@ -217,6 +218,7 @@ function WorkspacePage() {
   // one turn and the backend blocks on each, so dropping all but the last
   // would strand the others until they time out.
   const [pendingWrites, setPendingWrites] = useState<PendingWriteAction[]>([]);
+  const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
   const [files,        setFiles]        = useState<Record<string, string>>({});
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -419,6 +421,7 @@ function WorkspacePage() {
 
     socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string; url?: string; previewUrl?: string; preview_url?: string }) => {
       setPendingWrites([]);
+      setPendingQuestions([]);
       if (completedRef.current) {
         const latePreviewUrl = extractPreviewUrl(data);
         if (latePreviewUrl) {
@@ -490,6 +493,24 @@ function WorkspacePage() {
       },
     );
 
+    socket.on(
+      "build:question_asked",
+      (d: { toolCallId: string; question: string; options?: unknown[]; timeoutMs?: number }) => {
+        setPendingQuestions(prev =>
+          prev.some(q => q.toolCallId === d.toolCallId)
+            ? prev
+            : [...prev, {
+                toolCallId: d.toolCallId,
+                question: d.question,
+                options: Array.isArray(d.options)
+                  ? (d.options as PendingQuestion["options"])
+                  : [],
+                expiresAt: Date.now() + (d.timeoutMs ?? 600_000),
+              }],
+        );
+      },
+    );
+
     // Clear on every terminal signal the backend can send for an action, so a
     // prompt cannot outlive the thing it was asking about: an explicit deny, a
     // timeout sweep, or the socket dropping and the server denying everything.
@@ -517,6 +538,7 @@ function WorkspacePage() {
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
       setPendingWrites([]);
+      setPendingQuestions([]);
       setActivityStatus(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
@@ -580,6 +602,7 @@ function WorkspacePage() {
 
     socket.on("build:cancelled", () => {
       setPendingWrites([]);
+      setPendingQuestions([]);
       setActivityStatus(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
@@ -1031,6 +1054,11 @@ function WorkspacePage() {
                   });
                   setPendingWrites(prev => prev.filter(p => p.toolCallId !== toolCallId));
                 }}
+                pendingQuestions={pendingQuestions}
+                onAnswer={(toolCallId, answer) => {
+                  socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
+                  setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
+                }}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -1350,7 +1378,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
-  pendingWrites = [], onWriteDecision,
+  pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1362,6 +1390,9 @@ function ChatColumn({
   /** Destructive tool calls the build is currently blocked on. */
   pendingWrites?: PendingWriteAction[];
   onWriteDecision?: (toolCallId: string, approved: boolean) => void;
+  /** Questions the build is currently paused on. */
+  pendingQuestions?: PendingQuestion[];
+  onAnswer?: (toolCallId: string, answer: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1420,6 +1451,15 @@ function ChatColumn({
           <WriteApprovalPrompt
             action={action}
             onDecision={(toolCallId, approved) => onWriteDecision?.(toolCallId, approved)}
+          />
+        </div>
+      ))}
+
+      {pendingQuestions.map(q => (
+        <div key={q.toolCallId} className="shrink-0 px-3">
+          <QuestionPrompt
+            question={q}
+            onAnswer={(toolCallId, answer) => onAnswer?.(toolCallId, answer)}
           />
         </div>
       ))}

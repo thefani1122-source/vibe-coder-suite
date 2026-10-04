@@ -35,7 +35,9 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+// router 1.170 widened ErrorComponentProps.error to unknown — a thrown value
+// need not be an Error, and the old signature quietly assumed it was.
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
 

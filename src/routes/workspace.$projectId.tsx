@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
+import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
@@ -212,6 +213,10 @@ function WorkspacePage() {
   const { sessionId }  = Route.useSearch();
 
   const [messages,     setMessages]     = useState<BuildMessage[]>([]);
+  // A queue, not a single value: the agent can request several writes in
+  // one turn and the backend blocks on each, so dropping all but the last
+  // would strand the others until they time out.
+  const [pendingWrites, setPendingWrites] = useState<PendingWriteAction[]>([]);
   const [files,        setFiles]        = useState<Record<string, string>>({});
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -413,6 +418,7 @@ function WorkspacePage() {
     );
 
     socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string; url?: string; previewUrl?: string; preview_url?: string }) => {
+      setPendingWrites([]);
       if (completedRef.current) {
         const latePreviewUrl = extractPreviewUrl(data);
         if (latePreviewUrl) {
@@ -464,6 +470,36 @@ function WorkspacePage() {
       }
     });
 
+    // ── Write-action approval ────────────────────────────────────────────
+    // The build is BLOCKED while this is pending. Answering is the only thing
+    // that unblocks it; the backend otherwise denies on a 2-minute timeout.
+    socket.on(
+      "build:write_action_approval_required",
+      (d: { toolCallId: string; serverSlug: string; toolName: string; toolInput: unknown; timeoutMs?: number }) => {
+        setPendingWrites(prev =>
+          prev.some(p => p.toolCallId === d.toolCallId)
+            ? prev
+            : [...prev, {
+                toolCallId: d.toolCallId,
+                serverSlug: d.serverSlug,
+                toolName: d.toolName,
+                toolInput: d.toolInput,
+                expiresAt: Date.now() + (d.timeoutMs ?? 120_000),
+              }],
+        );
+      },
+    );
+
+    // Clear on every terminal signal the backend can send for an action, so a
+    // prompt cannot outlive the thing it was asking about: an explicit deny, a
+    // timeout sweep, or the socket dropping and the server denying everything.
+    const clearPending = (d?: { toolCallId?: string }) => {
+      setPendingWrites(prev => (d?.toolCallId ? prev.filter(p => p.toolCallId !== d.toolCallId) : []));
+    };
+    socket.on("build:write_action_denied", clearPending);
+    socket.on("build:write_action_cancelled", clearPending);
+    socket.on("build:write_action_declined", clearPending);
+
     socket.on("build:warning", ({ message, truncated }: { message: string; truncated?: boolean }) => {
       if (truncated) {
         toast.warning("⚠️ Output was too long — click Rebuild to try again", {
@@ -480,6 +516,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
+      setPendingWrites([]);
       setActivityStatus(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
@@ -542,6 +579,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:cancelled", () => {
+      setPendingWrites([]);
       setActivityStatus(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
@@ -984,6 +1022,15 @@ function WorkspacePage() {
                 onStop={handleStopBuild}
                 projectName={projectName}
                 isClarifying={isClarifying}
+                pendingWrites={pendingWrites}
+                onWriteDecision={(toolCallId, approved) => {
+                  // Answering is what unblocks the build — the backend is
+                  // sitting on this call until it hears back or times out.
+                  socketRef.current?.emit("build:write_action_decision", {
+                    toolCallId, sessionId, approved,
+                  });
+                  setPendingWrites(prev => prev.filter(p => p.toolCallId !== toolCallId));
+                }}
               />
               {showHistory && (
                 <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
@@ -1303,6 +1350,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  pendingWrites = [], onWriteDecision,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1311,6 +1359,9 @@ function ChatColumn({
   onStop?: () => void;
   projectName?: string;
   isClarifying?: boolean;
+  /** Destructive tool calls the build is currently blocked on. */
+  pendingWrites?: PendingWriteAction[];
+  onWriteDecision?: (toolCallId: string, approved: boolean) => void;
 }) {
   const [draft, setDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1361,6 +1412,17 @@ function ChatColumn({
           projectName={projectName}
         />
       </div>
+
+      {/* Write-action approval — pinned above the input so it cannot be
+          scrolled past while the build waits on it. */}
+      {pendingWrites.map(action => (
+        <div key={action.toolCallId} className="shrink-0 px-3">
+          <WriteApprovalPrompt
+            action={action}
+            onDecision={(toolCallId, approved) => onWriteDecision?.(toolCallId, approved)}
+          />
+        </div>
+      ))}
 
       {/* Input bar */}
       <div className="shrink-0 p-3">

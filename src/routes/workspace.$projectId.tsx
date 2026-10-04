@@ -312,6 +312,15 @@ function WorkspacePage() {
       setMessages([]);
     });
 
+    // The mid-build equivalent. Refreshing DURING a build restores this tab's
+    // sessionStorage snapshot and then receives the server's Redis event
+    // buffer on join; appending the second to the first showed the agent's
+    // thinking and replies twice. Clear first, exactly as for build:history.
+    socket.on("build:replay_start", () => {
+      completedRef.current = false;
+      setMessages([]);
+    });
+
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
       const t = (data.text ?? data.prompt ?? "").trim();
       if (!t) return;

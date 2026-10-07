@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
 export interface BuildMessage {
@@ -21,9 +21,14 @@ interface ChatPanelProps {
   currentAgent?: string
   className?: string
   projectName?: string
+  /** Rendered after the last message, inside the scroll area. A slot rather
+   *  than a typed prop so the panel stays a dumb renderer: what currently goes
+   *  here is the completion report, and it belongs at the END of the stream
+   *  because it is a verdict on everything above it. */
+  footer?: ReactNode
 }
 
-export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName }: ChatPanelProps) {
+export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName, footer }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -90,6 +95,8 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
             ))}
           </div>
         )}
+
+        {footer}
 
         <div ref={bottomRef} />
       </div>

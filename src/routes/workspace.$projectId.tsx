@@ -315,10 +315,17 @@ function WorkspacePage() {
     // The mid-build equivalent. Refreshing DURING a build restores this tab's
     // sessionStorage snapshot and then receives the server's Redis event
     // buffer on join; appending the second to the first showed the agent's
-    // thinking and replies twice. Clear first, exactly as for build:history.
+    // thinking and replies twice.
+    //
+    // But it keeps the USER's own messages, and that distinction is the whole
+    // fix: clearing everything here made the typed prompt vanish from the chat
+    // on a normal build. The buffer only ever holds what the SERVER emitted,
+    // and the prompt bubble is added locally when the person hits send — so
+    // nothing in the replay puts it back. build:history is different: that
+    // path re-emits build:prompt from stored history, so it can clear freely.
     socket.on("build:replay_start", () => {
       completedRef.current = false;
-      setMessages([]);
+      setMessages(prev => prev.filter(m => m.role === "user"));
     });
 
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {

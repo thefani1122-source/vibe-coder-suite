@@ -295,6 +295,28 @@ function WorkspacePage() {
     return () => window.removeEventListener("socket:connection_failed", handler);
   }, []);
 
+  // A dropped link under a running build looks exactly like a dead build: the
+  // screen just stops. Say which it is. "Restored" only fires after a real
+  // loss, because connect also fires on the FIRST connect of every build.
+  useEffect(() => {
+    let wasLost = false;
+    const onLost = () => {
+      wasLost = true;
+      toast.error("Connection lost — reconnecting. Your build is still running.");
+    };
+    const onRestored = () => {
+      if (!wasLost) return;
+      wasLost = false;
+      toast.success("Reconnected — catching up on what you missed.");
+    };
+    window.addEventListener("socket:connection_lost", onLost);
+    window.addEventListener("socket:connection_restored", onRestored);
+    return () => {
+      window.removeEventListener("socket:connection_lost", onLost);
+      window.removeEventListener("socket:connection_restored", onRestored);
+    };
+  }, []);
+
   // F5: Stop the AI stream and emit cancel-build to the backend.
   const handleStopBuild = useCallback(() => {
     const socket = socketRef.current;

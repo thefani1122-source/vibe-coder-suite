@@ -68,7 +68,15 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
     query: { sessionId: sessionId ?? "" },
     transports: ["websocket", "polling"],
     reconnection: true,
-    reconnectionAttempts: 5,
+    // Retry forever, like the global socket above. This used to be 5, which
+    // with the backoff below is about SEVENTEEN SECONDS of trying before
+    // socket.io gives up permanently — and a build runs for minutes. Measured
+    // 2026-10-09: a build's socket closed 72 s in, never came back, and the
+    // user watched a frozen screen while the build ran to success on the
+    // server. The backend already replays the buffered events on rejoin
+    // (replayBuffer / settleFinishedSession), so the only thing missing was a
+    // reconnect for it to fire on.
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     withCredentials: true,
@@ -87,6 +95,20 @@ export function createBuildSocket(sessionId: string | undefined): Socket {
       // Server forcefully disconnected — likely an auth/session issue.
       console.warn("[Socket] Server disconnected:", reason);
     }
+    // "io client disconnect" is our own cleanup and means nothing is wrong.
+    // Anything else is the link dropping UNDER a build that is still running
+    // server-side, and the screen simply stops updating — which reads exactly
+    // like the build died. Say so instead of going quiet.
+    if (reason !== "io client disconnect") {
+      window.dispatchEvent(new CustomEvent("socket:connection_lost", { detail: { reason } }));
+    }
+  });
+
+  // Fires on a reconnect too, not just the first connect, so it is what tells
+  // the user the stream is live again. The rejoin that follows is what makes
+  // the backend replay whatever was missed.
+  socket.on("connect", () => {
+    window.dispatchEvent(new CustomEvent("socket:connection_restored"));
   });
 
   // Resolve the token, attach it, then connect.

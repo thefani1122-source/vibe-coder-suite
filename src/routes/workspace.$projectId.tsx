@@ -8,7 +8,6 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
-import { CompletionReport, type CompletionAuditPayload } from "@/components/CompletionReport";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
@@ -220,10 +219,6 @@ function WorkspacePage() {
   // would strand the others until they time out.
   const [pendingWrites, setPendingWrites] = useState<PendingWriteAction[]>([]);
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
-  // The outside check on this build. One per build, replaced rather than
-  // accumulated: a follow-up edit audits the edit, and showing the previous
-  // build's verdict next to it would state something no longer measured.
-  const [completionAudit, setCompletionAudit] = useState<CompletionAuditPayload | null>(null);
   const [files,        setFiles]        = useState<Record<string, string>>({});
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -352,7 +347,6 @@ function WorkspacePage() {
     // path re-emits build:prompt from stored history, so it can clear freely.
     socket.on("build:replay_start", () => {
       completedRef.current = false;
-      setCompletionAudit(null);
       setMessages(prev => prev.filter(m => m.role === "user"));
     });
 
@@ -554,12 +548,6 @@ function WorkspacePage() {
         );
       },
     );
-
-    // The verdict on whether the build did what was asked — arrives once, near
-    // the end, from a pass that did not write any of the code it is judging.
-    socket.on("build:completion_audit", (d: { audit?: CompletionAuditPayload }) => {
-      if (d.audit && Array.isArray(d.audit.criteria)) setCompletionAudit(d.audit);
-    });
 
     // Clear on every terminal signal the backend can send for an action, so a
     // prompt cannot outlive the thing it was asking about: an explicit deny, a
@@ -918,11 +906,6 @@ function WorkspacePage() {
 
     const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
-    // The previous build's verdict does not describe this one. Leaving it up
-    // while a new build runs would show a green "all verified" over work that
-    // has not been checked yet — the precise claim this feature removes.
-    setCompletionAudit(null);
-
     setMessages(prev => [
       ...closeStreaming(prev),
       newMsg({ type: "text", text: prompt, role: "user" }),
@@ -1110,7 +1093,6 @@ function WorkspacePage() {
                   setPendingWrites(prev => prev.filter(p => p.toolCallId !== toolCallId));
                 }}
                 pendingQuestions={pendingQuestions}
-                completionAudit={completionAudit}
                 onAnswer={(toolCallId, answer) => {
                   socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
                   setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
@@ -1434,7 +1416,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
-  pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer, completionAudit = null,
+  pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
 }: {
   messages: BuildMessage[];
   isBuilding: boolean;
@@ -1448,7 +1430,6 @@ function ChatColumn({
   onWriteDecision?: (toolCallId: string, approved: boolean) => void;
   /** Questions the build is currently paused on. */
   pendingQuestions?: PendingQuestion[];
-  completionAudit?: CompletionAuditPayload | null;
   onAnswer?: (toolCallId: string, answer: string) => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -1498,7 +1479,6 @@ function ChatColumn({
           currentAgent={currentAgent}
           className="h-full !bg-transparent"
           projectName={projectName}
-          footer={completionAudit ? <CompletionReport audit={completionAudit} /> : null}
         />
       </div>
 

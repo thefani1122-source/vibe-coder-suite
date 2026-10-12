@@ -6,6 +6,9 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
+import { BuildReceipt } from "@/components/BuildReceipt";
+import { useBuildReceipt } from "@/hooks/use-build-receipt";
+import type { BuildReceiptOutcome } from "@/lib/build-receipt";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
 import { FileTree } from "@/components/FileTree";
@@ -223,6 +226,13 @@ function WorkspacePage() {
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
+  const [followUpReceipt, setFollowUpReceipt] = useState<{ routeSessionId?: string; active?: string } | null>(null);
+  // A route change must not show the prior session's receipt for even one
+  // render while effects settle. Follow-up builds can have a new ID without
+  // changing the route's search parameter.
+  const receiptSessionId = followUpReceipt && followUpReceipt.routeSessionId === sessionId
+    ? followUpReceipt.active : sessionId;
+  const receipt = useBuildReceipt(receiptSessionId, buildStatus === "running");
   const [currentAgent, setCurrentAgent] = useState<string | undefined>();
   const [activeTab,    setActiveTab]    = useState<ActiveTab>("preview");
   const [device,       setDevice]       = useState<Device>("desktop");
@@ -684,6 +694,7 @@ function WorkspacePage() {
   useEffect(() => {
     completedRef.current = false;
     currentSessionIdRef.current = sessionId;
+    setFollowUpReceipt(null);
 
     let hadCache = false;
     if (sessionId) {
@@ -911,6 +922,7 @@ function WorkspacePage() {
       newMsg({ type: "text", text: prompt, role: "user" }),
     ]);
     setBuildStatus("running");
+    setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });
     setCurrentAgent(undefined);
     completedRef.current = false;
     filesRef.current = {};
@@ -938,13 +950,14 @@ function WorkspacePage() {
     }
 
     currentSessionIdRef.current = newSessionId;
+    setFollowUpReceipt({ routeSessionId: sessionId, active: newSessionId });
 
     // Connect socket to receive build events from fast path
     socketRef.current?.disconnect();
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers]);
+  }, [projectId, registerHandlers, sessionId]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -1076,6 +1089,8 @@ function WorkspacePage() {
           >
             <div className="relative h-full border-r border-white/[0.06] bg-[#0d0d12]">
               <ChatColumn
+                receipt={receipt}
+                receiptSessionId={receiptSessionId}
                 messages={messages}
                 isBuilding={isBuilding}
                 currentAgent={currentAgent}
@@ -1415,9 +1430,12 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
+  receipt, receiptSessionId,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
 }: {
+  receipt?: BuildReceiptOutcome | null;
+  receiptSessionId?: string;
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
@@ -1433,6 +1451,10 @@ function ChatColumn({
   onAnswer?: (toolCallId: string, answer: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const receiptFooter = useMemo(
+    () => <BuildReceipt key={receiptSessionId} outcome={receipt} />,
+    [receipt, receiptSessionId],
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   void currentAgent;
 
@@ -1479,6 +1501,7 @@ function ChatColumn({
           currentAgent={currentAgent}
           className="h-full !bg-transparent"
           projectName={projectName}
+          footer={receiptFooter}
         />
       </div>
 

@@ -39,7 +39,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
     if (isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages])
+  }, [messages, footer])
 
   const handleScroll = () => {
     if (!containerRef.current) return

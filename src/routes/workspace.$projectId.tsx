@@ -9,6 +9,7 @@ import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
 import type { BuildReceiptOutcome } from "@/lib/build-receipt";
+import { describeToolActivity, splitReasoningParagraphs } from "@/lib/build-activity";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
 import { FileTree } from "@/components/FileTree";
@@ -70,6 +71,23 @@ function newMsg(partial: Omit<BuildMessage, "id">): BuildMessage {
 function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   if (!prev.length || !prev[prev.length - 1].streaming) return prev;
   return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
+}
+
+function appendReasoning(prev: BuildMessage[], chunk: string): BuildMessage[] {
+  const last = prev[prev.length - 1];
+  const wasStreaming = last?.type === "thinking" && last.streaming === true;
+  const source = `${wasStreaming && last ? last.text : ""}${chunk}`;
+  const base = wasStreaming ? prev.slice(0, -1) : closeStreaming(prev);
+  const paragraphs = splitReasoningParagraphs(source);
+  const nextMessages = paragraphs.map((text, index) => {
+    const partial = {
+      type: "thinking" as const,
+      text,
+      streaming: index === paragraphs.length - 1,
+    };
+    return wasStreaming && last && index === 0 ? { ...last, ...partial } : newMsg(partial);
+  });
+  return [...base, ...nextMessages];
 }
 
 // Pipeline status messages emitted by the backend — never real AI thinking.
@@ -395,17 +413,9 @@ function WorkspacePage() {
         || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
       if (isPipelineStatus) return;
 
-      // Stream into one collapsible card rather than a bubble per chunk —
-      // ThinkingCard expands while streaming and collapses itself when done.
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.type === "thinking" && last.streaming) {
-          return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, text: m.text + chunk } : m,
-          );
-        }
-        return [...prev, newMsg({ type: "thinking", text: chunk, streaming: true })];
-      });
+      // Keep the active paragraph streaming, but give each blank-line paragraph
+      // its own bounded card so long builds stay readable as they arrive.
+      setMessages((prev) => appendReasoning(prev, chunk));
     });
 
     socket.on("build:token", (data: { text?: string; token?: string }) => {
@@ -414,34 +424,44 @@ function WorkspacePage() {
       // Same rule as build:thinking above — nothing lands in the chat after the
       // build has reported complete.
       if (completedRef.current) return;
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.type === "thinking" && last.streaming) {
-          return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, text: m.text + text } : m,
-          );
-        }
-        return [...prev, newMsg({ type: "thinking", text, streaming: true })];
-      });
+      setMessages((prev) => appendReasoning(prev, text));
       setCurrentAgent(a => a ?? "planning");
     });
 
-    socket.on("build:tool_call", (data: { tool?: string; name?: string }) => {
-      const tool = data.tool ?? data.name ?? "tool";
-      setCurrentAgent(toolToAgent(tool));
-      setMessages(prev => [
+    socket.on("build:tool_call", (data: { tool?: string; name?: string; args?: string }) => {
+      const tool = data.tool ?? data.name;
+      const activity = describeToolActivity(tool, data.args);
+      if (tool) setCurrentAgent(toolToAgent(tool));
+      setMessages((prev) => [
         ...closeStreaming(prev),
-        newMsg({ type: "tool_call", text: tool, tool, done: false }),
+        newMsg({
+          type: "tool_call",
+          text: activity.label,
+          tool: activity.tool,
+          activityStatus: "running",
+          details: activity.details,
+        }),
       ]);
     });
 
-    socket.on("build:tool_result", () => {
-      setMessages(prev => {
-        const ri = [...prev].reverse().findIndex(m => m.type === "tool_call" && !m.done);
+    socket.on("build:tool_result", (data: { tool?: string; result?: string }) => {
+      if (data.result !== "success" && data.result !== "error") return;
+      setMessages((prev) => {
+        const ri = [...prev]
+          .reverse()
+          .findIndex(
+            (m) =>
+              m.type === "tool_call" &&
+              m.activityStatus === "running" &&
+              (!data.tool || m.tool === data.tool),
+          );
         if (ri === -1) return prev;
         const idx = prev.length - 1 - ri;
         const updated = [...prev];
-        updated[idx] = { ...updated[idx], done: true };
+        updated[idx] = {
+          ...updated[idx],
+          activityStatus: data.result === "error" ? "failed" : "done",
+        };
         return updated;
       });
     });

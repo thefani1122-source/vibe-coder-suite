@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Check, AlertCircle, XCircle, ChevronDown, ChevronRight } from "lucide-react"
 export interface BuildMessage {
   id: string
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error"
@@ -10,6 +10,8 @@ export interface BuildMessage {
   tool?: string
   path?: string
   done?: boolean
+  activityStatus?: "running" | "done" | "failed"
+  details?: string
   streaming?: boolean
   files?: string[]
   hint?: string
@@ -191,27 +193,66 @@ function MessageRow({
 
     case "tool_call":
     case "tool_result": {
-      const isDone = msg.done === true
-      const label = msg.tool ?? msg.text
+      const status = msg.activityStatus ?? (msg.done ? "done" : "running");
+      const isDone = status === "done";
+      const isFailed = status === "failed";
+      const label = msg.tool ?? msg.text;
       return (
-        <div className={cn(
-          "flex items-center gap-2.5 rounded-lg border px-3 py-2",
-          isDone
-            ? "border-border/40 bg-muted/10"
-            : "border-primary/20 bg-primary/5",
-        )}>
-          {isDone
-            ? <Check className="h-3.5 w-3.5 shrink-0 text-green-400" />
-            : <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-          }
-          <span className={cn(
-            "truncate font-mono text-xs",
-            isDone ? "text-muted-foreground" : "text-foreground/90",
-          )}>
-            {isDone ? label : `${label}...`}
-          </span>
+        <div
+          className={cn(
+            "min-w-0 rounded-lg border px-3 py-2",
+            isFailed
+              ? "border-rose-500/35 bg-rose-500/10"
+              : isDone
+                ? "border-border/40 bg-muted/10"
+                : "border-primary/20 bg-primary/5",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            {isFailed ? (
+              <XCircle aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-rose-400" />
+            ) : isDone ? (
+              <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+            ) : (
+              <Loader2
+                aria-hidden="true"
+                className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
+              />
+            )}
+            <span
+              aria-label={`${label}: ${status}`}
+              className={cn(
+                "min-w-0 flex-1 break-words text-xs leading-relaxed",
+                isFailed
+                  ? "font-medium text-rose-300"
+                  : isDone
+                    ? "text-muted-foreground"
+                    : "text-foreground/90",
+              )}
+            >
+              {label}
+            </span>
+            <span
+              className={cn(
+                "shrink-0 text-[10px] font-medium uppercase tracking-wide",
+                isFailed ? "text-rose-300" : isDone ? "text-muted-foreground" : "text-primary",
+              )}
+            >
+              {isFailed ? "Failed" : isDone ? "Done" : "Running"}
+            </span>
+          </div>
+          {msg.details && (
+            <details className="mt-2 border-t border-border/40 pt-2 text-xs">
+              <summary className="w-fit cursor-pointer text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Show details
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+                {msg.details}
+              </pre>
+            </details>
+          )}
         </div>
-      )
+      );
     }
 
     case "file_write":

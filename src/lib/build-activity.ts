@@ -104,15 +104,61 @@ export function describeToolActivity(toolName?: string, rawArgs?: string): ToolA
     case "request_write_action":
       label = "Asking your permission";
       break;
+    case "ask_user":
+      label = "Asking you a question";
+      break;
     default:
       label = readableUnknownName(name);
   }
 
+  const details = describeToolDetails(name, args);
+
   return {
     label,
     ...(name ? { tool: name } : {}),
-    ...(rawArgs ? { details: rawArgs } : {}),
+    ...(details ? { details } : {}),
   };
+}
+
+/**
+ * What "Show details" is allowed to say.
+ *
+ * This used to be `rawArgs` — the tool call's arguments, as JSON, verbatim. For
+ * `ask_user` that meant the whole question payload, which is what the user saw
+ * in production on 2026-10-14: an "Asking you a question" row whose details
+ * were `{"question":"What type of B2B SaaS…","options":[{"label":…`. For
+ * `write_files` it was worse and nobody had looked: the arguments to that call
+ * ARE the file contents, so every generated file was being pasted into the
+ * transcript as an escaped JSON string.
+ *
+ * So nothing is shown by default. A tool opts in only where there is something
+ * a non-coder would actually want, and it is written as prose. The raw
+ * arguments are developer output; they belong in the server log, which has
+ * them.
+ */
+function describeToolDetails(name: string, args?: Record<string, unknown>): string | undefined {
+  if (!args) return undefined;
+
+  switch (name) {
+    case "write_files": {
+      // The one case worth showing: WHICH files, never their contents.
+      const files = args["files"];
+      const paths = Array.isArray(files)
+        ? files.map((f) => (f && typeof f === "object" ? (f as Record<string, unknown>)["path"] : f))
+        : files && typeof files === "object"
+          ? Object.keys(files)
+          : [];
+      const named = paths.filter((p): p is string => typeof p === "string" && p.trim().length > 0);
+      return named.length > 0 ? named.map((p) => p.trim()).join("\n") : undefined;
+    }
+    case "fetch_reference": {
+      const url = args["url"];
+      return typeof url === "string" && url.trim() ? url.trim() : undefined;
+    }
+    default:
+      // Every other tool's label already carries everything it has to say.
+      return undefined;
+  }
 }
 
 const MAX_REASONING_PARAGRAPH_CHARS = 1_400;

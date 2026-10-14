@@ -60,10 +60,10 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
       role="dialog"
       aria-live="polite"
       aria-label="The builder has a question"
-      className="mb-2 rounded-2xl border border-sky-500/35 bg-sky-500/[0.06] p-4 shadow-xl shadow-black/30 backdrop-blur-xl"
+      className="mb-2 rounded-2xl border border-amber-500/35 bg-amber-500/[0.06] p-4 shadow-xl shadow-black/30 backdrop-blur-xl"
     >
       <div className="flex items-start gap-3">
-        <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
+        <HelpCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-white">{question.question}</p>
           <p className="mt-0.5 text-xs text-white/50">
@@ -82,14 +82,14 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
                   disabled={answered || expired}
                   className={`w-full rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                     opt.recommended
-                      ? "border-sky-400/50 bg-sky-400/10 hover:bg-sky-400/15"
+                      ? "border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/15"
                       : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
                   }`}
                 >
                   <span className="flex items-center gap-2">
                     <span className="text-sm font-medium text-white">{opt.label}</span>
                     {opt.recommended && (
-                      <span className="rounded-full bg-sky-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-300">
+                      <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
                         Recommended
                       </span>
                     )}
@@ -120,13 +120,13 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
               placeholder={
                 question.options.length > 0 ? "Or answer in your own words…" : "Type your answer…"
               }
-              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-sky-400/50 focus:outline-none disabled:opacity-40"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-amber-400/50 focus:outline-none disabled:opacity-40"
             />
             <button
               type="button"
               onClick={() => send(draft)}
               disabled={answered || expired || draft.trim().length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/90 px-3 py-2 text-sm font-medium text-black transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-2 text-sm font-medium text-black transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Send className="h-4 w-4" />
               Send

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, XCircle, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Check, AlertCircle, XCircle } from "lucide-react"
 export interface BuildMessage {
   id: string
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error"
@@ -106,53 +106,45 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
   )
 }
 
-// Thinking card — auto-expands while streaming, auto-collapses when done unless user toggled it.
-function ThinkingCard({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
-  const [expanded, setExpanded] = useState(() => msg.streaming !== false)
-  const [userToggled, setUserToggled] = useState(false)
+/**
+ * One paragraph of the builder's reasoning, as flowing text.
+ *
+ * This was a card: a violet-tinted box with a 💡, an uppercase THOUGHTS
+ * header, a chevron, and the text clamped inside a 200px scroll pane. Two
+ * things were wrong with it, and the second only appeared after the first
+ * attempt at a fix.
+ *
+ * The box itself was the complaint — reasoning arrived all at once inside a
+ * container the user could not comfortably read, which is the opposite of
+ * watching someone think. Then the stream was split into one message per
+ * paragraph to make it readable, and because each message rendered its own
+ * card, a long stretch of reasoning became a STACK of violet boxes, each with
+ * its own header and its own scrollbar. Strictly worse than the one box.
+ *
+ * So the chrome goes. Thinking is dim italic prose in the transcript, with
+ * nothing around it, the way a terminal shows it — the split now does what it
+ * was meant to do, because consecutive paragraphs simply read as paragraphs.
+ * No clamp either: the transcript already scrolls, and a scroll pane inside a
+ * scrolling transcript is what hid the text in the first place.
+ */
+function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
   const showCursor = isLast && msg.streaming === true
-
-  useEffect(() => {
-    if (userToggled) return
-    setExpanded(msg.streaming === true)
-  }, [msg.streaming, userToggled])
-
   const text = msg.text?.trim() ?? ""
   if (!text) return null
 
+  // The transcript puts gap-3 between every message, which is right between a
+  // thought and a tool row and too loose between two paragraphs of the SAME
+  // thought — at that distance one train of reasoning reads as several
+  // unrelated remarks. A thought that directly follows another closes up to
+  // ordinary paragraph spacing; the first one after anything else keeps the
+  // full gap.
   return (
-    <div className="rounded-xl border border-violet-500/[0.18] bg-violet-500/[0.04] overflow-hidden">
-      {/* Header — always visible, click to toggle */}
-      <button
-        type="button"
-        onClick={() => { setUserToggled(true); setExpanded(e => !e) }}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-violet-500/[0.06]"
-      >
-        <span className="shrink-0 text-sm leading-none">💡</span>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-violet-300/70">
-          {msg.streaming ? "Thinking" : "Thoughts"}
-        </span>
-        {msg.streaming && !expanded && (
-          <span className="relative ml-1 flex h-1.5 w-1.5 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-60" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-400" />
-          </span>
-        )}
-        {expanded
-          ? <ChevronDown className="ml-auto h-3 w-3 shrink-0 text-white/30" />
-          : <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-white/30" />
-        }
-      </button>
-
-      {/* Body — shown only when expanded, scrollable within 200px */}
-      {expanded && (
-        <div className="max-h-[200px] overflow-y-auto border-t border-violet-500/[0.12] px-3 py-2.5 scrollbar-thin scrollbar-thumb-white/10">
-          <p className="whitespace-pre-wrap break-words text-xs italic leading-relaxed text-white/50">
-            {text}{showCursor && <BlinkCursor />}
-          </p>
-        </div>
-      )}
-    </div>
+    <p
+      data-thought=""
+      className="whitespace-pre-wrap break-words px-1 text-xs italic leading-relaxed text-white/45 [p[data-thought]+&]:-mt-1"
+    >
+      {text}{showCursor && <BlinkCursor />}
+    </p>
   )
 }
 
@@ -167,7 +159,7 @@ function MessageRow({
 
   switch (msg.type) {
     case "thinking":
-      return <ThinkingCard msg={msg} isLast={isLast} />
+      return <ThoughtParagraph msg={msg} isLast={isLast} />
 
     case "text": {
       if (msg.role === "user") {

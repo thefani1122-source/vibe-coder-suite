@@ -196,7 +196,13 @@ function MessageRow({
       const status = msg.activityStatus ?? (msg.done ? "done" : "running");
       const isDone = status === "done";
       const isFailed = status === "failed";
-      const label = msg.tool ?? msg.text;
+      // `text` is the human label from describeToolActivity ("Writing 4 files");
+      // `tool` is the raw identifier, kept only so build:tool_result can match
+      // this row to the call that produced it. Preferring `tool` here — which is
+      // what this line used to do — put `check_page` and `write_files` back in
+      // front of the user and silently defeated the whole label map. The raw
+      // name is the last resort, never the first choice.
+      const label = msg.text?.trim() || msg.tool || "Working on a step";
       return (
         <div
           className={cn(

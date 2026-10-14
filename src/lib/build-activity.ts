@@ -48,7 +48,17 @@ export function describeToolActivity(toolName?: string, rawArgs?: string): ToolA
         : files && typeof files === "object"
           ? Object.keys(files).length
           : undefined;
-      label = count === undefined ? "Writing the files" : `Writing ${count} files`;
+      // Singular matters: a one-file write is the most common shape of all on an
+      // edit, so "Writing 1 files" would be the line the user sees most often.
+      // Third time this slip has been caught in this product — the completion
+      // audit's "One thing things I've left" and the Contract's "1 more
+      // requirements" were the other two.
+      label =
+        count === undefined
+          ? "Writing the files"
+          : count === 1
+            ? "Writing 1 file"
+            : `Writing ${count} files`;
       break;
     }
     case "edit_file":

@@ -18,6 +18,13 @@ export interface AgentQuestionOption {
   label: string;
   description?: string;
   recommended?: boolean;
+  /** Some answers are not words — "connect your Supabase" is a thing to DO, and
+   *  sending the string "Connect Supabase" back to a build that is waiting for
+   *  a database would be a lie. An option carrying an action runs it instead of
+   *  answering, and the answer is sent once the action actually succeeds.
+   *  Unknown actions fall through to the normal answer, so a newer backend
+   *  cannot break an older page. */
+  action?: string;
 }
 
 export interface PendingQuestion {
@@ -31,9 +38,16 @@ export interface PendingQuestion {
 interface Props {
   question: PendingQuestion;
   onAnswer: (toolCallId: string, answer: string) => void;
+  /** Runs an option's action. Returns false when it is not one this page
+   *  knows, which falls back to answering with the label — an unrecognised
+   *  action must never leave the button doing nothing at all. */
+  onAction?: (action: string, toolCallId: string) => boolean;
+  /** Set while an action is running, so the prompt can say what it is waiting
+   *  for instead of looking frozen. */
+  actionPending?: boolean;
 }
 
-export function QuestionPrompt({ question, onAnswer }: Props) {
+export function QuestionPrompt({ question, onAnswer, onAction, actionPending }: Props) {
   const [draft, setDraft] = useState("");
   const [answered, setAnswered] = useState(false);
   const [minutesLeft, setMinutesLeft] = useState(() =>
@@ -55,6 +69,15 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
     onAnswer(question.toolCallId, text);
   };
 
+  /** An option with an action DOES the thing; answering is what the action
+   *  reports when it has actually worked. Falling back to `send` keeps an
+   *  unknown action from producing a dead button. */
+  const choose = (opt: AgentQuestionOption) => {
+    if (answered || expired) return;
+    if (opt.action && onAction?.(opt.action, question.toolCallId)) return;
+    send(opt.label);
+  };
+
   return (
     <div
       role="dialog"
@@ -69,7 +92,9 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
           <p className="mt-0.5 text-xs text-white/50">
             {expired
               ? "Taking too long — the builder has carried on with its own choice."
-              : `The build is paused until you answer. About ${minutesLeft} min before it decides for you.`}
+              : actionPending
+                ? "Waiting for you to finish connecting in the other tab — this carries on by itself once you do."
+                : `The build is paused until you answer. About ${minutesLeft} min before it decides for you.`}
           </p>
 
           {question.options.length > 0 && (
@@ -78,8 +103,8 @@ export function QuestionPrompt({ question, onAnswer }: Props) {
                 <button
                   key={opt.label}
                   type="button"
-                  onClick={() => send(opt.label)}
-                  disabled={answered || expired}
+                  onClick={() => choose(opt)}
+                  disabled={answered || expired || actionPending === true}
                   className={`w-full rounded-xl border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                     opt.recommended
                       ? "border-amber-400/50 bg-amber-400/10 hover:bg-amber-400/15"

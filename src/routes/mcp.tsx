@@ -541,6 +541,21 @@ function McpPage() {
   // Registry MCP connection state
   const [connectedSlugs, setConnectedSlugs] = useState<Set<string>>(new Set());
   const [connectTarget, setConnectTarget]   = useState<McpDef | null>(null);
+
+  // `?connect=<provider>` opens that service's form on arrival.
+  //
+  // This page is reached from a paused build: the builder asked for a database
+  // and the person pressed a button that opened this tab. Landing them on a
+  // grid of thirty services and expecting them to find Supabase in it is how
+  // a one-minute task becomes an abandoned one. Runs once, and strips the
+  // parameter so a refresh does not reopen a dialog they closed on purpose.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("connect");
+    if (!wanted) return;
+    const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
+    if (def) setConnectTarget(def);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
   const [disconnectTarget, setDisconnectTarget] = useState<McpDef | null>(null);
   const [disconnectBusy,   setDisconnectBusy]   = useState(false);
 

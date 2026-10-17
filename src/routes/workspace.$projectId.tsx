@@ -240,6 +240,10 @@ function WorkspacePage() {
   // would strand the others until they time out.
   const [pendingWrites, setPendingWrites] = useState<PendingWriteAction[]>([]);
   const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
+  /** The question whose "Connect Supabase" button was pressed. While this is
+   *  set the page watches for the integration to appear and answers on the
+   *  person's behalf, so they never have to come back and click again. */
+  const [awaitingConnect, setAwaitingConnect] = useState<string | null>(null);
   const [files,        setFiles]        = useState<Record<string, string>>({});
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -917,6 +921,62 @@ function WorkspacePage() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [buildStatus]);
 
+  // Watch for the Supabase connection the person went off to make.
+  //
+  // The build is blocked on a question that only this session can answer, and
+  // the connecting happens in another tab, so nothing would bring them back
+  // here except remembering to. Polling is the honest tool for that: there is
+  // no event from the other tab to listen for, and the window is bounded by
+  // the question's own expiry, so this cannot run forever.
+  //
+  // A failed poll is never treated as an answer. Only seeing the integration
+  // actually connected ends the wait — and the backend re-reads it anyway, so
+  // a wrong guess here would change nothing except the wording.
+  useEffect(() => {
+    if (!awaitingConnect) return;
+    let cancelled = false;
+
+    const check = async () => {
+      try {
+        const res = await apiGet<{ integrations?: Array<{ provider?: string; status?: string }> }>(
+          "/api/integrations",
+          { silent: true },
+        );
+        if (cancelled) return;
+        const connected = (res?.integrations ?? []).some(
+          (i) => i.provider === "supabase" && i.status === "connected",
+        );
+        if (!connected) return;
+        socketRef.current?.emit("build:answer", {
+          toolCallId: awaitingConnect,
+          sessionId,
+          answer: "Connected Supabase",
+        });
+        setPendingQuestions(prev => prev.filter(q => q.toolCallId !== awaitingConnect));
+        setAwaitingConnect(null);
+      } catch {
+        // Offline, or the request lost a race with a reconnect. Try again.
+      }
+    };
+
+    void check();
+    const id = window.setInterval(() => void check(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [awaitingConnect, sessionId]);
+
+  // One place to stop watching, covering every way a question can end — an
+  // answer, a timeout sweep, a failed build, the socket dropping. Each of
+  // those already clears pendingQuestions, so deriving from it means a new
+  // ending cannot leave this poll running behind it.
+  useEffect(() => {
+    if (awaitingConnect && !pendingQuestions.some(q => q.toolCallId === awaitingConnect)) {
+      setAwaitingConnect(null);
+    }
+  }, [awaitingConnect, pendingQuestions]);
+
   // Actual build dispatch — accepts enriched prompt + question/answer context.
   const executeBuild = useCallback(async (
     prompt: string,
@@ -1131,6 +1191,16 @@ function WorkspacePage() {
                 onAnswer={(toolCallId, answer) => {
                   socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
                   setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
+                }}
+                questionActionPending={awaitingConnect !== null}
+                onQuestionAction={(action, toolCallId) => {
+                  if (action !== "connect-supabase") return false;
+                  // A new tab, not a navigation: leaving this page would drop
+                  // the socket, and the build on the other end is holding a
+                  // question that only this session can answer.
+                  window.open("/mcp?connect=supabase", "_blank", "noopener");
+                  setAwaitingConnect(toolCallId);
+                  return true;
                 }}
               />
               {showHistory && (
@@ -1453,6 +1523,7 @@ function ChatColumn({
   receipt, receiptSessionId,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
+  onQuestionAction, questionActionPending,
 }: {
   receipt?: BuildReceiptOutcome | null;
   receiptSessionId?: string;
@@ -1469,6 +1540,9 @@ function ChatColumn({
   /** Questions the build is currently paused on. */
   pendingQuestions?: PendingQuestion[];
   onAnswer?: (toolCallId: string, answer: string) => void;
+  /** Runs an option's action; false means this page does not know it. */
+  onQuestionAction?: (action: string, toolCallId: string) => boolean;
+  questionActionPending?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const receiptFooter = useMemo(
@@ -1541,6 +1615,8 @@ function ChatColumn({
           <QuestionPrompt
             question={q}
             onAnswer={(toolCallId, answer) => onAnswer?.(toolCallId, answer)}
+            onAction={(action, toolCallId) => onQuestionAction?.(action, toolCallId) ?? false}
+            actionPending={questionActionPending}
           />
         </div>
       ))}

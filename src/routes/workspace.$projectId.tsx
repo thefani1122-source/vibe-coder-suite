@@ -12,6 +12,7 @@ import type { BuildReceiptOutcome } from "@/lib/build-receipt";
 import { describeToolActivity, splitReasoningParagraphs } from "@/lib/build-activity";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
+import { ConnectDatabaseCard } from "@/components/ConnectDatabaseCard";
 import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
@@ -244,6 +245,12 @@ function WorkspacePage() {
    *  set the page watches for the integration to appear and answers on the
    *  person's behalf, so they never have to come back and click again. */
   const [awaitingConnect, setAwaitingConnect] = useState<string | null>(null);
+  /** The database question, if one is open. Singular on purpose — the backend
+   *  asks it at most once per person, so a second would be a bug worth seeing
+   *  rather than a second card to stack. */
+  const connectQuestion = pendingQuestions.find(q =>
+    q.options.some(o => o.action === "connect-supabase"),
+  );
   const [files,        setFiles]        = useState<Record<string, string>>({});
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -1153,6 +1160,26 @@ function WorkspacePage() {
           onToggleHistory={() => setShowHistory(v => !v)}
         />
 
+        {/* Mounted over the whole workspace, not inside the chat panel: the
+            build is stopped until this is answered, so it should not be
+            possible to keep working around it in the editor. */}
+        {connectQuestion && (
+          <ConnectDatabaseCard
+            question={connectQuestion}
+            pending={awaitingConnect !== null}
+            onConnect={(action, toolCallId) => {
+              if (action !== "connect-supabase") return false;
+              window.open("/mcp?connect=supabase", "_blank", "noopener");
+              setAwaitingConnect(toolCallId);
+              return true;
+            }}
+            onAnswer={(toolCallId, answer) => {
+              socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
+              setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
+            }}
+          />
+        )}
+
         <Group
           orientation="horizontal"
           className="flex-1 min-h-0"
@@ -1187,7 +1214,12 @@ function WorkspacePage() {
                   });
                   setPendingWrites(prev => prev.filter(p => p.toolCallId !== toolCallId));
                 }}
-                pendingQuestions={pendingQuestions}
+                /* The connect-database question is lifted out into a centred
+                   card below — it is a task with one button, not a question,
+                   and inline it reads as another status line to scroll past. */
+                pendingQuestions={pendingQuestions.filter(
+                  q => !q.options.some(o => o.action === "connect-supabase"),
+                )}
                 onAnswer={(toolCallId, answer) => {
                   socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
                   setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));

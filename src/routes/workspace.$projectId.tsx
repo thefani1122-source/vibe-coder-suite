@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
+import type { CheckRow } from "@/components/BuildReceipt";
+import type { FileDiff } from "@/components/DiffView";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
 import type { BuildReceiptOutcome } from "@/lib/build-receipt";
@@ -269,7 +271,11 @@ function WorkspacePage() {
   const [projectName,  setProjectName]  = useState<string>("");
   const [chatCollapsed,  setChatCollapsed]  = useState(false);
   const [showHistory,    setShowHistory]    = useState(false);
-  const [, setActivityStatus] = useState<string | null>(null);
+  const [activity, setActivity] = useState<string | null>(null);
+  // Arrives on its own event just before build:complete, and on replay of a
+  // finished session, so it survives a reload rather than only existing in
+  // the moment it was emitted.
+  const [checks, setChecks] = useState<CheckRow[] | null>(null);
   const [isFullstack, setIsFullstack] = useState(false);
   const [codeQuery,   setCodeQuery]   = useState("");
 
@@ -359,7 +365,7 @@ function WorkspacePage() {
     }
     setBuildStatus("complete");
     setCurrentAgent(undefined);
-    setActivityStatus(null);
+    setActivity(null);
     toast("Stopping build…");
   }, []);
 
@@ -411,7 +417,6 @@ function WorkspacePage() {
       setCurrentAgent("planning");
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
-      setActivityStatus(chunk.trim());
 
       // Once the build has reported complete, repair work still runs in the
       // background (typecheck fix, render fix). Those emit thinking too, and
@@ -430,11 +435,17 @@ function WorkspacePage() {
       // sent before that flag existed.
       const isPipelineStatus = data.internal === true
         || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
+      const trimmed = chunk.trim();
+      setActivity(isPipelineStatus && trimmed.length <= 80 ? trimmed : "Thinking");
       if (isPipelineStatus) return;
 
       // Keep the active paragraph streaming, but give each blank-line paragraph
       // its own bounded card so long builds stay readable as they arrive.
       setMessages((prev) => appendReasoning(prev, chunk));
+    });
+
+    socket.on("build:checks", (data: { rows?: CheckRow[] }) => {
+      if (Array.isArray(data.rows)) setChecks(data.rows);
     });
 
     socket.on("build:token", (data: { text?: string; token?: string }) => {
@@ -447,23 +458,36 @@ function WorkspacePage() {
       setCurrentAgent(a => a ?? "planning");
     });
 
-    socket.on("build:tool_call", (data: { tool?: string; name?: string; args?: string }) => {
-      const tool = data.tool ?? data.name;
-      const activity = describeToolActivity(tool, data.args);
-      if (tool) setCurrentAgent(toolToAgent(tool));
-      setMessages((prev) => [
-        ...closeStreaming(prev),
-        newMsg({
-          type: "tool_call",
-          text: activity.label,
-          tool: activity.tool,
-          activityStatus: "running",
-          details: activity.details,
-        }),
-      ]);
-    });
+    socket.on(
+      "build:tool_call",
+      (data: { tool?: string; name?: string; args?: string; label?: string; active?: string }) => {
+        const tool = data.tool ?? data.name;
+        const described = describeToolActivity(tool, data.args);
+        if (tool) setCurrentAgent(toolToAgent(tool));
+        setActivity(data.active?.trim() || described.label);
+        setMessages((prev) => [
+          ...closeStreaming(prev),
+          newMsg({
+            type: "tool_call",
+            text: data.label?.trim() || described.label,
+            tool: described.tool,
+            activityStatus: "running",
+            details: described.details,
+          }),
+        ]);
+      },
+    );
 
-    socket.on("build:tool_result", (data: { tool?: string; result?: string }) => {
+    socket.on(
+      "build:tool_result",
+      (data: {
+        tool?: string;
+        result?: string;
+        label?: string;
+        delta?: string;
+        diffs?: FileDiff[];
+        diffsDropped?: boolean;
+      }) => {
       if (data.result !== "success" && data.result !== "error") return;
       setMessages((prev) => {
         const ri = [...prev]
@@ -480,10 +504,15 @@ function WorkspacePage() {
         updated[idx] = {
           ...updated[idx],
           activityStatus: data.result === "error" ? "failed" : "done",
+          ...(data.label?.trim() ? { text: data.label.trim() } : {}),
+          ...(data.delta ? { delta: data.delta } : {}),
+          ...(data.diffs && data.diffs.length > 0 ? { diffs: data.diffs } : {}),
+          ...(data.diffsDropped ? { diffsDropped: true } : {}),
         };
         return updated;
       });
-    });
+    },
+    );
 
     socket.on("build:file_writing", (_data: { filename?: string; path?: string }) => {
       // Files are tracked in the sidebar only — no chat messages
@@ -521,7 +550,7 @@ function WorkspacePage() {
         return;
       }
       completedRef.current = true;
-      setActivityStatus(null);
+      setActivity(null);
 
       // Merge build:complete files into what file_write events already accumulated.
       const mergedFiles = { ...filesRef.current };
@@ -626,7 +655,7 @@ function WorkspacePage() {
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
       setPendingWrites([]);
       setPendingQuestions([]);
-      setActivityStatus(null);
+      setActivity(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
       setMessages(prev => [
@@ -690,7 +719,7 @@ function WorkspacePage() {
     socket.on("build:cancelled", () => {
       setPendingWrites([]);
       setPendingQuestions([]);
-      setActivityStatus(null);
+      setActivity(null);
       setBuildStatus("error");
       setCurrentAgent(undefined);
       setMessages(prev => [
@@ -733,6 +762,8 @@ function WorkspacePage() {
   useEffect(() => {
     completedRef.current = false;
     currentSessionIdRef.current = sessionId;
+    setChecks(null);
+    setActivity(null);
     setFollowUpReceipt(null);
 
     let hadCache = false;
@@ -1020,6 +1051,7 @@ function WorkspacePage() {
       newMsg({ type: "text", text: prompt, role: "user" }),
     ]);
     setBuildStatus("running");
+    setChecks(null);
     setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });
     setCurrentAgent(undefined);
     completedRef.current = false;
@@ -1209,6 +1241,8 @@ function WorkspacePage() {
               <ChatColumn
                 receipt={receipt}
                 receiptSessionId={receiptSessionId}
+                checks={checks}
+                activity={activity}
                 messages={messages}
                 isBuilding={isBuilding}
                 currentAgent={currentAgent}
@@ -1563,13 +1597,15 @@ function WorkspaceTopBar({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function ChatColumn({
-  receipt, receiptSessionId,
+  receipt, receiptSessionId, checks, activity,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
   receipt?: BuildReceiptOutcome | null;
   receiptSessionId?: string;
+  checks?: CheckRow[] | null;
+  activity?: string | null;
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
@@ -1589,8 +1625,8 @@ function ChatColumn({
 }) {
   const [draft, setDraft] = useState("");
   const receiptFooter = useMemo(
-    () => <BuildReceipt key={receiptSessionId} outcome={receipt} />,
-    [receipt, receiptSessionId],
+    () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
+    [receipt, receiptSessionId, checks],
   );
   const fileRef = useRef<HTMLInputElement>(null);
   void currentAgent;
@@ -1635,6 +1671,7 @@ function ChatColumn({
         <ChatPanel
           messages={messages}
           isBuilding={isBuilding}
+          activity={activity}
           currentAgent={currentAgent}
           className="h-full !bg-transparent"
           projectName={projectName}

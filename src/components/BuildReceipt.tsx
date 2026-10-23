@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleHelp, XCircle } from "lucide-react";
+import { CheckCircle2, CircleHelp, XCircle, AlertTriangle, Minus } from "lucide-react";
 import { receiptRequirements, type BuildReceiptOutcome } from "@/lib/build-receipt";
 
 const states = {
@@ -7,16 +7,76 @@ const states = {
   unverified: { label: "Not confirmed", Icon: CircleHelp, color: "text-muted-foreground" },
 };
 
+/** One plain-language check the build ran on its own work. Mirrors CheckRow in
+ *  the backend's src/verify/checks-card.ts. */
+export interface CheckRow {
+  id: string;
+  label: string;
+  status: "pass" | "fail" | "warn" | "skip";
+  detail?: string;
+}
+
+const checkStates = {
+  pass: { Icon: CheckCircle2, color: "text-emerald-400" },
+  fail: { Icon: XCircle, color: "text-rose-400" },
+  warn: { Icon: AlertTriangle, color: "text-amber-400" },
+  // A check that did not run gets a dash, never a tick. The whole value of
+  // this card is that a mark on it means something was actually established.
+  skip: { Icon: Minus, color: "text-muted-foreground" },
+};
+
+/**
+ * What the build checked before handing the app over.
+ *
+ * Deliberately only the gates. Requirements and repaired controls are reported
+ * lower down in this same card already, and saying either twice in two
+ * different vocabularies is how the old version of this became unreadable.
+ */
+function Checks({ rows }: { rows: CheckRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mb-4 border-b border-border pb-4">
+      <h4 className="text-xs font-medium text-muted-foreground">
+        What I checked before showing you this
+      </h4>
+      <ul className="mt-2.5 space-y-1.5">
+        {rows.map((row) => {
+          const { Icon, color } = checkStates[row.status];
+          return (
+            <li key={row.id} className="flex items-start gap-2">
+              <Icon aria-hidden="true" className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${color}`} />
+              <span className="min-w-0 flex-1 text-xs leading-relaxed text-foreground">
+                {row.label}
+                {row.detail && <span className="text-muted-foreground"> — {row.detail}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** Only the user's requirement text is shown by default; technical details
  * are opt-in. An absent audit is not an empty or successful receipt. */
-export function BuildReceipt({ outcome }: { outcome?: BuildReceiptOutcome | null }) {
+export function BuildReceipt({
+  outcome,
+  checks,
+}: {
+  outcome?: BuildReceiptOutcome | null;
+  checks?: CheckRow[] | null;
+}) {
   const audit = outcome?.completionAudit;
-  if (!audit) return null;
-  const requirements = receiptRequirements(audit);
+  const rows = checks ?? [];
+  // The gates are worth showing on their own: a build with no audit still
+  // checked that the app opens and compiles, and that is the part a person
+  // most wants to see.
+  if (!audit && rows.length === 0) return null;
+  const requirements = audit ? receiptRequirements(audit) : [];
   const confirmed = requirements.filter((r) => r.status === "proven").length;
   const unconfirmed = requirements.filter((r) => r.status === "unverified").length;
   const needsWork = requirements.filter((r) => r.status === "contradicted").length;
-  const dropped = audit.criteriaDropped ?? 0;
+  const dropped = audit?.criteriaDropped ?? 0;
   const repaired = outcome?.wiring?.repaired ?? 0;
   const remaining = outcome?.wiring?.total ?? 0;
 
@@ -26,17 +86,20 @@ export function BuildReceipt({ outcome }: { outcome?: BuildReceiptOutcome | null
       className="min-w-0 rounded-xl border border-border bg-card/60 p-4"
     >
       <h3 className="text-sm font-semibold text-foreground">Your build receipt</h3>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        {confirmed} confirmed · {unconfirmed} not confirmed · {needsWork}{" "}
-        {needsWork === 1 ? "needs work" : "need work"}
-      </p>
+      {audit && (
+        <p className="mb-4 mt-1 text-xs leading-relaxed text-muted-foreground">
+          {confirmed} confirmed · {unconfirmed} not confirmed · {needsWork}{" "}
+          {needsWork === 1 ? "needs work" : "need work"}
+        </p>
+      )}
+      <Checks rows={rows} />
       {dropped > 0 && (
         <p className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs leading-relaxed text-foreground">
           {dropped} {dropped === 1 ? "additional requirement was" : "additional requirements were"}{" "}
           not assessed and {dropped === 1 ? "is" : "are"} not included in these counts.
         </p>
       )}
-      {requirements.length === 0 ? (
+      {!audit ? null : requirements.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">No requirements were assessed.</p>
       ) : (
         <ul className="mt-4 divide-y divide-border">

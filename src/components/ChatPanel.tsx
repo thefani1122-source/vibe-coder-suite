@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, XCircle } from "lucide-react"
+import { Loader2, Check, AlertCircle, XCircle, ChevronRight } from "lucide-react"
+import { DiffView, type FileDiff } from "./DiffView"
+import {
+  groupRows,
+  ReasoningGroup,
+  ArchivedGroup,
+  ActivityLine,
+  SummaryText,
+} from "./BuildTimeline"
 export interface BuildMessage {
   id: string
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error"
@@ -19,11 +27,22 @@ export interface BuildMessage {
    *  starts, so a replay for the NEW session cannot clear it, and so a
    *  finished build can be folded away instead of deleted. */
   archived?: boolean
+  /** "+12 −3" for a step that changed files. */
+  delta?: string
+  /** What the step actually changed, computed by the backend from the files
+   *  before and after it ran. */
+  diffs?: FileDiff[]
+  /** Diffs existed but were too large to keep; the counts are still right. */
+  diffsDropped?: boolean
 }
 
 interface ChatPanelProps {
   messages: BuildMessage[]
   isBuilding: boolean
+  /** The one thing happening right now, in present tense ("Editing
+   *  src/App.tsx"). Replaces three bouncing dots that said only that
+   *  something, somewhere, was happening. */
+  activity?: string | null
   currentAgent?: string
   className?: string
   projectName?: string
@@ -34,7 +53,7 @@ interface ChatPanelProps {
   footer?: ReactNode
 }
 
-export function ChatPanel({ messages, isBuilding, currentAgent, className, projectName, footer }: ChatPanelProps) {
+export function ChatPanel({ messages, isBuilding, activity, currentAgent, className, projectName, footer }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -45,7 +64,7 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
     if (isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages, footer])
+  }, [messages, footer, activity])
 
   const handleScroll = () => {
     if (!containerRef.current) return
@@ -81,26 +100,35 @@ export function ChatPanel({ messages, isBuilding, currentAgent, className, proje
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <MessageRow
-            key={msg.id}
-            msg={msg}
-            isLast={i === messages.length - 1}
-          />
-        ))}
-
-        {/* Loading dots while socket build is active */}
-        {isBuilding && lastMsg && !lastMsg.streaming && (
-          <div className="flex gap-1 items-center px-1 py-2">
-            {[0, 150, 300].map(delay => (
-              <span
-                key={delay}
-                className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
-                style={{ animationDelay: `${delay}ms` }}
+        {groupRows(messages).map(group => {
+          if (group.kind === "archived") {
+            return (
+              <ArchivedGroup
+                key={group.key}
+                messages={group.messages}
+                renderMessage={message => <MessageRow msg={message} isLast={false} />}
               />
-            ))}
-          </div>
-        )}
+            )
+          }
+          if (group.kind === "reasoning") {
+            return (
+              <ReasoningGroup
+                key={group.key}
+                messages={group.messages}
+                renderMessage={message => <ThoughtParagraph msg={message} isLast={false} />}
+              />
+            )
+          }
+          return (
+            <MessageRow
+              key={group.message.id}
+              msg={group.message}
+              isLast={group.message.id === lastMsg?.id}
+            />
+          )
+        })}
+
+        {isBuilding && <ActivityLine activity={activity} />}
 
         {footer}
 
@@ -199,6 +227,7 @@ function MessageRow({
       // front of the user and silently defeated the whole label map. The raw
       // name is the last resort, never the first choice.
       const label = msg.text?.trim() || msg.tool || "Working on a step";
+      const diffs = msg.diffs ?? [];
       return (
         <div
           className={cn(
@@ -234,6 +263,11 @@ function MessageRow({
             >
               {label}
             </span>
+            {msg.delta && (
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {msg.delta}
+              </span>
+            )}
             <span
               className={cn(
                 "shrink-0 text-[10px] font-medium uppercase tracking-wide",
@@ -243,6 +277,30 @@ function MessageRow({
               {isFailed ? "Failed" : isDone ? "Done" : "Running"}
             </span>
           </div>
+
+          {diffs.length > 0 && (
+            <details className="group/diff mt-2">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <ChevronRight
+                  aria-hidden="true"
+                  className="h-3 w-3 transition-transform group-open/diff:rotate-90"
+                />
+                {diffs.length === 1 ? "View change" : `View ${diffs.length} changes`}
+              </summary>
+              {diffs.map(diff => (
+                <DiffView key={diff.path} diff={diff} />
+              ))}
+            </details>
+          )}
+
+          {/* Said out loud rather than silently showing nothing: a step that
+              changed files but has no diff to show is a limit of the display,
+              not a step that did nothing. */}
+          {diffs.length === 0 && msg.diffsDropped && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              This change was too large to keep a line-by-line view of.
+            </p>
+          )}
           {msg.details && (
             <details className="mt-2 border-t border-border/40 pt-2 text-xs">
               <summary className="w-fit cursor-pointer text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -272,10 +330,8 @@ function MessageRow({
             L
           </div>
           <div className="min-w-0 flex-1">
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
-              {msg.text}
-              {showCursor && <BlinkCursor />}
-            </p>
+            <SummaryText text={msg.text} />
+            {showCursor && <BlinkCursor />}
             {msg.files && msg.files.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {msg.files.map(f => (

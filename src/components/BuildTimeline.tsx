@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { BuildMessage } from "./ChatPanel";
@@ -78,6 +78,20 @@ export function ArchivedGroup({
  * three bouncing dots it replaces could never say.
  */
 export function ActivityLine({ activity }: { activity?: string | null }) {
+  // This line mounts when the build starts and unmounts when it ends, so its
+  // own lifetime is the build's. A clock matters most on the long steps: a
+  // slow build and a stuck one look identical without one.
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      setSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+
   return (
     <div className="flex items-center gap-2 px-1 py-1.5">
       <Loader2 aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin text-primary" />
@@ -85,6 +99,11 @@ export function ActivityLine({ activity }: { activity?: string | null }) {
         {activity?.trim() || "Working"}
         <span className="animate-pulse">{"\u2026"}</span>
       </span>
+      {seconds > 2 && (
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">
+          {elapsed}
+        </span>
+      )}
     </div>
   );
 }

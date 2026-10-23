@@ -1,79 +1,89 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { cn } from "@/lib/utils"
-import { Loader2, Check, AlertCircle, XCircle, ChevronRight } from "lucide-react"
-import { DiffView, type FileDiff } from "./DiffView"
-import { activityFromReasoning } from "@/lib/build-timeline"
-import {
-  groupRows,
-  ArchivedGroup,
-  ActivityLine,
-  SummaryText,
-} from "./BuildTimeline"
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { Loader2, Check, AlertCircle, XCircle, ChevronRight } from "lucide-react";
+import { DiffView, type FileDiff } from "./DiffView";
+import { activityFromReasoning } from "@/lib/build-timeline";
+import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
 export interface BuildMessage {
-  id: string
-  type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error"
-  text: string
+  id: string;
+  type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error";
+  text: string;
   /** "user" → right-aligned bubble; anything else (default) → left-aligned agent output */
-  role?: "user" | "agent"
-  tool?: string
-  path?: string
-  done?: boolean
-  activityStatus?: "running" | "done" | "failed"
-  details?: string
-  streaming?: boolean
-  files?: string[]
-  hint?: string
+  role?: "user" | "agent";
+  tool?: string;
+  path?: string;
+  done?: boolean;
+  activityStatus?: "running" | "done" | "failed";
+  details?: string;
+  streaming?: boolean;
+  files?: string[];
+  hint?: string;
   /** Belongs to a build that has already finished. Set when a follow-up build
    *  starts, so a replay for the NEW session cannot clear it, and so a
    *  finished build can be folded away instead of deleted. */
-  archived?: boolean
+  archived?: boolean;
   /** "+12 −3" for a step that changed files. */
-  delta?: string
+  delta?: string;
   /** What the step actually changed, computed by the backend from the files
    *  before and after it ran. */
-  diffs?: FileDiff[]
+  diffs?: FileDiff[];
   /** Diffs existed but were too large to keep; the counts are still right. */
-  diffsDropped?: boolean
+  diffsDropped?: boolean;
+  /** The model's own id for the tool call this row represents. A result
+   *  settles the row with the SAME id; matching on the tool name alone picked
+   *  whichever row ran last, which is the wrong one as soon as one tool is
+   *  called twice. */
+  toolCallId?: string;
+  /** When this step began, for the clock on a running row. */
+  startedAt?: number;
 }
 
 interface ChatPanelProps {
-  messages: BuildMessage[]
-  isBuilding: boolean
+  messages: BuildMessage[];
+  isBuilding: boolean;
   /** The one thing happening right now, in present tense ("Editing
    *  src/App.tsx"). Replaces three bouncing dots that said only that
    *  something, somewhere, was happening. */
-  activity?: string | null
-  currentAgent?: string
-  className?: string
-  projectName?: string
+  activity?: string | null;
+  currentAgent?: string;
+  className?: string;
+  projectName?: string;
   /** Rendered after the last message, inside the scroll area. A slot rather
    *  than a typed prop so the panel stays a dumb renderer: what currently goes
    *  here is the completion report, and it belongs at the END of the stream
    *  because it is a verdict on everything above it. */
-  footer?: ReactNode
+  footer?: ReactNode;
 }
 
-export function ChatPanel({ messages, isBuilding, activity, currentAgent, className, projectName, footer }: ChatPanelProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isAtBottomRef = useRef(true)
-  void currentAgent
-  void projectName
+export function ChatPanel({
+  messages,
+  isBuilding,
+  activity,
+  currentAgent,
+  className,
+  projectName,
+  footer,
+}: ChatPanelProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  void currentAgent;
+  void projectName;
 
   useEffect(() => {
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, footer, activity])
+  }, [messages, footer, activity]);
 
   const handleScroll = () => {
-    if (!containerRef.current) return
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current
-    isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 50
-  }
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 50;
+  };
 
-  const lastMsg = messages[messages.length - 1]
-  const showDots = isBuilding && messages.length === 0
+  const lastMsg = messages[messages.length - 1];
+  const showDots = isBuilding && messages.length === 0;
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
@@ -91,7 +101,7 @@ export function ChatPanel({ messages, isBuilding, activity, currentAgent, classN
 
         {showDots && (
           <div className="space-y-3">
-            {[0, 1, 2].map(i => (
+            {[0, 1, 2].map((i) => (
               <div key={i} className="flex flex-col gap-1.5">
                 <div className="skeleton-shimmer h-3 w-28" />
                 <div className="skeleton-shimmer h-16 w-full rounded-2xl" />
@@ -100,15 +110,15 @@ export function ChatPanel({ messages, isBuilding, activity, currentAgent, classN
           </div>
         )}
 
-        {groupRows(messages).map(group => {
+        {groupRows(messages).map((group) => {
           if (group.kind === "archived") {
             return (
               <ArchivedGroup
                 key={group.key}
                 messages={group.messages}
-                renderMessage={message => <MessageRow msg={message} isLast={false} />}
+                renderMessage={(message) => <MessageRow msg={message} isLast={false} />}
               />
-            )
+            );
           }
 
           return (
@@ -117,17 +127,17 @@ export function ChatPanel({ messages, isBuilding, activity, currentAgent, classN
               msg={group.message}
               isLast={group.message.id === lastMsg?.id}
             />
-          )
+          );
         })}
 
-        {isBuilding && <ActivityLine activity={activity} />}
+        {isBuilding && activity?.trim() && <ActivityLine activity={activity.trim()} />}
 
         {footer}
 
         <div ref={bottomRef} />
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -152,9 +162,9 @@ export function ChatPanel({ messages, isBuilding, activity, currentAgent, classN
  * scrolling transcript is what hid the text in the first place.
  */
 function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
-  const showCursor = isLast && msg.streaming === true
-  const text = msg.text?.trim() ?? ""
-  if (!text) return null
+  const showCursor = isLast && msg.streaming === true;
+  const text = msg.text?.trim() ?? "";
+  if (!text) return null;
 
   // The transcript puts gap-3 between every message, which is right between a
   // thought and a tool row and too loose between two paragraphs of the SAME
@@ -175,15 +185,16 @@ function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean 
   // It is a line, not a card: no border, no header, no scroll pane. That
   // distinction is what went wrong the first time and it is worth keeping in
   // mind before anyone adds chrome here.
-  const line = activityFromReasoning(text) ?? text
-  const hasMore = text.length > line.length + 8
+  const line = activityFromReasoning(text) ?? text;
+  const hasMore = text.length > line.length + 8;
 
   if (!hasMore) {
     return (
       <p data-thought="" className="break-words px-1 text-xs leading-relaxed text-white/55">
-        {line}{showCursor && <BlinkCursor />}
+        {line}
+        {showCursor && <BlinkCursor />}
       </p>
-    )
+    );
   }
 
   return (
@@ -194,28 +205,23 @@ function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean 
           className="mt-[3px] h-3 w-3 shrink-0 text-white/30 transition-transform group-open/thought:rotate-90"
         />
         <span className="min-w-0 flex-1 break-words">
-          {line}{showCursor && <BlinkCursor />}
+          {line}
+          {showCursor && <BlinkCursor />}
         </span>
       </summary>
       <p className="mt-1 whitespace-pre-wrap break-words pl-4 text-xs italic leading-relaxed text-white/40">
         {text}
       </p>
     </details>
-  )
+  );
 }
 
-function MessageRow({
-  msg,
-  isLast,
-}: {
-  msg: BuildMessage
-  isLast: boolean
-}) {
-  const showCursor = isLast && msg.streaming === true
+function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
+  const showCursor = isLast && msg.streaming === true;
 
   switch (msg.type) {
     case "thinking":
-      return <ThoughtParagraph msg={msg} isLast={isLast} />
+      return <ThoughtParagraph msg={msg} isLast={isLast} />;
 
     case "text": {
       if (msg.role === "user") {
@@ -227,7 +233,7 @@ function MessageRow({
               </p>
             </div>
           </div>
-        )
+        );
       }
       return (
         <div className="px-1">
@@ -236,7 +242,7 @@ function MessageRow({
             {showCursor && <BlinkCursor />}
           </p>
         </div>
-      )
+      );
     }
 
     case "tool_call":
@@ -292,6 +298,7 @@ function MessageRow({
                 {msg.delta}
               </span>
             )}
+            {status === "running" && msg.startedAt && <ElapsedTime since={msg.startedAt} />}
             <span
               className={cn(
                 "shrink-0 text-[10px] font-medium uppercase tracking-wide",
@@ -311,7 +318,7 @@ function MessageRow({
                 />
                 {diffs.length === 1 ? "View change" : `View ${diffs.length} changes`}
               </summary>
-              {diffs.map(diff => (
+              {diffs.map((diff) => (
                 <DiffView key={diff.path} diff={diff} />
               ))}
             </details>
@@ -345,7 +352,7 @@ function MessageRow({
           <span className="shrink-0">📄</span>
           <span className="truncate">{msg.path ?? msg.text}</span>
         </div>
-      )
+      );
 
     case "assistant":
       return (
@@ -358,7 +365,7 @@ function MessageRow({
             {showCursor && <BlinkCursor />}
             {msg.files && msg.files.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
-                {msg.files.map(f => (
+                {msg.files.map((f) => (
                   <span
                     key={f}
                     className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/20 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
@@ -375,7 +382,7 @@ function MessageRow({
             )}
           </div>
         </div>
-      )
+      );
 
     case "error":
       return (
@@ -383,15 +390,15 @@ function MessageRow({
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
           <p className="break-words text-xs leading-relaxed text-destructive">{msg.text}</p>
         </div>
-      )
+      );
 
     default:
-      return null
+      return null;
   }
 }
 
 function BlinkCursor() {
   return (
     <span className="ml-px inline-block h-[0.85em] w-px animate-pulse align-text-bottom bg-current" />
-  )
+  );
 }

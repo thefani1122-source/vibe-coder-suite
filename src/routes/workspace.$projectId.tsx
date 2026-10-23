@@ -8,7 +8,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
 import { ChangesPanel } from "@/components/ChangesPanel";
-import { collectEdits, activityFromReasoning } from "@/lib/build-timeline";
+import { collectEdits } from "@/lib/build-timeline";
 import type { FileDiff } from "@/components/DiffView";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
@@ -310,10 +310,6 @@ function WorkspacePage() {
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
-  // The reasoning paragraph being written right now. Reasoning arrives a few
-  // characters at a time, so the live line needs the paragraph so far, not
-  // the fragment that just landed.
-  const reasoningBufRef         = useRef("");
   const chatPanelRef            = usePanelRef();
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
@@ -447,21 +443,18 @@ function WorkspacePage() {
         || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
       const trimmed = chunk.trim();
       if (isPipelineStatus) {
-        // Already written for a person — the best status line available.
+        // A pipeline status ("Starting the preview…") is the ONE kind of
+        // activity with no row of its own, so the live line is where it
+        // belongs — and is now the only thing the live line is for.
         if (trimmed.length <= 80) setActivity(trimmed);
         return;
       }
 
-      // Otherwise the line says what the agent is actually thinking about,
-      // rather than only that it is thinking. Only the paragraph in progress
-      // is kept, so the line follows the current thought instead of the first
-      // one of the build.
-      reasoningBufRef.current = (reasoningBufRef.current + chunk).slice(-2000);
-      const paragraphs = reasoningBufRef.current.split(/\n\s*\n/);
-      const current = paragraphs[paragraphs.length - 1] ?? "";
-      if (paragraphs.length > 1) reasoningBufRef.current = current;
-      const line = activityFromReasoning(current);
-      setActivity(prev => line ?? prev ?? "Thinking");
+      // A thought gets its own row in the transcript, and putting the same
+      // sentence on the live line as well is what showed it twice — once
+      // ticked, once spinning. Reported 2026-10-23. The row is the thought;
+      // the line steps aside.
+      setActivity(null);
 
       // Keep the active paragraph streaming, but give each blank-line paragraph
       // its own bounded card so long builds stay readable as they arrive.
@@ -484,12 +477,13 @@ function WorkspacePage() {
 
     socket.on(
       "build:tool_call",
-      (data: { tool?: string; name?: string; args?: string; label?: string; active?: string }) => {
+      (data: { id?: string; tool?: string; name?: string; args?: string; label?: string; active?: string }) => {
         const tool = data.tool ?? data.name;
         const described = describeToolActivity(tool, data.args);
         if (tool) setCurrentAgent(toolToAgent(tool));
-        reasoningBufRef.current = "";
-        setActivity(data.active?.trim() || described.label);
+        // A running tool carries its own spinner and clock, so the live line
+        // would only be saying the same thing a second time.
+        setActivity(null);
         setMessages((prev) => [
           ...closeStreaming(prev),
           newMsg({
@@ -499,6 +493,8 @@ function WorkspacePage() {
             // "Wrote 3 files" on screen beside a RUNNING badge.
             text: data.active?.trim() || data.label?.trim() || described.label,
             tool: described.tool,
+            ...(data.id ? { toolCallId: data.id } : {}),
+            startedAt: Date.now(),
             activityStatus: "running",
             details: described.details,
           }),
@@ -509,6 +505,7 @@ function WorkspacePage() {
     socket.on(
       "build:tool_result",
       (data: {
+        id?: string;
         tool?: string;
         result?: string;
         label?: string;
@@ -518,13 +515,18 @@ function WorkspacePage() {
       }) => {
       if (data.result !== "success" && data.result !== "error") return;
       setMessages((prev) => {
+        // By id when the backend sent one: matching on the tool NAME alone
+        // settles whichever row happened to be running last, which is the
+        // wrong one as soon as the same tool is called twice. The name match
+        // stays as the fallback for rows replayed from before ids existed.
         const ri = [...prev]
           .reverse()
-          .findIndex(
-            (m) =>
-              m.type === "tool_call" &&
-              m.activityStatus === "running" &&
-              (!data.tool || m.tool === data.tool),
+          .findIndex((m) =>
+            data.id && m.toolCallId
+              ? m.toolCallId === data.id
+              : m.type === "tool_call" &&
+                m.activityStatus === "running" &&
+                (!data.tool || m.tool === data.tool),
           );
         if (ri === -1) return prev;
         const idx = prev.length - 1 - ri;
@@ -792,7 +794,6 @@ function WorkspacePage() {
     currentSessionIdRef.current = sessionId;
     setChecks(null);
     setActivity(null);
-    reasoningBufRef.current = "";
     setFollowUpReceipt(null);
 
     let hadCache = false;

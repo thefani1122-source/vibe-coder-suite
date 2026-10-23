@@ -49,33 +49,45 @@ export function ArchivedGroup({
  * The single live line. It names the step in progress, which is the thing the
  * three bouncing dots it replaces could never say.
  */
-export function ActivityLine({ activity }: { activity?: string | null }) {
-  // This line mounts when the build starts and unmounts when it ends, so its
-  // own lifetime is the build's. A clock matters most on the long steps: a
-  // slow build and a stuck one look identical without one.
-  const [seconds, setSeconds] = useState(0);
+/**
+ * How long the step running right now has been going.
+ *
+ * It sits on the step's own row rather than on a line of its own. A clock
+ * matters most on a long step, and that is exactly the row a person is already
+ * looking at — a slow step and a stuck one are identical without it.
+ */
+export function ElapsedTime({ since }: { since: number }) {
+  const [seconds, setSeconds] = useState(() => Math.floor((Date.now() - since) / 1000));
   useEffect(() => {
-    const started = Date.now();
     const id = window.setInterval(() => {
-      setSeconds(Math.floor((Date.now() - started) / 1000));
+      setSeconds(Math.floor((Date.now() - since) / 1000));
     }, 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [since]);
 
-  const elapsed = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+  if (seconds < 3) return null;
+  const text = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+  return (
+    <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">
+      {text}
+    </span>
+  );
+}
 
+/**
+ * The live line, for the one kind of activity that has no row of its own:
+ * a pipeline status such as "Starting the preview…". Reasoning gets a row and
+ * a running tool gets a row, and putting either here as well is what showed
+ * the same sentence twice.
+ */
+export function ActivityLine({ activity }: { activity: string }) {
   return (
     <div className="flex items-center gap-2 px-1 py-1.5">
       <Loader2 aria-hidden="true" className="h-3 w-3 shrink-0 animate-spin text-primary" />
       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {activity?.trim() || "Working"}
+        {activity}
         <span className="animate-pulse">{"\u2026"}</span>
       </span>
-      {seconds > 2 && (
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/60">
-          {elapsed}
-        </span>
-      )}
     </div>
   );
 }

@@ -469,7 +469,10 @@ function WorkspacePage() {
           ...closeStreaming(prev),
           newMsg({
             type: "tool_call",
-            text: data.label?.trim() || described.label,
+            // Present tense while it runs; build:tool_result swaps in the past
+            // tense when it finishes. Using the finished wording up front put
+            // "Wrote 3 files" on screen beside a RUNNING badge.
+            text: data.active?.trim() || data.label?.trim() || described.label,
             tool: described.tool,
             activityStatus: "running",
             details: described.details,

@@ -1,4 +1,4 @@
-import type { BuildMessage } from "@/components/ChatPanel"
+import type { BuildMessage } from "@/components/ChatPanel";
 import type { FileDiff } from "@/components/DiffView";
 
 /**
@@ -50,10 +50,10 @@ export function groupRows(messages: BuildMessage[]): Group[] {
 
 /** Every file this build changed, with the changes that produced it. */
 export interface FileEdits {
-  path: string
-  added: number
-  removed: number
-  diffs: FileDiff[]
+  path: string;
+  added: number;
+  removed: number;
+  diffs: FileDiff[];
 }
 
 /**
@@ -69,26 +69,26 @@ export interface FileEdits {
  * prompt is sent.
  */
 export function collectEdits(messages: BuildMessage[]): FileEdits[] {
-  const byPath = new Map<string, FileEdits>()
+  const byPath = new Map<string, FileEdits>();
 
   for (const message of messages) {
-    if (message.archived) continue
+    if (message.archived) continue;
     for (const diff of message.diffs ?? []) {
-      const existing = byPath.get(diff.path)
+      const existing = byPath.get(diff.path);
       if (existing) {
-        existing.added += diff.added
-        existing.removed += diff.removed
-        existing.diffs.push(diff)
-        continue
+        existing.added += diff.added;
+        existing.removed += diff.removed;
+        existing.diffs.push(diff);
+        continue;
       }
       byPath.set(diff.path, {
         path: diff.path,
         added: diff.added,
         removed: diff.removed,
         diffs: [diff],
-      })
+      });
     }
   }
 
-  return [...byPath.values()]
+  return [...byPath.values()];
 }

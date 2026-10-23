@@ -15,6 +15,10 @@ export interface BuildMessage {
   streaming?: boolean
   files?: string[]
   hint?: string
+  /** Belongs to a build that has already finished. Set when a follow-up build
+   *  starts, so a replay for the NEW session cannot clear it, and so a
+   *  finished build can be folded away instead of deleted. */
+  archived?: boolean
 }
 
 interface ChatPanelProps {

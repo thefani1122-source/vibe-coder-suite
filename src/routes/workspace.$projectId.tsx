@@ -370,7 +370,7 @@ function WorkspacePage() {
     // whole conversation twice.
     socket.on("build:history", () => {
       completedRef.current = false;
-      setMessages([]);
+      setMessages(prev => prev.filter(m => m.archived));
     });
 
     // The mid-build equivalent. Refreshing DURING a build restores this tab's
@@ -384,9 +384,17 @@ function WorkspacePage() {
     // and the prompt bubble is added locally when the person hits send — so
     // nothing in the replay puts it back. build:history is different: that
     // path re-emits build:prompt from stored history, so it can clear freely.
+    //
+    // It keeps ARCHIVED messages for a second reason, and that one is a race:
+    // a follow-up build is already running by the time the POST that started
+    // it returns, so buffer:{newSessionId} is non-empty before this tab can
+    // join that room — which means joining always replays, and this handler
+    // always fired. Without the archived guard it deleted the PREVIOUS
+    // build's thinking and tool cards every time someone asked for an edit.
+    // Reported 2026-10-23.
     socket.on("build:replay_start", () => {
       completedRef.current = false;
-      setMessages(prev => prev.filter(m => m.role === "user"));
+      setMessages(prev => prev.filter(m => m.archived || m.role === "user"));
     });
 
     socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
@@ -1004,8 +1012,11 @@ function WorkspacePage() {
 
     const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
+    // Everything on screen belongs to a build that has finished. Mark it so
+    // the new session's replay cannot clear it (see build:replay_start), and
+    // so the chat can fold it instead of dropping it.
     setMessages(prev => [
-      ...closeStreaming(prev),
+      ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
       newMsg({ type: "text", text: prompt, role: "user" }),
     ]);
     setBuildStatus("running");

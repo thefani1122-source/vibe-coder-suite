@@ -1,4 +1,5 @@
-import type { BuildMessage } from "@/components/ChatPanel";
+import type { BuildMessage } from "@/components/ChatPanel"
+import type { FileDiff } from "@/components/DiffView";
 
 /**
  * Consecutive messages that should be read as one thing, folded into one.
@@ -45,4 +46,49 @@ export function groupRows(messages: BuildMessage[]): Group[] {
   }
 
   return groups;
+}
+
+/** Every file this build changed, with the changes that produced it. */
+export interface FileEdits {
+  path: string
+  added: number
+  removed: number
+  diffs: FileDiff[]
+}
+
+/**
+ * The build's changes, gathered per file.
+ *
+ * Derived from the messages rather than accumulated into state of its own.
+ * The diffs are already on the rows that reported them, the rows are already
+ * saved and replayed, and a second copy would be one more thing to keep in
+ * step — which is exactly how the preview URL went missing.
+ *
+ * Archived rows are left out on purpose: this answers "what did THIS build
+ * change", and a finished build's edits are history the moment the next
+ * prompt is sent.
+ */
+export function collectEdits(messages: BuildMessage[]): FileEdits[] {
+  const byPath = new Map<string, FileEdits>()
+
+  for (const message of messages) {
+    if (message.archived) continue
+    for (const diff of message.diffs ?? []) {
+      const existing = byPath.get(diff.path)
+      if (existing) {
+        existing.added += diff.added
+        existing.removed += diff.removed
+        existing.diffs.push(diff)
+        continue
+      }
+      byPath.set(diff.path, {
+        path: diff.path,
+        added: diff.added,
+        removed: diff.removed,
+        diffs: [diff],
+      })
+    }
+  }
+
+  return [...byPath.values()]
 }

@@ -7,6 +7,8 @@ import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
+import { ChangesPanel } from "@/components/ChangesPanel";
+import { collectEdits } from "@/lib/build-timeline";
 import type { FileDiff } from "@/components/DiffView";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
@@ -29,7 +31,7 @@ import { useAuthStore } from "@/lib/auth";
 import {
   ArrowUp, ChevronDown, Zap, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
-  Search, Copy, Check, Globe, Code2,
+  Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
   Square, ExternalLink, Link2, Figma, X,
 } from "lucide-react";
@@ -44,7 +46,7 @@ export const Route = createFileRoute("/workspace/$projectId")({
 });
 
 type BuildStatus = "running" | "complete" | "error";
-type ActiveTab  = "preview" | "code";
+type ActiveTab  = "preview" | "code" | "changes";
 type Device     = "desktop" | "mobile" | "tablet";
 
 type McpEventKind = "thinking" | "tool_call" | "tool_result" | "done";
@@ -276,6 +278,10 @@ function WorkspacePage() {
   // finished session, so it survives a reload rather than only existing in
   // the moment it was emitted.
   const [checks, setChecks] = useState<CheckRow[] | null>(null);
+  // Read off the messages rather than tracked separately — the diffs are
+  // already on the rows that reported them, and those are already saved and
+  // replayed.
+  const edits = useMemo(() => collectEdits(messages), [messages]);
   const [isFullstack, setIsFullstack] = useState(false);
   const [codeQuery,   setCodeQuery]   = useState("");
 
@@ -1190,6 +1196,7 @@ function WorkspacePage() {
           projectName={projectName}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          changeCount={edits.length}
           device={device}
           setDevice={setDevice}
           buildStatus={buildStatus}
@@ -1345,6 +1352,13 @@ function WorkspacePage() {
                   onClear={() => { setMcpEvents([]); setIsMcpActive(false); }}
                 />
               )}
+              {activeTab === "changes" && (
+                <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
+                  <div className="flex h-full flex-col overflow-hidden rounded-xl border border-white/[0.08]">
+                    <ChangesPanel edits={edits} />
+                  </div>
+                </div>
+              )}
               {activeTab === "code" && (
                 <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
                   <div style={{
@@ -1416,7 +1430,7 @@ function WorkspacePage() {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  projectId, projectName, activeTab, setActiveTab, device, setDevice,
+  projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
   businessContext, showContextPanel,
   previewUrl, codeQuery, onCodeQueryChange,
@@ -1426,6 +1440,7 @@ function WorkspaceTopBar({
   projectName: string;
   activeTab: ActiveTab;
   setActiveTab: (t: ActiveTab) => void;
+  changeCount: number;
   device: Device;
   setDevice: (d: Device) => void;
   buildStatus: BuildStatus;
@@ -1514,6 +1529,22 @@ function WorkspaceTopBar({
         <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
           <Code2 className="h-4 w-4" />
         </IconTab>
+        {/* Only offered once there is something to look at: an always-present
+            tab that is usually empty teaches people to ignore it. */}
+        {changeCount > 0 && (
+          <IconTab
+            active={activeTab === "changes"}
+            onClick={() => setActiveTab("changes")}
+            title={`Changes (${changeCount})`}
+          >
+            <span className="relative inline-flex">
+              <FileDiffIcon className="h-4 w-4" />
+              <span className="absolute -right-1.5 -top-1 rounded-full bg-primary px-1 text-[9px] font-semibold leading-[1.4] text-primary-foreground">
+                {changeCount}
+              </span>
+            </span>
+          </IconTab>
+        )}
       </div>
 
       {/* ── Center: device + route ─────────────────────────────────── */}

@@ -901,6 +901,16 @@ function WorkspacePage() {
     const startedAt = Date.now();
     let stopped = false;
 
+    // A build that is still running has not failed to produce a preview — it
+    // has not got there yet. This effect re-runs when buildStatus changes, so
+    // once the build settles `startedAt` is the moment it stopped, and the
+    // timeout below measures the wait for the preview rather than the length
+    // of the build. Without this, a build past two minutes — which is most of
+    // them, since a real one can use all 40 rounds — told the user "Build
+    // finished, but no preview URL was returned" while the agent was visibly
+    // still editing files. Reported 2026-10-23.
+    const stillBuilding = buildStatus === "running";
+
     const pollPreview = async () => {
       if (stopped) return;
       try {
@@ -929,14 +939,17 @@ function WorkspacePage() {
           return;
         }
 
-        if (Date.now() - startedAt > 120_000) {
+        if (!stillBuilding && Date.now() - startedAt > 120_000) {
           setPreviewLoading(false);
-          setPreviewError("Build finished, but no preview URL was returned. Check the backend preview/E2B logs.");
+          setPreviewError(
+            "The build finished, but its preview never came up. The code is on the Code tab — " +
+              "send me a follow-up message and I will look at why.",
+          );
         }
       } catch {
-        if (Date.now() - startedAt > 120_000) {
+        if (!stillBuilding && Date.now() - startedAt > 120_000) {
           setPreviewLoading(false);
-          setPreviewError("Preview URL could not be fetched from the backend.");
+          setPreviewError("The preview could not be fetched from the backend.");
         }
       }
     };

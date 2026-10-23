@@ -92,3 +92,43 @@ export function collectEdits(messages: BuildMessage[]): FileEdits[] {
 
   return [...byPath.values()];
 }
+
+/**
+ * One line of what the agent is currently thinking about.
+ *
+ * The live line used to read "Thinking", which says only that something is
+ * happening — the same nothing the three bouncing dots said. The model's own
+ * reasoning is the only thing that knows what it is working on, so the line is
+ * taken from there: the FIRST sentence of the paragraph being written, which
+ * stays still long enough to read while the rest of the paragraph streams in
+ * under it.
+ *
+ * Returns null when there is nothing worth showing, and the caller keeps
+ * whatever it had. Reasoning also contains headings, code, JSON and bare
+ * fragments, none of which read as a status line, so those are declined rather
+ * than truncated into nonsense.
+ */
+export function activityFromReasoning(paragraph: string): string | null {
+  const firstLine = paragraph
+    .split("\n")
+    .map((line) => line.trim())
+    // A heading or list marker introduces the thought rather than being it.
+    .map((line) => line.replace(/^#{1,6}\s*/, "").replace(/^[-*+]\s+/, ""))
+    .find((line) => line.length > 0);
+  if (!firstLine) return null;
+
+  // Anything that is plainly not prose: a fenced block, an object, a path on
+  // its own. Showing a fragment of one reads as a glitch.
+  if (/^[`{[\]}]/.test(firstLine)) return null;
+  if (firstLine.includes("```")) return null;
+
+  const sentence = (/^(.*?[.!?])(\s|$)/.exec(firstLine)?.[1] ?? firstLine).trim();
+  // Markdown emphasis is noise on a single status line.
+  const clean = sentence.replace(/\*\*/g, "").replace(/`/g, "").trim();
+
+  // Too short to carry meaning ("Okay.", "Right"), or so long it is a
+  // paragraph pretending to be a line.
+  if (clean.length < 12) return null;
+  if (clean.length > 90) return `${clean.slice(0, 87).trimEnd()}…`;
+  return clean;
+}

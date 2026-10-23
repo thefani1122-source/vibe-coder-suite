@@ -8,7 +8,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
 import { ChangesPanel } from "@/components/ChangesPanel";
-import { collectEdits } from "@/lib/build-timeline";
+import { collectEdits, activityFromReasoning } from "@/lib/build-timeline";
 import type { FileDiff } from "@/components/DiffView";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
@@ -310,6 +310,10 @@ function WorkspacePage() {
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
+  // The reasoning paragraph being written right now. Reasoning arrives a few
+  // characters at a time, so the live line needs the paragraph so far, not
+  // the fragment that just landed.
+  const reasoningBufRef         = useRef("");
   const chatPanelRef            = usePanelRef();
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
@@ -442,8 +446,22 @@ function WorkspacePage() {
       const isPipelineStatus = data.internal === true
         || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
       const trimmed = chunk.trim();
-      setActivity(isPipelineStatus && trimmed.length <= 80 ? trimmed : "Thinking");
-      if (isPipelineStatus) return;
+      if (isPipelineStatus) {
+        // Already written for a person — the best status line available.
+        if (trimmed.length <= 80) setActivity(trimmed);
+        return;
+      }
+
+      // Otherwise the line says what the agent is actually thinking about,
+      // rather than only that it is thinking. Only the paragraph in progress
+      // is kept, so the line follows the current thought instead of the first
+      // one of the build.
+      reasoningBufRef.current = (reasoningBufRef.current + chunk).slice(-2000);
+      const paragraphs = reasoningBufRef.current.split(/\n\s*\n/);
+      const current = paragraphs[paragraphs.length - 1] ?? "";
+      if (paragraphs.length > 1) reasoningBufRef.current = current;
+      const line = activityFromReasoning(current);
+      setActivity(prev => line ?? prev ?? "Thinking");
 
       // Keep the active paragraph streaming, but give each blank-line paragraph
       // its own bounded card so long builds stay readable as they arrive.
@@ -470,6 +488,7 @@ function WorkspacePage() {
         const tool = data.tool ?? data.name;
         const described = describeToolActivity(tool, data.args);
         if (tool) setCurrentAgent(toolToAgent(tool));
+        reasoningBufRef.current = "";
         setActivity(data.active?.trim() || described.label);
         setMessages((prev) => [
           ...closeStreaming(prev),
@@ -773,6 +792,7 @@ function WorkspacePage() {
     currentSessionIdRef.current = sessionId;
     setChecks(null);
     setActivity(null);
+    reasoningBufRef.current = "";
     setFollowUpReceipt(null);
 
     let hadCache = false;

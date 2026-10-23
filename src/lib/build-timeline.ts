@@ -19,27 +19,25 @@ import type { FileDiff } from "@/components/DiffView";
  */
 export type Group =
   | { kind: "single"; key: string; message: BuildMessage }
-  | { kind: "reasoning"; key: string; messages: BuildMessage[] }
   | { kind: "archived"; key: string; messages: BuildMessage[] };
 
 export function groupRows(messages: BuildMessage[]): Group[] {
   const groups: Group[] = [];
 
   for (const message of messages) {
-    const foldable =
-      message.archived && message.role !== "user"
-        ? "archived"
-        : !message.archived && message.type === "thinking"
-          ? "reasoning"
-          : null;
+    // Only a FINISHED build folds. Reasoning used to fold too, and that was
+    // the mistake: each thought is one line of the agent's running commentary
+    // between the actions, and hiding the run of them behind a single
+    // disclosure left the transcript with nothing to read.
+    const foldable = message.archived && message.role !== "user";
 
     const last = groups[groups.length - 1];
-    if (foldable && last && last.kind === foldable) {
+    if (foldable && last && last.kind === "archived") {
       last.messages.push(message);
       continue;
     }
     if (foldable) {
-      groups.push({ kind: foldable, key: message.id, messages: [message] });
+      groups.push({ kind: "archived", key: message.id, messages: [message] });
       continue;
     }
     groups.push({ kind: "single", key: message.id, message });

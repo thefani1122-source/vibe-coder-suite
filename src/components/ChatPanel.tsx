@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { Loader2, Check, AlertCircle, XCircle, ChevronRight } from "lucide-react"
 import { DiffView, type FileDiff } from "./DiffView"
+import { activityFromReasoning } from "@/lib/build-timeline"
 import {
   groupRows,
-  ReasoningGroup,
   ArchivedGroup,
   ActivityLine,
   SummaryText,
@@ -110,15 +110,7 @@ export function ChatPanel({ messages, isBuilding, activity, currentAgent, classN
               />
             )
           }
-          if (group.kind === "reasoning") {
-            return (
-              <ReasoningGroup
-                key={group.key}
-                messages={group.messages}
-                renderMessage={message => <ThoughtParagraph msg={message} isLast={false} />}
-              />
-            )
-          }
+
           return (
             <MessageRow
               key={group.message.id}
@@ -170,13 +162,45 @@ function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean 
   // unrelated remarks. A thought that directly follows another closes up to
   // ordinary paragraph spacing; the first one after anything else keeps the
   // full gap.
+  // ONE LINE, kept in the transcript, with the rest behind a chevron.
+  //
+  // This is the shape the whole panel was missing. Two earlier attempts both
+  // failed at the same point: the first put the reasoning in a box, which was
+  // unreadable, and the second hid ALL of it behind a single fold, which
+  // removed the running commentary entirely and left only tool rows and a
+  // status line that vanished. What a person reads as "the agent telling me
+  // what it is doing" is one short line per thought, sitting between the
+  // actions, and that is what this renders.
+  //
+  // It is a line, not a card: no border, no header, no scroll pane. That
+  // distinction is what went wrong the first time and it is worth keeping in
+  // mind before anyone adds chrome here.
+  const line = activityFromReasoning(text) ?? text
+  const hasMore = text.length > line.length + 8
+
+  if (!hasMore) {
+    return (
+      <p data-thought="" className="break-words px-1 text-xs leading-relaxed text-white/55">
+        {line}{showCursor && <BlinkCursor />}
+      </p>
+    )
+  }
+
   return (
-    <p
-      data-thought=""
-      className="whitespace-pre-wrap break-words px-1 text-xs italic leading-relaxed text-white/45 [p[data-thought]+&]:-mt-1"
-    >
-      {text}{showCursor && <BlinkCursor />}
-    </p>
+    <details data-thought="" className="group/thought px-1">
+      <summary className="flex cursor-pointer list-none items-start gap-1 text-xs leading-relaxed text-white/55 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ChevronRight
+          aria-hidden="true"
+          className="mt-[3px] h-3 w-3 shrink-0 text-white/30 transition-transform group-open/thought:rotate-90"
+        />
+        <span className="min-w-0 flex-1 break-words">
+          {line}{showCursor && <BlinkCursor />}
+        </span>
+      </summary>
+      <p className="mt-1 whitespace-pre-wrap break-words pl-4 text-xs italic leading-relaxed text-white/40">
+        {text}
+      </p>
+    </details>
   )
 }
 

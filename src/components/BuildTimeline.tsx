@@ -7,34 +7,6 @@ import { type Group } from "@/lib/build-timeline";
 export { groupRows } from "@/lib/build-timeline";
 export type { Group };
 
-export function ReasoningGroup({
-  messages,
-  renderMessage,
-}: {
-  messages: BuildMessage[];
-  renderMessage: (message: BuildMessage) => ReactNode;
-}) {
-  const paragraphs = messages.filter((m) => (m.text ?? "").trim().length > 0);
-  if (paragraphs.length === 0) return null;
-
-  return (
-    <details className="group/reason px-1">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] text-white/35 hover:text-white/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <ChevronRight
-          aria-hidden="true"
-          className="h-3 w-3 transition-transform group-open/reason:rotate-90"
-        />
-        Reasoning
-      </summary>
-      <div className="mt-1 flex flex-col gap-3">
-        {paragraphs.map((message) => (
-          <div key={message.id}>{renderMessage(message)}</div>
-        ))}
-      </div>
-    </details>
-  );
-}
-
 export function ArchivedGroup({
   messages,
   renderMessage,

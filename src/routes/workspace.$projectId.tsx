@@ -79,24 +79,29 @@ function newMsg(partial: Omit<BuildMessage, "id">): BuildMessage {
 
 function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   if (!prev.length || !prev[prev.length - 1].streaming) return prev;
-  return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
+  const last = prev[prev.length - 1];
+  const endedAt = Date.now();
+  const durationMs = last.startedAt ? Math.max(1000, endedAt - last.startedAt) : undefined;
+  return [...prev.slice(0, -1), { ...last, streaming: false, durationMs }];
 }
 
 function appendCommentary(prev: BuildMessage[], chunk: string): BuildMessage[] {
   const last = prev[prev.length - 1];
-  const wasStreaming = last?.type === "thinking" && last.streaming === true;
-  const source = `${wasStreaming && last ? last.text : ""}${chunk}`;
-  const base = wasStreaming ? prev.slice(0, -1) : closeStreaming(prev);
-  const paragraphs = splitReasoningParagraphs(source);
-  const nextMessages = paragraphs.map((text, index) => {
-    const partial = {
-      type: "thinking" as const,
-      text,
-      streaming: index === paragraphs.length - 1,
-    };
-    return wasStreaming && last && index === 0 ? { ...last, ...partial } : newMsg(partial);
-  });
-  return [...base, ...nextMessages];
+  if (last && last.type === "thinking" && last.streaming === true) {
+    return [
+      ...prev.slice(0, -1),
+      { ...last, text: last.text + chunk },
+    ];
+  }
+  return [
+    ...closeStreaming(prev),
+    newMsg({
+      type: "thinking",
+      text: chunk,
+      streaming: true,
+      startedAt: Date.now(),
+    }),
+  ];
 }
 
 // Legacy pipeline labels without the typed `internal` flag. Current backend

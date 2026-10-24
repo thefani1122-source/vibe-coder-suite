@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Loader2, Check, AlertCircle, XCircle, ChevronRight } from "lucide-react";
+import { Loader2, Check, AlertCircle, XCircle, ChevronRight, Sparkles } from "lucide-react";
 import { DiffView, type FileDiff } from "./DiffView";
 import { activityFromReasoning } from "@/lib/build-timeline";
 import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
@@ -36,6 +36,8 @@ export interface BuildMessage {
   toolCallId?: string;
   /** When this step began, for the clock on a running row. */
   startedAt?: number;
+  /** Total elapsed time in ms once step/thinking finishes. */
+  durationMs?: number;
 }
 
 interface ChatPanelProps {
@@ -161,58 +163,71 @@ export function ChatPanel({
  * No clamp either: the transcript already scrolls, and a scroll pane inside a
  * scrolling transcript is what hid the text in the first place.
  */
-function ThoughtParagraph({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
-  const showCursor = isLast && msg.streaming === true;
-  const text = msg.text?.trim() ?? "";
-  if (!text) return null;
+function ThinkingRow({ msg }: { msg: BuildMessage }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isStreaming = msg.streaming === true;
+  const startedAt = msg.startedAt ?? Date.now();
+  const [elapsed, setElapsed] = useState(() => Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
 
-  // The transcript puts gap-3 between every message, which is right between a
-  // thought and a tool row and too loose between two paragraphs of the SAME
-  // thought — at that distance one train of reasoning reads as several
-  // unrelated remarks. A thought that directly follows another closes up to
-  // ordinary paragraph spacing; the first one after anything else keeps the
-  // full gap.
-  // ONE LINE, kept in the transcript, with the rest behind a chevron.
-  //
-  // This is the shape the whole panel was missing. Two earlier attempts both
-  // failed at the same point: the first put the reasoning in a box, which was
-  // unreadable, and the second hid ALL of it behind a single fold, which
-  // removed the running commentary entirely and left only tool rows and a
-  // status line that vanished. What a person reads as "the agent telling me
-  // what it is doing" is one short line per thought, sitting between the
-  // actions, and that is what this renders.
-  //
-  // It is a line, not a card: no border, no header, no scroll pane. That
-  // distinction is what went wrong the first time and it is worth keeping in
-  // mind before anyone adds chrome here.
-  const line = activityFromReasoning(text) ?? text;
-  const hasMore = text.length > line.length + 8;
+  useEffect(() => {
+    if (!isStreaming) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isStreaming, startedAt]);
 
-  if (!hasMore) {
-    return (
-      <p data-thought="" className="break-words px-1 text-xs leading-relaxed text-white/55">
-        {line}
-        {showCursor && <BlinkCursor />}
-      </p>
-    );
-  }
+  const finalSec = msg.durationMs
+    ? Math.max(1, Math.round(msg.durationMs / 1000))
+    : elapsed;
+
+  const formatTime = (sec: number) => {
+    if (sec >= 60) {
+      const mins = Math.floor(sec / 60);
+      const rem = sec % 60;
+      return `${mins}m ${rem}s`;
+    }
+    return `${sec}s`;
+  };
+
+  const label = isStreaming ? "Thinking..." : `Thought for ${formatTime(finalSec)}`;
 
   return (
-    <details data-thought="" className="group/thought px-1">
-      <summary className="flex cursor-pointer list-none items-start gap-1 text-xs leading-relaxed text-white/55 hover:text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <ChevronRight
-          aria-hidden="true"
-          className="mt-[3px] h-3 w-3 shrink-0 text-white/30 transition-transform group-open/thought:rotate-90"
-        />
-        <span className="min-w-0 flex-1 break-words">
-          {line}
-          {showCursor && <BlinkCursor />}
-        </span>
-      </summary>
-      <p className="mt-1 whitespace-pre-wrap break-words pl-4 text-xs italic leading-relaxed text-white/40">
-        {text}
-      </p>
-    </details>
+    <div className="my-1 rounded-lg border border-white/5 bg-white/[0.02] text-xs transition-colors hover:bg-white/[0.04]">
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="flex w-full cursor-pointer items-center justify-between px-3 py-1.5 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
+      >
+        <div className="flex items-center gap-2">
+          {isStreaming ? (
+            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+          ) : (
+            <Sparkles className="h-3 w-3 text-white/40" />
+          )}
+          <span className="font-mono text-[11px] text-white/70">{label}</span>
+          {isStreaming && (
+            <span className="font-mono text-[10px] text-white/40 tabular-nums">
+              {formatTime(elapsed)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 text-[11px] text-white/40">
+          <span>{isOpen ? "Hide" : "Show"}</span>
+          <ChevronRight
+            aria-hidden="true"
+            className={cn("h-3 w-3 transition-transform duration-200", isOpen && "rotate-90")}
+          />
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="max-h-56 overflow-y-auto border-t border-white/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/50 whitespace-pre-wrap select-text scrollbar-thin scrollbar-thumb-white/10">
+          {msg.text?.trim() || "No detailed reasoning recorded."}
+          {isStreaming && <BlinkCursor />}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -221,7 +236,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
 
   switch (msg.type) {
     case "thinking":
-      return <ThoughtParagraph msg={msg} isLast={isLast} />;
+      return <ThinkingRow msg={msg} />;
 
     case "text": {
       if (msg.role === "user") {

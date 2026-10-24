@@ -1042,135 +1042,37 @@ function RegistryCard({
   );
 }
 
-/* ─── Registry connect modal ─────────────────────────────────────────────── */
-
-function RegistryConnectModal({
-  def, open, onOpenChange, onConnect,
-}: {
-  def: McpDef;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConnect: (creds: Record<string, string>) => Promise<void>;
-}) {
-  const [values,   setValues]   = useState<Record<string, string>>({});
-  const [showPass, setShowPass] = useState<Record<string, boolean>>({});
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
-  // Stable random suffix per dialog mount — defeats browser autofill (Chrome/Safari)
-  // and password managers (1Password/LastPass) from injecting saved Supabase /
-  // login credentials into MCP credential fields.
-  const nameSuffix = useMemo(() => Math.random().toString(36).slice(2, 10), []);
-
-  const fields = def.fields ?? [];
-  const requiredKeys = fields.filter(f => !f.optional).map(f => f.key);
-  const canSubmit = requiredKeys.every(k => (values[k] ?? "").trim().length > 0);
-
-  const handleSubmit = async () => {
-    if (!canSubmit || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const creds: Record<string, string> = {};
-      for (const f of fields) {
-        const v = values[f.key]?.trim();
-        if (v) creds[f.key] = v;
-      }
-      await onConnect(creds);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Connection failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Reset state when dialog closes
-  useEffect(() => {
-    if (!open) { setValues({}); setShowPass({}); setError(null); setSaving(false); }
-  }, [open]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span>{def.emoji}</span> Connect {def.name}
-          </DialogTitle>
-          <DialogDescription>{def.desc}</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          {fields.map(f => {
-            const isPass = f.type === "password";
-            const shown  = showPass[f.key] ?? false;
-            return (
-              <div key={f.key} className="space-y-1.5">
-                <Label htmlFor={`mcp-f-${f.key}`}>
-                  {f.label}
-                  {f.optional && <span className="ml-1 text-xs text-muted-foreground">(optional)</span>}
-                </Label>
-                <div className="relative">
-                  <Input
-                    id={`mcp-f-${f.key}`}
-                    type={isPass && !shown ? "password" : "text"}
-                    value={values[f.key] ?? ""}
-                    onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    className={isPass ? "pr-14" : ""}
-                    name={`mcp-${def.provider}-${f.key}-${nameSuffix}`}
-                    autoComplete={isPass ? "new-password" : "off"}
-                    data-lpignore="true"
-                    data-1p-ignore="true"
-                    data-form-type="other"
-                    spellCheck={false}
-                  />
-                  {isPass && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPass(s => ({ ...s, [f.key]: !s[f.key] }))}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground hover:text-foreground"
-                    >
-                      {shown ? "Hide" : "Show"}
-                    </button>
-                  )}
-                </div>
-                {f.help && <HintText text={f.help} />}
-              </div>
-            );
-          })}
-
-          {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-
-          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit || saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Connect"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/* ─── MCP detail page (Supabase only) ───────────────────────────────────── */
+/* ─── MCP detail page (all providers) ────────────────────────────────────── */
 
 function McpDetail({
-  def, onBack, connected, onConnectSupabase, onDisconnect,
+  def, onBack, connected, onConnectSupabase, onDisconnect, onConnectRegistry,
 }: {
   def: McpDef;
   onBack: () => void;
   connected: boolean;
   onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
   onDisconnect: () => Promise<void>;
+  onConnectRegistry?: (creds: Record<string, string>) => Promise<void>;
 }) {
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
   const meta = META[def.provider];
+
+  // Stable random suffix per mount — defeats browser autofill (Chrome/Safari)
+  // and password managers (1Password/LastPass) from injecting saved Supabase /
+  // login credentials into MCP credential fields.
+  const nameSuffix = useMemo(() => Math.random().toString(36).slice(2, 10), []);
+
+  const [token,      setToken]      = useState("");
+  const [projectRef, setProjectRef] = useState("");
+  const [values,     setValues]     = useState<Record<string, string>>({});
+  const [showPass,   setShowPass]   = useState<Record<string, boolean>>({});
+  const [error,      setError]      = useState<string | null>(null);
+  const [saving,     setSaving]     = useState(false);
+  const [busy,       setBusy]       = useState(false);
+
+  const fields = def.fields ?? [];
+  const canSubmit = fields.filter(f => !f.optional).every(f => (values[f.key] ?? "").trim().length > 0);
 
   const [token,      setToken]      = useState("");
   const [projectRef, setProjectRef] = useState("");

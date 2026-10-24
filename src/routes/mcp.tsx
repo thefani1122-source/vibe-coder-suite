@@ -540,9 +540,8 @@ function McpPage() {
 
   // Registry MCP connection state
   const [connectedSlugs, setConnectedSlugs] = useState<Set<string>>(new Set());
-  const [connectTarget, setConnectTarget]   = useState<McpDef | null>(null);
 
-  // `?connect=<provider>` opens that service's form on arrival.
+  // `?connect=<provider>` opens that service's detail page on arrival.
   //
   // This page is reached from a paused build: the builder asked for a database
   // and the person pressed a button that opened this tab. Landing them on a
@@ -553,7 +552,7 @@ function McpPage() {
     const wanted = new URLSearchParams(window.location.search).get("connect");
     if (!wanted) return;
     const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
-    if (def) setConnectTarget(def);
+    if (def) setSelected(def);
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
   const [disconnectTarget, setDisconnectTarget] = useState<McpDef | null>(null);
@@ -631,12 +630,10 @@ function McpPage() {
       });
   }, [user?.id]);
 
-  const handleRegistryConnect = async (creds: Record<string, string>) => {
-    if (!connectTarget) return;
-    await connectMcp(connectTarget.provider, creds);
-    setConnectedSlugs(prev => new Set([...prev, connectTarget.provider]));
-    setConnectTarget(null);
-    toast.success(`${connectTarget.name} connected!`);
+  const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
+    await connectMcp(def.provider, creds);
+    setConnectedSlugs(prev => new Set([...prev, def.provider]));
+    toast.success(`${def.name} connected!`);
   };
 
   const handleRegistryDisconnect = async () => {

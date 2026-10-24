@@ -1198,7 +1198,14 @@ function McpDetail({
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
           </div>
-        ) : (
+        ) : def.connectMode === "coming_soon" ? (
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold">{def.name} is coming soon</h2>
+            <p className="text-sm text-muted-foreground">
+              This integration is still being prepared. The sections above show what it will unlock once it ships.
+            </p>
+          </div>
+        ) : def.connectMode === "supabase_form" ? (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Connect {def.name}</h2>
             <div className="space-y-2">
@@ -1218,6 +1225,56 @@ function McpDetail({
               <span>Encrypted and never sent to the browser, the AI, or the preview. Only the public anon key is used in previews.</span>
             </div>
             <Button onClick={handleSupabase} disabled={saving || !token.trim()} className="w-full">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            {fields.map(f => {
+              const isPass = f.type === "password";
+              const shown  = showPass[f.key] ?? false;
+              return (
+                <div key={f.key} className="space-y-1.5">
+                  <Label htmlFor={`mcp-f-${f.key}`}>
+                    {f.label}
+                    {f.optional && <span className="ml-1 text-xs text-muted-foreground">(optional)</span>}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id={`mcp-f-${f.key}`}
+                      type={isPass && !shown ? "password" : "text"}
+                      value={values[f.key] ?? ""}
+                      onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
+                      placeholder={f.placeholder}
+                      className={isPass ? "pr-14" : ""}
+                      name={`mcp-${def.provider}-${f.key}-${nameSuffix}`}
+                      autoComplete={isPass ? "new-password" : "off"}
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      spellCheck={false}
+                    />
+                    {isPass && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPass(s => ({ ...s, [f.key]: !s[f.key] }))}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground hover:text-foreground"
+                      >
+                        {shown ? "Hide" : "Show"}
+                      </button>
+                    )}
+                  </div>
+                  {f.help && <HintText text={f.help} />}
+                </div>
+              );
+            })}
+            {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
+            </div>
+            <Button onClick={handleRegistry} disabled={!canSubmit || saving} className="w-full">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
             </Button>
           </div>

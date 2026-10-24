@@ -704,15 +704,34 @@ function McpPage() {
   const connectedCount = connectedSlugs.size + Object.keys(backendConns).length + customMcps.length;
 
   if (selected) {
+    const selectedConnected =
+      selected.connectMode === "registry_form"
+        ? connectedSlugs.has(selected.provider)
+        : selected.connectMode === "supabase_form"
+        ? !!backendConns[selected.provider]
+        : rows[selected.provider]?.status === "connected";
     return (
       <RequireAuth>
         <Shell>
           <McpDetail
             def={selected}
             onBack={() => setSelected(null)}
-            connected={!!backendConns[selected.provider]}
+            connected={selectedConnected}
             onConnectSupabase={connectSupabaseMcp}
-            onDisconnect={() => disconnectProvider(selected.provider)}
+            onDisconnect={
+              selected.connectMode === "registry_form"
+                ? async () => {
+                    try {
+                      await disconnectMcp(selected.provider);
+                      setConnectedSlugs(prev => { const n = new Set(prev); n.delete(selected.provider); return n; });
+                      toast.success(`${selected.name} disconnected`);
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Failed to disconnect");
+                    }
+                  }
+                : () => disconnectProvider(selected.provider)
+            }
+            onConnectRegistry={(creds) => handleRegistryConnect(selected, creds)}
           />
         </Shell>
       </RequireAuth>
@@ -864,7 +883,7 @@ function McpPage() {
                               key={s.provider}
                               def={s}
                               connected={connected}
-                              onConnect={() => setConnectTarget(s)}
+                              onConnect={() => setSelected(s)}
                               onDisconnect={() => setDisconnectTarget(s)}
                             />
                           );
@@ -925,16 +944,6 @@ function McpPage() {
             </div>
           )}
         </div>
-
-        {/* Registry connect modal */}
-        {connectTarget && (
-          <RegistryConnectModal
-            def={connectTarget}
-            open={true}
-            onOpenChange={open => { if (!open) setConnectTarget(null); }}
-            onConnect={handleRegistryConnect}
-          />
-        )}
 
         {/* Registry disconnect confirm */}
         {disconnectTarget && (

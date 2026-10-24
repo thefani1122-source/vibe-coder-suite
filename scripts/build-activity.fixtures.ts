@@ -3,7 +3,7 @@
  *
  * The two shapes seen in production, plus the one that was never looked at.
  */
-import { describeToolActivity } from "../src/lib/build-activity";
+import { describePipelineActivity, describeToolActivity } from "../src/lib/build-activity";
 
 let failures = 0;
 function check(name: string, got: unknown, want: unknown): void {
@@ -14,6 +14,33 @@ function check(name: string, got: unknown, want: unknown): void {
   failures++;
   console.log(`FAIL ${name}\n  got:  ${JSON.stringify(got)}\n  want: ${JSON.stringify(want)}`);
 }
+
+// Pipeline events are user-facing progress, not provider-specific status text.
+check(
+  "planning status is clear",
+  describePipelineActivity("Analyzing your prompt and planning the build..."),
+  "Understanding your request",
+);
+check(
+  "legacy model label is made useful",
+  describePipelineActivity("Calling AI model..."),
+  "Planning the next step",
+);
+check(
+  "writing status is clear",
+  describePipelineActivity("Writing src/App.tsx (82 lines"),
+  "Writing your app files",
+);
+check(
+  "preview status names the outcome",
+  describePipelineActivity("Finalizing and preparing preview..."),
+  "Checking your app and preparing the preview",
+);
+check(
+  "unknown status does not leak internals",
+  describePipelineActivity("provider-secret-internal-state"),
+  "Working on your build",
+);
 
 // The exact payload from the user's screenshot.
 const askArgs = JSON.stringify({
@@ -37,11 +64,7 @@ const writeArgs = JSON.stringify({
 const write = describeToolActivity("write_files", writeArgs);
 check("write_files label", write.label, "Writing 2 files");
 check("write_files shows paths only", write.details, "src/App.tsx\nsrc/lib/api.ts");
-check(
-  "write_files leaks no file content",
-  (write.details ?? "").includes("export default"),
-  false,
-);
+check("write_files leaks no file content", (write.details ?? "").includes("export default"), false);
 
 // Singular, the most common shape, pinned a third time.
 check(

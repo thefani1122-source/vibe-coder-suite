@@ -13,7 +13,11 @@ import type { FileDiff } from "@/components/DiffView";
 import { BuildReceipt } from "@/components/BuildReceipt";
 import { useBuildReceipt } from "@/hooks/use-build-receipt";
 import type { BuildReceiptOutcome } from "@/lib/build-receipt";
-import { describeToolActivity, splitReasoningParagraphs } from "@/lib/build-activity";
+import {
+  describePipelineActivity,
+  describeToolActivity,
+  splitReasoningParagraphs,
+} from "@/lib/build-activity";
 import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
 import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
 import { ConnectDatabaseCard } from "@/components/ConnectDatabaseCard";
@@ -78,7 +82,7 @@ function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   return [...prev.slice(0, -1), { ...prev[prev.length - 1], streaming: false }];
 }
 
-function appendReasoning(prev: BuildMessage[], chunk: string): BuildMessage[] {
+function appendCommentary(prev: BuildMessage[], chunk: string): BuildMessage[] {
   const last = prev[prev.length - 1];
   const wasStreaming = last?.type === "thinking" && last.streaming === true;
   const source = `${wasStreaming && last ? last.text : ""}${chunk}`;
@@ -95,11 +99,8 @@ function appendReasoning(prev: BuildMessage[], chunk: string): BuildMessage[] {
   return [...base, ...nextMessages];
 }
 
-// Pipeline status messages emitted by the backend — never real AI thinking.
-// FALLBACK ONLY: classifies a build:thinking event when the backend hasn't
-// sent the `internal` boolean flag yet (see the build:thinking handler below,
-// which prefers `data.internal` and only falls back to these patterns when
-// that field is absent).
+// Legacy pipeline labels without the typed `internal` flag. Current backend
+// events mark pipeline status explicitly; model stream text is never displayed.
 //
 // FRAGILE: These patterns must stay in sync with stream-handler.ts on the backend.
 // TODO(backend): Always send `internal: true` on pipeline/status messages and
@@ -435,10 +436,8 @@ function WorkspacePage() {
       // where a build genuinely begins — on session mount and on send.
       if (completedRef.current) return;
 
-      // Pipeline status lines ("Writing src/App.tsx") belong in the status chip
-      // above; only the model's actual reasoning goes in the chat. The backend
-      // marks the difference with `internal`, with a keyword fallback for events
-      // sent before that flag existed.
+      // Pipeline status lines belong in the live activity row. The backend
+      // marks them with `internal`; legacy statuses use the keyword fallback.
       const isPipelineStatus = data.internal === true
         || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
       const trimmed = chunk.trim();
@@ -446,19 +445,15 @@ function WorkspacePage() {
         // A pipeline status ("Starting the preview…") is the ONE kind of
         // activity with no row of its own, so the live line is where it
         // belongs — and is now the only thing the live line is for.
-        if (trimmed.length <= 80) setActivity(trimmed);
+        setActivity(describePipelineActivity(trimmed));
         return;
       }
 
-      // A thought gets its own row in the transcript, and putting the same
-      // sentence on the live line as well is what showed it twice — once
-      // ticked, once spinning. Reported 2026-10-23. The row is the thought;
-      // the line steps aside.
+      // The backend no longer forwards provider reasoning. Remaining
+      // non-internal messages are deliberate user-facing updates, such as
+      // requirement summaries or repair notes.
       setActivity(null);
-
-      // Keep the active paragraph streaming, but give each blank-line paragraph
-      // its own bounded card so long builds stay readable as they arrive.
-      setMessages((prev) => appendReasoning(prev, chunk));
+      setMessages((prev) => appendCommentary(prev, chunk));
     });
 
     socket.on("build:checks", (data: { rows?: CheckRow[] }) => {
@@ -471,7 +466,9 @@ function WorkspacePage() {
       // Same rule as build:thinking above — nothing lands in the chat after the
       // build has reported complete.
       if (completedRef.current) return;
-      setMessages((prev) => appendReasoning(prev, text));
+      // Legacy token events can contain provider reasoning. Use the progress
+      // row instead of echoing raw model tokens into the transcript.
+      setActivity("Working on the next step");
       setCurrentAgent(a => a ?? "planning");
     });
 
@@ -812,10 +809,9 @@ function WorkspacePage() {
           if (data.files && Object.keys(data.files).length > 0) {
             filesRef.current = data.files;
             setFiles(data.files);
-            // Strip any hardcoded system messages that leaked into previous snapshots.
-            const clean = (data.messages ?? []).filter(
-              m => !(m.type === "thinking" && HARDCODED_PATTERNS.some(p => p.test(m.text.trim()))),
-            );
+            // Old snapshots contain provider reasoning mixed with pipeline
+            // text. New builds use the activity row and tool timeline instead.
+            const clean = (data.messages ?? []).filter((m) => m.type !== "thinking");
             setMessages(clean);
             setBuildStatus(data.buildStatus ?? "complete");
             setActiveTab(data.activeTab ?? "preview");

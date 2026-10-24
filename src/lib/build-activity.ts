@@ -6,6 +6,32 @@ export interface ToolActivityDescription {
   details?: string;
 }
 
+/** Convert backend pipeline updates into concise progress text for the live row. */
+export function describePipelineActivity(status?: string): string {
+  const text = status?.trim() ?? "";
+  if (!text) return "Working on your build";
+
+  if (/^(analyzing your prompt|understanding your request)/i.test(text)) {
+    return "Understanding your request";
+  }
+  if (/^building:/i.test(text) || /^starting new build/i.test(text)) {
+    return "Getting your build ready";
+  }
+  if (/^calling (the )?ai model/i.test(text)) return "Planning the next step";
+  if (/^writing files/i.test(text) || /^writing src\//i.test(text)) {
+    return "Writing your app files";
+  }
+  if (/^editing existing project/i.test(text)) return "Updating your project";
+  if (/^(finalizing|preparing|starting).*preview/i.test(text)) {
+    return "Checking your app and preparing the preview";
+  }
+  if (/^(checking|running tests|reviewing)/i.test(text)) return text;
+
+  // Unknown backend labels may be internal or provider-specific. Keep the
+  // user-facing progress useful without echoing opaque implementation text.
+  return "Working on your build";
+}
+
 const fileLabel = (verb: "Editing" | "Reading", args?: Record<string, unknown>) => {
   const path = args?.path;
   return typeof path === "string" && path.trim() ? `${verb} ${path.trim()}` : `${verb} a file`;
@@ -144,7 +170,9 @@ function describeToolDetails(name: string, args?: Record<string, unknown>): stri
       // The one case worth showing: WHICH files, never their contents.
       const files = args["files"];
       const paths = Array.isArray(files)
-        ? files.map((f) => (f && typeof f === "object" ? (f as Record<string, unknown>)["path"] : f))
+        ? files.map((f) =>
+            f && typeof f === "object" ? (f as Record<string, unknown>)["path"] : f,
+          )
         : files && typeof files === "object"
           ? Object.keys(files)
           : [];

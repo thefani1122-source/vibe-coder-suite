@@ -1074,11 +1074,6 @@ function McpDetail({
   const fields = def.fields ?? [];
   const canSubmit = fields.filter(f => !f.optional).every(f => (values[f.key] ?? "").trim().length > 0);
 
-  const [token,      setToken]      = useState("");
-  const [projectRef, setProjectRef] = useState("");
-  const [saving,     setSaving]     = useState(false);
-  const [busy,       setBusy]       = useState(false);
-
   const handleSupabase = async () => {
     if (!token.trim()) { toast.error("Access token is required"); return; }
     setSaving(true);
@@ -1089,6 +1084,26 @@ function McpDetail({
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to connect");
     } finally { setSaving(false); }
+  };
+
+  const handleRegistry = async () => {
+    if (!onConnectRegistry || !canSubmit || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const creds: Record<string, string> = {};
+      for (const f of fields) {
+        const v = values[f.key]?.trim();
+        if (v) creds[f.key] = v;
+      }
+      await onConnectRegistry(creds);
+      setValues({});
+      setShowPass({});
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Connection failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDisconnect = async () => {

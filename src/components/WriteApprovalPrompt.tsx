@@ -102,7 +102,7 @@ export function WriteApprovalPrompt({ action, onDecision }: Props) {
               type="button"
               onClick={() => decide(true)}
               disabled={answered || expired}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/90 px-3 py-1.5 text-sm font-medium text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Check className="h-4 w-4" />
               Approve

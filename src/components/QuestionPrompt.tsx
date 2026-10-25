@@ -151,7 +151,7 @@ export function QuestionPrompt({ question, onAnswer, onAction, actionPending }: 
               type="button"
               onClick={() => send(draft)}
               disabled={answered || expired || draft.trim().length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-2 text-sm font-medium text-black transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Send className="h-4 w-4" />
               Send

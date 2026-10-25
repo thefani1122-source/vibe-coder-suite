@@ -12,12 +12,12 @@ export function describePipelineActivity(status?: string): string {
   if (!text) return "Working on your build";
 
   if (/^(analyzing your prompt|understanding your request)/i.test(text)) {
-    return "Understanding your request";
+    return "Thinking";
   }
   if (/^building:/i.test(text) || /^starting new build/i.test(text)) {
     return "Getting your build ready";
   }
-  if (/^calling (the )?ai model/i.test(text)) return "Planning the next step";
+  if (/^calling (the )?ai model/i.test(text)) return "Thinking";
   if (/^writing files/i.test(text) || /^writing src\//i.test(text)) {
     return "Writing your app files";
   }

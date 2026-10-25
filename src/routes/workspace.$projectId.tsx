@@ -80,6 +80,9 @@ function newMsg(partial: Omit<BuildMessage, "id">): BuildMessage {
 function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
   if (!prev.length || !prev[prev.length - 1].streaming) return prev;
   const last = prev[prev.length - 1];
+  if (last.type === "thinking" && !last.text?.trim()) {
+    return prev.slice(0, -1);
+  }
   const endedAt = Date.now();
   const durationMs = last.startedAt ? Math.max(1000, endedAt - last.startedAt) : undefined;
   return [...prev.slice(0, -1), { ...last, streaming: false, durationMs }];
@@ -114,8 +117,6 @@ function appendCommentary(prev: BuildMessage[], chunk: string): BuildMessage[] {
 const HARDCODED_PATTERNS: RegExp[] = [
   /^Building:/i,
   /^Starting new build/i,
-  /^Calling AI model/i,
-  /^Analyzing your prompt and planning the build/i,
   /^Finalizing and preparing preview/i,
   /^Writing files\.\.\./i,
   /^Writing src\/.+\(\d+ lines/i,
@@ -430,33 +431,27 @@ function WorkspacePage() {
       const chunk = data.text ?? data.content ?? "";
       if (!chunk.trim()) return;
 
-      // Once the build has reported complete, repair work still runs in the
-      // background (typecheck fix, render fix). Those emit thinking too, and
-      // appending it would drop "Fixing a type error…" UNDER the summary that
-      // just said the app was ready — which reads like the agent answered and
-      // then started thinking. After completion it stays in the status chip
-      // only, so the chat's order always matches what actually happened.
-      // NOTE: this handler used to reset completedRef itself, which is what let
-      // that trailing thinking through in the first place. The flag is reset
-      // where a build genuinely begins — on session mount and on send.
       if (completedRef.current) return;
+
+      const trimmed = chunk.trim();
+
+      // Drop synthetic/placeholder ticks ("Calling AI model...", "Analyzing your prompt...")
+      // so they never render as "Planning the next step" or "Understanding your request".
+      // Real thinking streams into ThinkingRow.
+      if (/^(calling (the )?ai model|analyzing your prompt|understanding your request)/i.test(trimmed)) {
+        setActivity(null);
+        return;
+      }
 
       // Pipeline status lines belong in the live activity row. The backend
       // marks them with `internal`; legacy statuses use the keyword fallback.
       const isPipelineStatus = data.internal === true
-        || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(chunk.trim())));
-      const trimmed = chunk.trim();
+        || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(trimmed)));
       if (isPipelineStatus) {
-        // A pipeline status ("Starting the preview…") is the ONE kind of
-        // activity with no row of its own, so the live line is where it
-        // belongs — and is now the only thing the live line is for.
         setActivity(describePipelineActivity(trimmed));
         return;
       }
 
-      // The backend no longer forwards provider reasoning. Remaining
-      // non-internal messages are deliberate user-facing updates, such as
-      // requirement summaries or repair notes.
       setActivity(null);
       setMessages((prev) => appendCommentary(prev, chunk));
     });
@@ -557,6 +552,7 @@ function WorkspacePage() {
     socket.on(
       "build:file_write",
       (data: { path?: string; file?: string; content?: string; code?: string }) => {
+        setActivity(null);
         const path = data.path ?? data.file ?? "file";
         const code = data.content ?? data.code ?? "";
         filesRef.current = { ...filesRef.current, [path]: code };
@@ -845,8 +841,10 @@ function WorkspacePage() {
       const initial: BuildMessage[] = [];
       if (storedPrompt.trim()) {
         initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
+        initial.push(newMsg({ type: "thinking", text: "", streaming: true, startedAt: Date.now() }));
       }
       setMessages(initial);
+      setActivity(null);
     }
 
     registerHandlers(socket);
@@ -1093,7 +1091,9 @@ function WorkspacePage() {
     setMessages(prev => [
       ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
       newMsg({ type: "text", text: prompt, role: "user" }),
+      newMsg({ type: "thinking", text: "", streaming: true, startedAt: Date.now() }),
     ]);
+    setActivity(null);
     setBuildStatus("running");
     setChecks(null);
     setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });

@@ -164,10 +164,16 @@ export function ChatPanel({
  * scrolling transcript is what hid the text in the first place.
  */
 function ThinkingRow({ msg }: { msg: BuildMessage }) {
-  const [isOpen, setIsOpen] = useState(false);
   const isStreaming = msg.streaming === true;
   const startedAt = msg.startedAt ?? Date.now();
   const [elapsed, setElapsed] = useState(() => Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // During streaming, default to OPEN so the live line-by-line thinking is visible.
+  // Once completed, default to COLLAPSED into a clean "Thought for Xs" row.
+  // If the user explicitly toggles Show/Hide, respect their manual preference.
+  const isOpen = userToggled !== null ? userToggled : isStreaming;
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -176,6 +182,13 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     }, 1000);
     return () => clearInterval(interval);
   }, [isStreaming, startedAt]);
+
+  // Keep the thinking box scrolled to the latest line as tokens stream in
+  useEffect(() => {
+    if (isStreaming && isOpen && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [msg.text, isStreaming, isOpen]);
 
   const finalSec = msg.durationMs
     ? Math.max(1, Math.round(msg.durationMs / 1000))
@@ -196,7 +209,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     <div className="my-1 rounded-lg border border-white/5 bg-white/[0.02] text-xs transition-colors hover:bg-white/[0.04]">
       <button
         type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
+        onClick={() => setUserToggled(!isOpen)}
         className="flex w-full cursor-pointer items-center justify-between px-3 py-1.5 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
       >
         <div className="flex items-center gap-2">
@@ -222,9 +235,21 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
       </button>
 
       {isOpen && (
-        <div className="max-h-56 overflow-y-auto border-t border-white/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/50 whitespace-pre-wrap select-text scrollbar-thin scrollbar-thumb-white/10">
-          {msg.text?.trim() || "No detailed reasoning recorded."}
-          {isStreaming && <BlinkCursor />}
+        <div
+          ref={scrollRef}
+          className="max-h-56 overflow-y-auto border-t border-white/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/50 whitespace-pre-wrap select-text scrollbar-thin scrollbar-thumb-white/10"
+        >
+          {msg.text?.trim() ? (
+            <>
+              {msg.text.trim()}
+              {isStreaming && <BlinkCursor />}
+            </>
+          ) : (
+            <span className="italic text-white/30 flex items-center gap-1.5">
+              <span>Thinking...</span>
+              {isStreaming && <BlinkCursor />}
+            </span>
+          )}
         </div>
       )}
     </div>

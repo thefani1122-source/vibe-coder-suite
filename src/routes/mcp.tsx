@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp } from "@/lib/api";
+import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/mcp")({ component: McpPage });
@@ -83,7 +83,10 @@ const SERVERS: McpDef[] = [
     category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form",
     fields: [{ key: "vercel_token", label: "Vercel Account Token", type: "password", placeholder: "...", help: "Create at vercel.com/account/tokens" }],
   },
-  { name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "coming_soon" },
+  {
+    name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "registry_form",
+    fields: [{ key: "netlify_token", label: "Personal Access Token", type: "password", placeholder: "nfp_...", help: "Create at app.netlify.com → User settings → Applications → Personal access tokens" }],
+  },
   {
     name: "Railway", desc: "Deploy to Railway from generated apps via the Railway GraphQL API.",
     category: "Deploy", emoji: "🚂", provider: "railway", providerType: "deploy", connectMode: "registry_form",
@@ -988,9 +991,9 @@ function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boo
         </div>
         <Badge
           variant={connected ? "default" : "secondary"}
-          className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}
+          className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "border-orange-500/30 bg-orange-500/10 text-orange-400"}
         >
-          {connected ? "● Connected" : "Available"}
+          {connected ? "● Connected" : "Connect"}
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
@@ -1070,6 +1073,8 @@ function McpDetail({
   const [error,      setError]      = useState<string | null>(null);
   const [saving,     setSaving]     = useState(false);
   const [busy,       setBusy]       = useState(false);
+  const [testing,    setTesting]    = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
 
   const fields = def.fields ?? [];
   const canSubmit = fields.filter(f => !f.optional).every(f => (values[f.key] ?? "").trim().length > 0);
@@ -1106,6 +1111,67 @@ function McpDetail({
     }
   };
 
+  /**
+   * Test the credentials WITHOUT saving them. Both routes the backend offers
+   * verify-before-store (the MCP route lists tools, the Supabase route checks
+   * the REST health endpoint), so a test reuses the connect call and then
+   * removes the row it just wrote. If the revert fails the connection simply
+   * stays — erroring a test that actually succeeded would be worse.
+   */
+  const handleTest = async () => {
+    if (testing || saving) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      if (def.connectMode === "supabase_form") {
+        const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
+          "/api/integrations/supabase/mcp",
+          { accessToken: token.trim(), projectRef: projectRef.trim() || undefined },
+          { silent: true },
+        );
+        try {
+          const list = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string }> }>(
+            "/api/integrations", { silent: true },
+          );
+          const row = list.integrations.find(i => i.provider === "supabase" && i.status === "connected");
+          if (row) await apiDelete(`/api/integrations/${row.id}`, { silent: true });
+        } catch { /* revert failed — leave it connected */ }
+        setTestResult({
+          ok: true,
+          detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
+        });
+      } else {
+        const creds: Record<string, string> = {};
+        for (const f of fields) {
+          const v = values[f.key]?.trim();
+          if (v) creds[f.key] = v;
+        }
+        const res = await apiPost<{ toolCount?: number }>(
+          `/api/integrations/mcp/${def.provider}/connect`,
+          { creds },
+          { silent: true },
+        );
+        try { await disconnectMcp(def.provider); } catch { /* revert failed — leave it connected */ }
+        setTestResult({
+          ok: true,
+          detail: `Credentials verified — ${res.toolCount ?? "all"} tools reachable. Click "Verify & Connect" to save them.`,
+        });
+      }
+    } catch (err: unknown) {
+      let detail: string;
+      if (err instanceof ApiError) {
+        const d = err.data && typeof err.data === "object" ? (err.data as Record<string, unknown>) : null;
+        const code = d ? String(d.error ?? d.code ?? "") : "";
+        detail = code && code !== err.message ? `${err.message} (${code}, status ${err.status})` : `${err.message} (status ${err.status})`;
+      } else {
+        detail = err instanceof Error ? err.message : "Test failed";
+      }
+      setTestResult({ ok: false, detail });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleDisconnect = async () => {
     setBusy(true);
     try { await onDisconnect(); } finally { setBusy(false); }
@@ -1125,8 +1191,8 @@ function McpDetail({
             <p className="mt-0.5 text-sm text-muted-foreground">{def.desc}</p>
           </div>
         </div>
-        <Badge variant={connected ? "default" : "secondary"} className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : ""}>
-          {connected ? "● Connected" : "Available"}
+        <Badge variant={connected ? "default" : "secondary"} className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "border-orange-500/30 bg-orange-500/10 text-orange-400"}>
+          {connected ? "● Connected" : "Connect"}
         </Badge>
       </div>
 
@@ -1198,13 +1264,6 @@ function McpDetail({
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
           </div>
-        ) : def.connectMode === "coming_soon" ? (
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold">{def.name} is coming soon</h2>
-            <p className="text-sm text-muted-foreground">
-              This integration is still being prepared. The sections above show what it will unlock once it ships.
-            </p>
-          </div>
         ) : def.connectMode === "supabase_form" ? (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold">Connect {def.name}</h2>
@@ -1224,9 +1283,24 @@ function McpDetail({
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Encrypted and never sent to the browser, the AI, or the preview. Only the public anon key is used in previews.</span>
             </div>
-            <Button onClick={handleSupabase} disabled={saving || !token.trim()} className="w-full">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={handleTest} disabled={testing || saving || !token.trim()} className="sm:w-auto">
+                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Test connection
+              </Button>
+              <Button onClick={handleSupabase} disabled={saving || testing || !token.trim()} className="flex-1">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+              </Button>
+            </div>
+            {testResult && (
+              <p
+                role="status"
+                className={`rounded-md px-3 py-2 text-sm ${testResult.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-destructive/10 text-destructive"}`}
+              >
+                {testResult.ok ? "✓ " : "✕ "}
+                {testResult.detail}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
@@ -1274,9 +1348,24 @@ function McpDetail({
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
             </div>
-            <Button onClick={handleRegistry} disabled={!canSubmit || saving} className="w-full">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={handleTest} disabled={!canSubmit || testing || saving} className="sm:w-auto">
+                {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                Test connection
+              </Button>
+              <Button onClick={handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
+              </Button>
+            </div>
+            {testResult && (
+              <p
+                role="status"
+                className={`rounded-md px-3 py-2 text-sm ${testResult.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-destructive/10 text-destructive"}`}
+              >
+                {testResult.ok ? "✓ " : "✕ "}
+                {testResult.detail}
+              </p>
+            )}
           </div>
         )}
       </div>

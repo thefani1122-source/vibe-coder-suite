@@ -167,13 +167,8 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
   const isStreaming = msg.streaming === true;
   const startedAt = msg.startedAt ?? Date.now();
   const [elapsed, setElapsed] = useState(() => Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
-  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // During streaming, default to OPEN so the live line-by-line thinking is visible.
-  // Once completed, default to COLLAPSED into a clean "Thought for Xs" row.
-  // If the user explicitly toggles Show/Hide, respect their manual preference.
-  const isOpen = userToggled !== null ? userToggled : isStreaming;
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -183,7 +178,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     return () => clearInterval(interval);
   }, [isStreaming, startedAt]);
 
-  // Keep the thinking box scrolled to the latest line as tokens stream in
+  // Keep the thinking box scrolled to the latest line as tokens stream in when expanded
   useEffect(() => {
     if (isStreaming && isOpen && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -205,27 +200,40 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
 
   const label = isStreaming ? "Thinking..." : `Thought for ${formatTime(finalSec)}`;
 
+  // Extract a clean one-line preview of what it's thinking while collapsed
+  const lines = (msg.text ?? "")
+    .split("
+")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const latestLine = lines[lines.length - 1] || "";
+
   return (
     <div className="my-1 rounded-lg border border-white/5 bg-white/[0.02] text-xs transition-colors hover:bg-white/[0.04]">
       <button
         type="button"
-        onClick={() => setUserToggled(!isOpen)}
-        className="flex w-full cursor-pointer items-center justify-between px-3 py-1.5 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full cursor-pointer items-center justify-between px-3 py-1.5 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg gap-2"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           {isStreaming ? (
-            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
           ) : (
-            <Sparkles className="h-3 w-3 text-white/40" />
+            <Sparkles className="h-3 w-3 text-white/40 shrink-0" />
           )}
-          <span className="font-mono text-[11px] text-white/70">{label}</span>
+          <span className="font-mono text-[11px] text-white/70 shrink-0">{label}</span>
           {isStreaming && (
-            <span className="font-mono text-[10px] text-white/40 tabular-nums">
+            <span className="font-mono text-[10px] text-white/40 tabular-nums shrink-0">
               {formatTime(elapsed)}
             </span>
           )}
+          {isStreaming && !isOpen && latestLine && (
+            <span className="truncate font-mono text-[11px] text-white/35 italic min-w-0">
+              {latestLine}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-1 text-[11px] text-white/40">
+        <div className="flex items-center gap-1 text-[11px] text-white/40 shrink-0">
           <span>{isOpen ? "Hide" : "Show"}</span>
           <ChevronRight
             aria-hidden="true"

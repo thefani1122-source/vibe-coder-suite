@@ -5,54 +5,29 @@ import { apiPost, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   ArrowUp,
   Sparkles,
   Link2,
-  ChevronDown,
-  Zap,
-  Code2,
   X,
-  Figma,
-  Check,
   Plus,
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type Mode = "fast" | "editor";
-const MODES: { id: Mode; label: string; icon: typeof Zap; soon?: boolean; desc: string }[] = [
-  { id: "fast", label: "Fast Mode", icon: Zap, desc: "Quick build for simple projects (2–5 min)" },
-  { id: "editor", label: "Editor Mode", icon: Code2, soon: true, desc: "Tweak code directly" },
-];
-
-const IDEA_PROMPTS = [
-  "a counter app with dark mode",
-  "a Pomodoro timer with stats",
-  "a recipe finder with search",
-  "a kanban board for tasks",
-  "a markdown notes app",
-  "a habit tracker dashboard",
-  "a weather widget with charts",
-  "a personal finance tracker",
-];
-
-const QUICK_IDEAS = [
-  "Counter app",
-  "Pomodoro timer",
-  "Kanban board",
-  "Markdown notes",
-  "Weather widget",
-  "Habit tracker",
+// Larger, ambitious starter builds. The same list drives the rotating
+// placeholder animation inside the composer and the chips below it.
+const BIG_BUILDS = [
+  "a lead qualification system with AI scoring",
+  "a full CRM dashboard with sales pipelines",
+  "an e-commerce storefront with cart and checkout",
+  "a project management suite with Gantt timelines",
+  "an analytics dashboard with live charts",
+  "a booking platform with calendar scheduling",
+  "a support desk with automated ticket routing",
+  "an inventory and order manager",
 ];
 
 export function PromptComposer() {

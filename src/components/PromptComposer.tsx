@@ -14,7 +14,6 @@ import {
   Plus,
   FileText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 // Larger, ambitious starter builds. The same list drives the rotating

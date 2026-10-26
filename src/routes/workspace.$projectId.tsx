@@ -435,11 +435,17 @@ function WorkspacePage() {
 
       const trimmed = chunk.trim();
 
-      // Drop synthetic/placeholder ticks ("Calling AI model...", "Analyzing your prompt...")
-      // so they never render as "Planning the next step" or "Understanding your request".
-      // Real thinking streams into ThinkingRow.
-      if (/^(calling (the )?ai model|analyzing your prompt|understanding your request)/i.test(trimmed)) {
-        setActivity(null);
+      // Drop synthetic/placeholder ticks and criteria extraction lines
+      // so they never render as thoughts or corrupt the thinking transcript.
+      if (
+        /^(calling (the )?ai model|analyzing your prompt|understanding your request|planning the next step)/i.test(trimmed) ||
+        /^here's (what i understood|the one thing)/i.test(trimmed) ||
+        /^if i misunderstood/i.test(trimmed) ||
+        /^the list is partial/i.test(trimmed) ||
+        trimmed.startsWith("•") ||
+        trimmed.startsWith("  •")
+      ) {
+        setActivity("Thinking...");
         return;
       }
 
@@ -452,6 +458,7 @@ function WorkspacePage() {
         return;
       }
 
+      // Real model thinking arrived - clear live activity and append to thinking
       setActivity(null);
       setMessages((prev) => appendCommentary(prev, chunk));
     });
@@ -841,10 +848,9 @@ function WorkspacePage() {
       const initial: BuildMessage[] = [];
       if (storedPrompt.trim()) {
         initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
-        initial.push(newMsg({ type: "thinking", text: "", streaming: true, startedAt: Date.now() }));
       }
       setMessages(initial);
-      setActivity(null);
+      setActivity("Thinking...");
     }
 
     registerHandlers(socket);
@@ -1091,9 +1097,8 @@ function WorkspacePage() {
     setMessages(prev => [
       ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
       newMsg({ type: "text", text: prompt, role: "user" }),
-      newMsg({ type: "thinking", text: "", streaming: true, startedAt: Date.now() }),
     ]);
-    setActivity(null);
+    setActivity("Thinking...");
     setBuildStatus("running");
     setChecks(null);
     setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });

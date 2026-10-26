@@ -33,11 +33,11 @@ import {
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Zap, Plus,
+  ArrowUp, ChevronDown, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
-  Square, ExternalLink, Link2, Figma, X,
+  Square, ExternalLink, Link2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1709,11 +1709,9 @@ function ChatColumn({
 
   // Same idea as the landing composer: put the link in the prompt, because the
   // builder reads the prompt. Web links resolve through the always-on Firecrawl
-  // tool; Figma links through the Figma MCP server once connected on /mcp.
-  const addReference = (kind: "web" | "figma") => {
-    const entered = window.prompt(
-      kind === "figma" ? "Paste a Figma file link" : "Paste a link to use as a reference",
-    );
+  // tool.
+  const addReference = () => {
+    const entered = window.prompt("Paste a link to use as a reference");
     if (entered === null) return;
     const trimmed = entered.trim();
     if (!trimmed) return;
@@ -1721,15 +1719,9 @@ function ChatColumn({
       toast.error("That doesn't look like a valid link — it should start with https://");
       return;
     }
-    if (kind === "figma" && !/figma\.com/i.test(trimmed)) {
-      toast.error("That isn't a Figma link. Use the link button for other sites.");
-      return;
-    }
-    const line = kind === "figma"
-      ? `Match this Figma design: ${trimmed}`
-      : `Use this page as a reference: ${trimmed}`;
+    const line = `Use this page as a reference: ${trimmed}`;
     setDraft((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
-    toast.success(kind === "figma" ? "Figma link added to your message" : "Link added to your message");
+    toast.success("Link added to your message");
   };
 
   return (
@@ -1806,18 +1798,11 @@ function ChatColumn({
                   if (f) toast.success(`Attached ${f.name}`);
                 }}
               />
-              <button onClick={() => addReference("web")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
+              <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
-              </button>
-              <button onClick={() => addReference("figma")} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Figma">
-                <Figma className="h-4 w-4" />
               </button>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] text-white/75">
-                <Zap className="h-3 w-3 text-orange-400" />
-                Fast Mode
-              </span>
               {isClarifying ? (
                 <button
                   disabled
@@ -1838,9 +1823,10 @@ function ChatColumn({
                 <button
                   disabled={!draft.trim()}
                   onClick={handleSend}
-                  className="grid h-8 w-8 place-content-center rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 px-3 text-xs font-semibold text-white shadow-md transition hover:opacity-90 disabled:opacity-40"
                 >
-                  <ArrowUp className="h-4 w-4" />
+                  Build
+                  <ArrowUp className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>

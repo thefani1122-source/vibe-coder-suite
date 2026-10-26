@@ -5,63 +5,34 @@ import { apiPost, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   ArrowUp,
   Sparkles,
   Link2,
-  ChevronDown,
-  Zap,
-  Code2,
   X,
-  Figma,
-  Check,
   Plus,
   FileText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-type Mode = "fast" | "editor";
-const MODES: { id: Mode; label: string; icon: typeof Zap; soon?: boolean; desc: string }[] = [
-  { id: "fast", label: "Fast Mode", icon: Zap, desc: "Quick build for simple projects (2–5 min)" },
-  { id: "editor", label: "Editor Mode", icon: Code2, soon: true, desc: "Tweak code directly" },
-];
-
-const IDEA_PROMPTS = [
-  "a counter app with dark mode",
-  "a Pomodoro timer with stats",
-  "a recipe finder with search",
-  "a kanban board for tasks",
-  "a markdown notes app",
-  "a habit tracker dashboard",
-  "a weather widget with charts",
-  "a personal finance tracker",
-];
-
-const QUICK_IDEAS = [
-  "Counter app",
-  "Pomodoro timer",
-  "Kanban board",
-  "Markdown notes",
-  "Weather widget",
-  "Habit tracker",
+// Larger, ambitious starter builds. The same list drives the rotating
+// placeholder animation inside the composer and the chips below it.
+const BIG_BUILDS = [
+  "a lead qualification system with AI scoring",
+  "a full CRM dashboard with sales pipelines",
+  "an e-commerce storefront with cart and checkout",
+  "a project management suite with Gantt timelines",
+  "an analytics dashboard with live charts",
+  "a booking platform with calendar scheduling",
+  "a support desk with automated ticket routing",
+  "an inventory and order manager",
 ];
 
 export function PromptComposer() {
   const [value, setValue] = useState("");
-  const [mode, setMode] = useState<Mode>("fast");
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
-  // "figma" reuses the same input row, just with its own label and validation.
-  const [urlKind, setUrlKind] = useState<"web" | "figma">("web");
   const [submitting, setSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<{ id: string; file: File; url?: string }[]>([]);
   const [animatedIdea, setAnimatedIdea] = useState("");
@@ -71,10 +42,9 @@ export function PromptComposer() {
   const navigate = useNavigate();
 
   // Append the reference to the prompt itself. The builder can genuinely act on
-  // it: web links are fetched through the always-on Firecrawl tool, and Figma
-  // links through the Figma MCP server once the user connects it on /mcp. This
-  // is why it lands in the prompt rather than being held as separate state —
-  // the model reads the prompt, so a link in the prompt is a link it can open.
+  // it: web links are fetched through the always-on Firecrawl tool. This is why
+  // it lands in the prompt rather than being held as separate state — the model
+  // reads the prompt, so a link in the prompt is a link it can open.
   const addUrl = () => {
     const trimmed = url.trim();
     if (!trimmed) return;
@@ -82,23 +52,11 @@ export function PromptComposer() {
       toast.error("That doesn't look like a valid link — it should start with https://");
       return;
     }
-    if (urlKind === "figma" && !/figma\.com/i.test(trimmed)) {
-      toast.error("That isn't a Figma link. Use the link button for other sites.");
-      return;
-    }
-    const line = urlKind === "figma"
-      ? `Match this Figma design: ${trimmed}`
-      : `Use this page as a reference: ${trimmed}`;
+    const line = `Use this page as a reference: ${trimmed}`;
     setValue((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
     setUrl("");
     setUrlOpen(false);
-    if (urlKind === "figma") {
-      toast.success("Figma link added", {
-        description: "Connect Figma on the MCP page if you haven't — that's what lets the builder read the file.",
-      });
-    } else {
-      toast.success("Link added to your prompt");
-    }
+    toast.success("Link added to your prompt");
   };
 
   // Animate rotating placeholder ideas (typewriter)
@@ -107,7 +65,7 @@ export function PromptComposer() {
       setAnimatedIdea("");
       return;
     }
-    const target = IDEA_PROMPTS[ideaIndex % IDEA_PROMPTS.length];
+    const target = BIG_BUILDS[ideaIndex % BIG_BUILDS.length];
     let i = 0;
     let cancelled = false;
     setAnimatedIdea("");
@@ -154,7 +112,7 @@ export function PromptComposer() {
     try {
       const projectRes = await apiPost<Record<string, unknown>>("/api/projects", {
         name: value.trim().slice(0, 50),
-        mode,
+        mode: "fast",
       });
 
       // Backend wraps response as { project: { id } }; fall back to flat shapes too
@@ -201,9 +159,6 @@ export function PromptComposer() {
       setSubmitting(false);
     }
   };
-
-  const current = MODES.find((m) => m.id === mode)!;
-  const CurrentIcon = current.icon;
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -274,14 +229,12 @@ export function PromptComposer() {
 
         {urlOpen && (
           <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
-            {urlKind === "figma"
-              ? <Figma className="h-3.5 w-3.5 text-muted-foreground" />
-              : <Link2 className="h-3.5 w-3.5 text-muted-foreground" />}
+            <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addUrl(); } }}
-              placeholder={urlKind === "figma" ? "https://figma.com/file/…" : "https://example.com"}
+              placeholder="https://example.com"
               className="h-7 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
             />
             <Button size="sm" className="h-7 rounded-md px-3 text-xs" onClick={addUrl}>Add</Button>
@@ -309,7 +262,7 @@ export function PromptComposer() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => { setUrlKind("web"); setUrl(""); setUrlOpen(true); }}
+                  onClick={() => { setUrl(""); setUrlOpen(true); }}
                   className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
                 >
                   <Link2 className="h-4 w-4" />
@@ -317,65 +270,15 @@ export function PromptComposer() {
               </TooltipTrigger>
               <TooltipContent>Import from URL</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => { setUrlKind("figma"); setUrl(""); setUrlOpen(true); }}
-                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-                >
-                  <Figma className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Figma</TooltipContent>
-            </Tooltip>
           </div>
           <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/40 px-2.5 py-1.5 text-xs font-medium text-foreground/90 hover:bg-card transition">
-                <CurrentIcon className="h-3.5 w-3.5 text-primary" />
-                {current.label}
-                <ChevronDown className="h-3 w-3 opacity-70" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              {MODES.map((m, i) => {
-                const Icon = m.icon;
-                const selected = mode === m.id;
-                return (
-                  <div key={m.id}>
-                    {i > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuItem
-                      disabled={m.soon}
-                      onClick={() => !m.soon && setMode(m.id)}
-                      className="flex items-start gap-2 py-2.5"
-                    >
-                      <Icon className={cn("mt-0.5 h-4 w-4", selected ? "text-primary" : "text-muted-foreground")} />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <span>{m.label}</span>
-                          {m.soon && (
-                            <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-primary">
-                              Coming Soon
-                            </span>
-                          )}
-                          {selected && !m.soon && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{m.desc}</div>
-                      </div>
-                    </DropdownMenuItem>
-                  </div>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Button
-            size="icon"
+            size="sm"
             disabled={!value.trim() || submitting}
             onClick={submit}
-            className="h-9 w-9 rounded-lg bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground hover:opacity-90 disabled:opacity-40"
+            className="h-9 gap-1.5 rounded-lg bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] px-4 text-primary-foreground hover:opacity-90 disabled:opacity-40"
           >
+            Build
             <ArrowUp className="h-4 w-4" />
           </Button>
           </div>
@@ -383,15 +286,15 @@ export function PromptComposer() {
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-2">
-        {QUICK_IDEAS.map((idea) => (
+        {BIG_BUILDS.map((phrase) => (
           <button
-            key={idea}
+            key={phrase}
             type="button"
-            onClick={() => setValue(`Build me a ${idea.toLowerCase()}`)}
+            onClick={() => setValue(`Build me ${phrase}`)}
             className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <Sparkles className="h-3 w-3 text-primary/70" />
-            {idea}
+            {phrase.replace(/^an? /, "")}
           </button>
         ))}
       </div>

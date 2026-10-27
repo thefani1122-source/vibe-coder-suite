@@ -159,7 +159,7 @@ const SERVERS: McpDef[] = [
   {
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
-    fields: [{ key: "stripe_key", label: "Stripe API Key", type: "password", placeholder: "sk_live_... or rk_live_...", help: "Use a Restricted Key from dashboard.stripe.com/apikeys for least privilege" }],
+    fields: [{ key: "stripe_key", label: "Stripe Restricted API Key", type: "password", placeholder: "rk_test_... or rk_live_...", help: "Use a restricted key from dashboard.stripe.com/apikeys with only the permissions you need" }],
   },
   {
     name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the REST API.",
@@ -369,9 +369,7 @@ interface McpMeta {
 const META: Record<string, McpMeta> = {
   vercel: {
     longDesc: "Vercel MCP lets the agent deploy, inspect, and manage projects on your Vercel account — from creating deployments to wiring custom domains.",
-    inputs: [
-      { name: "vercel_token", type: "secret", desc: "Account-scoped token used to authenticate against Vercel's REST API." },
-    ],
+    inputs: [],
     useCases: ["Ship preview deploys for every build", "Promote a build to production", "Attach a custom domain and verify DNS"],
   },
   netlify: {
@@ -411,8 +409,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Sync products into a custom storefront", "Build a back-office dashboard for orders", "Push customer segments into email tools"],
   },
   figma: {
-    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code.",
-    inputs: [{ name: "figma_access_token", type: "secret", desc: "Personal access token from figma.com → Account." }],
+    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
   },
   framer: {
@@ -421,8 +419,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Reuse Framer animations in React", "Pull layouts as starting points", "Sync brand assets"],
   },
   "google-stitch": {
-    longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app.",
-    inputs: [{ name: "stitch_api_key", type: "secret", desc: "API key from Google Cloud Console with Stitch enabled." }],
+    longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect through its OAuth authorization flow.",
+    inputs: [],
     useCases: ["Brainstorm UI directions from a prompt", "Export Stitch designs as React", "Iterate on layout variants"],
   },
   github: {
@@ -431,8 +429,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Open a PR with the generated diff", "Triage issues from chat", "Search across your repos for context"],
   },
   sentry: {
-    longDesc: "Sentry MCP queries errors, releases, and performance data so the agent can debug against real production signal.",
-    inputs: [{ name: "sentry_token", type: "secret", desc: "Internal Integration token from sentry.io." }],
+    longDesc: "Sentry MCP queries errors, releases, and performance data so the agent can debug against real production signal. Connect through Sentry's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Pull the top errors for a release", "Find the stack trace for an issue", "Mark issues resolved after a fix"],
   },
   linear: {
@@ -441,8 +439,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Convert a Linear issue into a working PR", "Move tickets across states", "Summarize a cycle's progress"],
   },
   notion: {
-    longDesc: "Notion MCP reads and writes pages, databases, and blocks so the agent can use your docs as context.",
-    inputs: [{ name: "notion_token", type: "secret", desc: "Integration token from notion.com/profile/integrations." }],
+    longDesc: "Notion MCP reads and writes pages, databases, and blocks so the agent can use your docs as context. Connect through Notion's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Use a spec page as build context", "Append changelogs to a release page", "Mirror Notion data into the app"],
   },
   stripe: {
@@ -563,6 +561,7 @@ function McpPage() {
     }
 
     const oauthStatus = params.get("mcp_oauth");
+    if (!wanted && !oauthStatus) return;
     if (oauthStatus) {
       const provider = params.get("provider");
       const name = SERVERS.find(s => s.provider === provider)?.name ?? provider ?? "MCP provider";

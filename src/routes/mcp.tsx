@@ -70,6 +70,8 @@ interface McpDef {
   provider: string;
   providerType: ProviderType;
   connectMode: ConnectMode;
+  /** Hosted MCP providers that must use the MCP OAuth browser flow. */
+  authMode?: "oauth";
   fields?: ProviderField[];
   features?: string[];
 }
@@ -80,8 +82,8 @@ const SERVERS: McpDef[] = [
   // ── Deploy ────────────────────────────────────────────────────────────────
   {
     name: "Vercel", desc: "Deploy projects, manage domains, and view deployments via the Vercel MCP server.",
-    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "vercel_token", label: "Vercel Account Token", type: "password", placeholder: "...", help: "Create at vercel.com/account/tokens" }],
+    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "registry_form",
@@ -117,8 +119,8 @@ const SERVERS: McpDef[] = [
   // ── Design ────────────────────────────────────────────────────────────────
   {
     name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma MCP server.",
-    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "figma_access_token", label: "Figma Personal Access Token", type: "password", placeholder: "figd_...", help: "Create at figma.com → Account → Personal Access Tokens" }],
+    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Framer", desc: "Import animated components and layouts via the Framer API.",
@@ -127,8 +129,8 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
-    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "stitch_api_key", label: "Google Stitch API Key", type: "password", placeholder: "AIza...", help: "console.cloud.google.com → APIs → Enable Stitch API → Credentials → Create API Key" }],
+    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
 
   // ── Dev Tools ─────────────────────────────────────────────────────────────
@@ -139,8 +141,8 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Sentry", desc: "Query errors, manage issues, and view performance data via the Sentry MCP server.",
-    category: "Dev Tools", emoji: "🪲", provider: "sentry", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "sentry_token", label: "Sentry Internal Integration Token", type: "password", placeholder: "...", help: "Create an Internal Integration at sentry.io/settings/ → Integrations" }],
+    category: "Dev Tools", emoji: "🪲", provider: "sentry", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
 
   // ── Productivity ──────────────────────────────────────────────────────────
@@ -151,8 +153,8 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Notion", desc: "Read and write pages, databases, and blocks via the Notion MCP server.",
-    category: "Productivity", emoji: "📝", provider: "notion", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "notion_token", label: "Notion Integration Token", type: "password", placeholder: "secret_...", help: "Create an integration at notion.com/profile/integrations and share pages with it" }],
+    category: "Productivity", emoji: "📝", provider: "notion", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
@@ -552,11 +554,33 @@ function McpPage() {
   // a one-minute task becomes an abandoned one. Runs once, and strips the
   // parameter so a refresh does not reopen a dialog they closed on purpose.
   useEffect(() => {
-    const wanted = new URLSearchParams(window.location.search).get("connect");
-    if (!wanted) return;
-    const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
-    if (def) setSelected(def);
-    window.history.replaceState({}, "", window.location.pathname);
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("connect");
+    if (wanted) {
+      const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
+      if (def) setSelected(def);
+      params.delete("connect");
+    }
+
+    const oauthStatus = params.get("mcp_oauth");
+    if (oauthStatus) {
+      const provider = params.get("provider");
+      const name = SERVERS.find(s => s.provider === provider)?.name ?? provider ?? "MCP provider";
+      if (oauthStatus === "connected") {
+        toast.success(name + " connected successfully.");
+      } else {
+        const reason = params.get("reason");
+        toast.error(reason === "cancelled"
+          ? "Authorization was cancelled. You can connect again when ready."
+          : "MCP authorization failed. Please try connecting again.");
+      }
+      params.delete("mcp_oauth");
+      params.delete("provider");
+      params.delete("reason");
+    }
+
+    const query = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (query ? "?" + query : ""));
   }, []);
   const [disconnectTarget, setDisconnectTarget] = useState<McpDef | null>(null);
   const [disconnectBusy,   setDisconnectBusy]   = useState(false);
@@ -634,9 +658,26 @@ function McpPage() {
   }, [user?.id]);
 
   const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
+    if (def.authMode === "oauth") {
+      const result = await apiPost<{ status: string; authorizationUrl?: string; toolCount?: number }>(
+        "/api/integrations/mcp/" + def.provider + "/oauth/start",
+        {},
+        { silent: true },
+      );
+      if (result.status === "authorization_required" && result.authorizationUrl) {
+        window.location.assign(result.authorizationUrl);
+        return;
+      }
+      if (result.status === "connected") {
+        setConnectedSlugs(prev => new Set([...prev, def.provider]));
+        toast.success(def.name + " connected!");
+        return;
+      }
+      throw new Error("The provider did not return an authorization URL. Please try again.");
+    }
     await connectMcp(def.provider, creds);
     setConnectedSlugs(prev => new Set([...prev, def.provider]));
-    toast.success(`${def.name} connected!`);
+    toast.success(def.name + " connected!");
   };
 
   const handleRegistryDisconnect = async () => {
@@ -1262,6 +1303,37 @@ function McpDetail({
             </div>
             <Button variant="outline" disabled={busy} onClick={handleDisconnect}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
+            </Button>
+          </div>
+        ) : def.authMode === "oauth" ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              LampCode will open {def.name} for secure authorization. Sign in with the provider and approve access; no API token is needed here.
+            </p>
+            <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>Authorization uses the provider's OAuth flow. Your access tokens are stored encrypted by LampCode.</span>
+            </div>
+            {error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+            <Button
+              type="button"
+              disabled={saving || testing}
+              onClick={async () => {
+                if (!onConnectRegistry) return;
+                setSaving(true);
+                setError(null);
+                try {
+                  await onConnectRegistry({});
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Could not start provider authorization.");
+                  setSaving(false);
+                }
+              }}
+              className="w-full"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link className="h-4 w-4" />}
+              {saving ? "Opening authorization..." : "Connect with " + def.name}
             </Button>
           </div>
         ) : def.connectMode === "supabase_form" ? (

@@ -202,8 +202,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
 
   // Extract a clean one-line preview of what it's thinking while collapsed
   const lines = (msg.text ?? "")
-    .split("
-")
+    .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
   const latestLine = lines[lines.length - 1] || "";

@@ -70,9 +70,16 @@ function initAuthListener() {
   // as soon as the Supabase client finishes initialization — no separate getSession()
   // call needed. A parallel getSession() Promise can resolve at an arbitrary time and
   // clobber a valid session that SIGNED_IN already wrote to the store.
-  supabase.auth.onAuthStateChange((_event, session) => {
-    useAuthStore.getState().setSession(session);
-  });
+  try {
+    supabase.auth.onAuthStateChange((_event, session) => {
+      useAuthStore.getState().setSession(session);
+    });
+  } catch (err) {
+    // Supabase env vars are missing (e.g. a preview without Vercel env config):
+    // stay signed out instead of crashing the whole app. The console already
+    // carries the detailed "Missing required environment variable" error.
+    console.warn("[Lampcode] Auth unavailable — Supabase client is not configured.", err);
+  }
 }
 
 /** Hook exposing Supabase Auth state + actions. */

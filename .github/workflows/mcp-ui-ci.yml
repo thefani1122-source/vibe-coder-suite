@@ -1,0 +1,36 @@
+name: MCP UI CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "src/routes/mcp.tsx"
+      - "src/lib/api.ts"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/mcp-ui-ci.yml"
+  pull_request:
+    paths:
+      - "src/routes/mcp.tsx"
+      - "src/lib/api.ts"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/mcp-ui-ci.yml"
+
+concurrency:
+  group: mcp-ui-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Lint
+        run: bun run lint
+      - name: Production build
+        run: bun run build

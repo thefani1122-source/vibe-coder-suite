@@ -22,11 +22,7 @@ const BIG_BUILDS = [
   "a lead qualification system with AI scoring",
   "a full CRM dashboard with sales pipelines",
   "an e-commerce storefront with cart and checkout",
-  "a project management suite with Gantt timelines",
   "an analytics dashboard with live charts",
-  "a booking platform with calendar scheduling",
-  "a support desk with automated ticket routing",
-  "an inventory and order manager",
 ];
 
 export function PromptComposer() {
@@ -272,20 +268,20 @@ export function PromptComposer() {
             </Tooltip>
           </div>
           <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            disabled={!value.trim() || submitting}
-            onClick={submit}
-            className="h-9 gap-1.5 rounded-lg bg-gradient-to-br from-primary to-[oklch(0.72_0.20_35)] px-4 text-primary-foreground hover:opacity-90 disabled:opacity-40"
-          >
-            Build
-            <ArrowUp className="h-4 w-4" />
-          </Button>
+            <button
+              type="button"
+              aria-label="Send prompt"
+              disabled={!value.trim() || submitting}
+              onClick={submit}
+              className="grid h-9 w-9 place-content-center rounded-full bg-white text-neutral-900 shadow-md transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ArrowUp className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div className="mx-auto grid w-full max-w-lg grid-cols-2 gap-2">
         {BIG_BUILDS.map((phrase) => (
           <button
             key={phrase}

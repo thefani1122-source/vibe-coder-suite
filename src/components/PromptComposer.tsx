@@ -281,13 +281,13 @@ export function PromptComposer() {
         </div>
       </div>
 
-      <div className="mx-auto grid w-full max-w-lg grid-cols-2 gap-2">
+      <div className="mx-auto flex w-full max-w-2xl flex-wrap items-center justify-center gap-2">
         {BIG_BUILDS.map((phrase) => (
           <button
             key={phrase}
             type="button"
             onClick={() => setValue(`Build me ${phrase}`)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/40 hover:bg-card hover:text-foreground"
           >
             <Sparkles className="h-3 w-3 text-primary/70" />
             {phrase.replace(/^an? /, "")}

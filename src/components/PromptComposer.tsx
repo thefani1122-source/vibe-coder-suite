@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import {
   ArrowUp,
+  ChevronDown,
   Sparkles,
   Link2,
   X,
@@ -270,10 +271,19 @@ export function PromptComposer() {
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={!value.trim() || submitting}
+              onClick={submit}
+              className="inline-flex h-9 items-center gap-1 rounded-full border border-border/60 bg-card px-3 text-xs font-medium text-foreground transition hover:bg-card/80 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Build
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
               aria-label="Send prompt"
               disabled={!value.trim() || submitting}
               onClick={submit}
-              className="grid h-9 w-9 place-content-center rounded-full bg-white text-neutral-900 shadow-md transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
+              className="grid h-9 w-9 place-content-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ArrowUp className="h-4 w-4" />
             </button>

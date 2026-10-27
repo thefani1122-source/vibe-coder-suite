@@ -1826,10 +1826,18 @@ function ChatColumn({
                 </button>
               ) : (
                 <button
+                  disabled={!draft.trim()}
+                  onClick={handleSend}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-white/90 transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Build
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <button
                   aria-label="Send message"
                   disabled={!draft.trim()}
                   onClick={handleSend}
-                  className="grid h-8 w-8 place-content-center rounded-full bg-white text-neutral-900 shadow-md transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="grid h-8 w-8 place-content-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <ArrowUp className="h-4 w-4" />
                 </button>

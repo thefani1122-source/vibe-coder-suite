@@ -127,7 +127,10 @@ const SERVERS: McpDef[] = [
   {
     name: "Framer", desc: "Import animated components and layouts via the Framer API.",
     category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "framer_api_token", label: "Framer API Token", type: "password", placeholder: "...", help: "Create at framer.com/developers → API Tokens" }],
+    fields: [
+      { key: "framer_project_url", label: "Framer Project URL", type: "url", placeholder: "https://framer.com/projects/...", help: "The project URL for the Framer Server API" },
+      { key: "framer_api_token", label: "Framer Server API Key", type: "password", placeholder: "...", help: "Use a project-scoped key from your Framer project settings" },
+    ],
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -168,6 +171,7 @@ const SERVERS: McpDef[] = [
     category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "registry_form",
     fields: [
       { key: "wordpress_site_url", label: "WordPress Site URL", type: "url", placeholder: "https://yoursite.com", help: "The root URL of your WordPress site" },
+      { key: "wordpress_username", label: "WordPress Username", type: "text", placeholder: "username", help: "The user that owns the application password" },
       { key: "wordpress_app_password", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx xxxx xxxx", help: "WordPress Admin → Users → Profile → Application Passwords → Generate" },
     ],
   },
@@ -214,6 +218,11 @@ const SERVERS: McpDef[] = [
     fields: [{ key: "api_key", label: "SendGrid API Key", type: "password", placeholder: "SG...", help: "Create at app.sendgrid.com/settings/api_keys" }],
   },
 ];
+
+const REST_API_PROVIDERS = new Set([
+  "netlify", "railway", "shopify", "wordpress", "mailchimp",
+  "resend", "twilio", "sendgrid", "framer", "mongodb",
+]);
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;
 

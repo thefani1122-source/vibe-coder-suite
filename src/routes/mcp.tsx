@@ -712,7 +712,7 @@ function McpPage() {
     setDisconnectBusy(true);
     try {
       await disconnectRegistryProvider(disconnectTarget.provider);
-      setConnectedSlugs(prev => { const n = Set(prev); n.delete(disconnectTarget.provider); return n; });
+      setConnectedSlugs(prev => { const n = new Set(prev); n.delete(disconnectTarget.provider); return n; });
       await loadBackendConns();
       toast.success(`${disconnectTarget.name} disconnected`);
       setDisconnectTarget(null);

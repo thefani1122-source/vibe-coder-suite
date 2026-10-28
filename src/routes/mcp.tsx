@@ -667,6 +667,18 @@ function McpPage() {
       });
   }, [user?.id]);
 
+  const connectRestProvider = async (slug: string, creds: Record<string, string>) => {
+    await apiPost("/api/integrations/rest/" + slug + "/connect", { creds }, { silent: true });
+  };
+
+  const disconnectRegistryProvider = async (slug: string) => {
+    if (REST_API_PROVIDERS.has(slug)) {
+      await apiDelete("/api/integrations/rest/" + slug, { silent: true });
+    } else {
+      await disconnectMcp(slug);
+    }
+  };
+
   const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
     if (def.authMode === "oauth") {
       const result = await apiPost<{ status: string; authorizationUrl?: string; toolCount?: number }>(
@@ -685,8 +697,13 @@ function McpPage() {
       }
       throw new Error("The provider did not return an authorization URL. Please try again.");
     }
-    await connectMcp(def.provider, creds);
+    if (REST_API_PROVIDERS.has(def.provider)) {
+      await connectRestProvider(def.provider, creds);
+    } else {
+      await connectMcp(def.provider, creds);
+    }
     setConnectedSlugs(prev => new Set([...prev, def.provider]));
+    await loadBackendConns();
     toast.success(def.name + " connected!");
   };
 
@@ -694,8 +711,9 @@ function McpPage() {
     if (!disconnectTarget) return;
     setDisconnectBusy(true);
     try {
-      await disconnectMcp(disconnectTarget.provider);
-      setConnectedSlugs(prev => { const n = new Set(prev); n.delete(disconnectTarget.provider); return n; });
+      await disconnectRegistryProvider(disconnectTarget.provider);
+      setConnectedSlugs(prev => { const n = Set(prev); n.delete(disconnectTarget.provider); return n; });
+      await loadBackendConns();
       toast.success(`${disconnectTarget.name} disconnected`);
       setDisconnectTarget(null);
     } catch (err) {
@@ -760,7 +778,7 @@ function McpPage() {
   if (selected) {
     const selectedConnected =
       selected.connectMode === "registry_form"
-        ? connectedSlugs.has(selected.provider)
+        ? (connectedSlugs.has(selected.provider) || (REST_API_PROVIDERS.has(selected.provider) && !!backendConns[selected.provider]))
         : selected.connectMode === "supabase_form"
         ? !!backendConns[selected.provider]
         : rows[selected.provider]?.status === "connected";
@@ -776,8 +794,9 @@ function McpPage() {
               selected.connectMode === "registry_form"
                 ? async () => {
                     try {
-                      await disconnectMcp(selected.provider);
+                      await disconnectRegistryProvider(selected.provider);
                       setConnectedSlugs(prev => { const n = new Set(prev); n.delete(selected.provider); return n; });
+                      await loadBackendConns();
                       toast.success(`${selected.name} disconnected`);
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
@@ -926,7 +945,7 @@ function McpPage() {
                       {filtered(c).map(s => {
                         const isRegistry = s.connectMode === "registry_form";
                         const connected = isRegistry
-                          ? connectedSlugs.has(s.provider)
+                          ? (connectedSlugs.has(s.provider) || (REST_API_PROVIDERS.has(s.provider) && !!backendConns[s.provider]))
                           : s.connectMode === "supabase_form"
                           ? !!backendConns[s.provider]
                           : rows[s.provider]?.status === "connected";

@@ -1194,21 +1194,14 @@ function McpDetail({
     setTestResult(null);
     try {
       if (def.connectMode === "supabase_form") {
-        const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
-          "/api/integrations/supabase/mcp",
+        const res = await apiPost<{ toolCount: number; status: string }>(
+          "/api/integrations/supabase/mcp/test",
           { accessToken: token.trim(), projectRef: projectRef.trim() || undefined },
           { silent: true },
         );
-        try {
-          const list = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string }> }>(
-            "/api/integrations", { silent: true },
-          );
-          const row = list.integrations.find(i => i.provider === "supabase" && i.status === "connected");
-          if (row) await apiDelete(`/api/integrations/${row.id}`, { silent: true });
-        } catch { /* revert failed — leave it connected */ }
         setTestResult({
           ok: true,
-          detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
+          detail: `Token verified — ${res.toolCount} MCP tools discovered. No connection was saved or changed; click "Verify & Connect" when ready.`,
         });
       } else {
         const creds: Record<string, string> = {};
@@ -1216,15 +1209,19 @@ function McpDetail({
           const v = values[f.key]?.trim();
           if (v) creds[f.key] = v;
         }
-        const res = await apiPost<{ toolCount?: number }>(
-          `/api/integrations/mcp/${def.provider}/connect`,
+        const endpoint = REST_API_PROVIDERS.has(def.provider)
+          ? `/api/integrations/rest/${def.provider}/test`
+          : `/api/integrations/mcp/${def.provider}/test`;
+        const res = await apiPost<{ toolCount?: number; status: string }>(
+          endpoint,
           { creds },
           { silent: true },
         );
-        try { await disconnectMcp(def.provider); } catch { /* revert failed — leave it connected */ }
         setTestResult({
           ok: true,
-          detail: `Credentials verified — ${res.toolCount ?? "all"} tools reachable. Click "Verify & Connect" to save them.`,
+          detail: REST_API_PROVIDERS.has(def.provider)
+            ? `Provider API credentials verified. Nothing was saved or changed; click "Verify & Connect" when ready.`
+            : `Credentials verified — ${res.toolCount ?? "available"} MCP tools discovered. Nothing was saved or changed; click "Verify & Connect" when ready.`,
         });
       }
     } catch (err: unknown) {

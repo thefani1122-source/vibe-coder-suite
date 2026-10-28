@@ -82,8 +82,10 @@ const SERVERS: McpDef[] = [
   // ── Deploy ────────────────────────────────────────────────────────────────
   {
     name: "Vercel", desc: "Deploy projects, manage domains, and view deployments via the Vercel MCP server.",
-    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
-    fields: [],
+    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form",
+    fields: [
+      { key: "vercel_token", label: "Vercel Access Token", type: "password", placeholder: "...", help: "Create a Personal Access Token at vercel.com/account/tokens" },
+    ],
   },
   {
     name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "registry_form",

@@ -105,9 +105,9 @@ const SERVERS: McpDef[] = [
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
   {
-    name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
-    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
-    fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
+    name: "MongoDB Atlas", desc: "Query and inspect MongoDB Atlas through its official managed MCP server.",
+    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
@@ -218,7 +218,7 @@ const SERVERS: McpDef[] = [
 
 const REST_API_PROVIDERS = new Set([
   "netlify", "railway", "shopify", "wordpress", "mailchimp",
-  "resend", "twilio", "sendgrid", "mongodb",
+  "resend", "twilio", "sendgrid",
 ]);
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;

@@ -31,6 +31,7 @@ import {
   clarifyPrompt,
   type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
 } from "@/lib/api";
+import { mayBeMcpQuery } from "@/lib/mcp-query-intent";
 import { useAuthStore } from "@/lib/auth";
 import {
   ArrowUp, ChevronDown, Plus,
@@ -301,6 +302,7 @@ function WorkspacePage() {
 
   const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
   const [isMcpActive, setIsMcpActive] = useState(false);
+  const [isMcpQuerying, setIsMcpQuerying] = useState(false);
 
   const [clarifyQuestions,     setClarifyQuestions]     = useState<ClarifyQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -1138,10 +1140,71 @@ function WorkspacePage() {
     registerHandlers(newSocket);
   }, [projectId, registerHandlers, sessionId]);
 
-  // Entry point from ChatColumn — runs clarification check first.
+  // Read-only service questions get their own route BEFORE the build/clarification
+  // pipeline. A query failure must not fall through into a code build.
   const handleFollowUp = useCallback(async (prompt: string) => {
     if (!prompt.trim()) return;
     pendingPromptRef.current = prompt;
+
+    if (mayBeMcpQuery(prompt)) {
+      setIsMcpQuerying(true);
+      setActivity("Checking connected services…");
+      setIsMcpActive(true);
+      setMcpEvents([{ id: crypto.randomUUID(), kind: "thinking", text: "Checking connected-service data. No code changes will be made." }]);
+      try {
+        const response = await apiPost<{
+          handled: boolean;
+          verified?: boolean;
+          answer?: string;
+          providers?: Array<{ slug: string; name: string }>;
+          tools?: Array<{ name: string; provider: string; success: boolean }>;
+        }>("/api/integrations/mcp/query", { prompt, projectId }, { silent: true });
+
+        if (response.handled) {
+          const answer = response.answer?.trim() ||
+            "I couldn't verify live service data. No project files were changed.";
+          setMessages(prev => [
+            ...closeStreaming(prev),
+            newMsg({ type: "text", text: prompt, role: "user" }),
+            newMsg({ type: "text", text: answer, role: "agent" }),
+          ]);
+
+          const events: McpEvent[] = [];
+          for (const tool of response.tools ?? []) {
+            const label = [tool.provider, tool.name].filter(Boolean).join(" · ");
+            events.push(
+              { id: crypto.randomUUID(), kind: "tool_call", tool: label },
+              { id: crypto.randomUUID(), kind: "tool_result", tool: label, success: tool.success },
+            );
+          }
+          if (events.length > 0) {
+            events.push({
+              id: crypto.randomUUID(),
+              kind: "done",
+              summary: response.verified ? "Live provider data verified" : "Live data not verified — no changes made",
+            });
+          }
+          setMcpEvents(events);
+          setIsMcpActive(false);
+          return;
+        }
+      } catch {
+        setMessages(prev => [
+          ...closeStreaming(prev),
+          newMsg({ type: "text", text: prompt, role: "user" }),
+          newMsg({
+            type: "error",
+            text: "I couldn't check the connected service, so I did not start a build or edit project files. Please check the integration connection and try again.",
+          }),
+        ]);
+        setMcpEvents([]);
+        setIsMcpActive(false);
+        return;
+      } finally {
+        setIsMcpQuerying(false);
+        setActivity(null);
+      }
+    }
 
     setIsClarifying(true);
     let result: ClarifyResponse = { needsClarification: false, questions: [] };
@@ -1292,9 +1355,9 @@ function WorkspacePage() {
                 receipt={receipt}
                 receiptSessionId={receiptSessionId}
                 checks={checks}
-                activity={activity}
+                activity={isMcpQuerying ? "Checking connected services…" : activity}
                 messages={messages}
-                isBuilding={isBuilding}
+                isBuilding={isBuilding || isMcpQuerying}
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
                 onStop={handleStopBuild}

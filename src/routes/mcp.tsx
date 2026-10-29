@@ -105,9 +105,9 @@ const SERVERS: McpDef[] = [
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
   {
-    name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
-    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
-    fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
+    name: "MongoDB Atlas", desc: "Query and inspect MongoDB Atlas through its official managed MCP server.",
+    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
@@ -125,9 +125,9 @@ const SERVERS: McpDef[] = [
     fields: [],
   },
   {
-    name: "Framer", desc: "Import animated components and layouts via the Framer API.",
-    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "framer_api_token", label: "Framer API Token", type: "password", placeholder: "...", help: "Create at framer.com/developers → API Tokens" }],
+    name: "Framer", desc: "Read and manage Framer sites, pages, CMS content and branches via the hosted Framer MCP server.",
+    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -168,6 +168,7 @@ const SERVERS: McpDef[] = [
     category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "registry_form",
     fields: [
       { key: "wordpress_site_url", label: "WordPress Site URL", type: "url", placeholder: "https://yoursite.com", help: "The root URL of your WordPress site" },
+      { key: "wordpress_username", label: "WordPress Username", type: "text", placeholder: "username", help: "The user that owns the application password" },
       { key: "wordpress_app_password", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx xxxx xxxx", help: "WordPress Admin → Users → Profile → Application Passwords → Generate" },
     ],
   },
@@ -214,6 +215,11 @@ const SERVERS: McpDef[] = [
     fields: [{ key: "api_key", label: "SendGrid API Key", type: "password", placeholder: "SG...", help: "Create at app.sendgrid.com/settings/api_keys" }],
   },
 ];
+
+const REST_API_PROVIDERS = new Set([
+  "netlify", "railway", "shopify", "wordpress", "mailchimp",
+  "resend", "twilio", "sendgrid",
+]);
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;
 
@@ -658,6 +664,18 @@ function McpPage() {
       });
   }, [user?.id]);
 
+  const connectRestProvider = async (slug: string, creds: Record<string, string>) => {
+    await apiPost("/api/integrations/rest/" + slug + "/connect", { creds }, { silent: true });
+  };
+
+  const disconnectRegistryProvider = async (slug: string) => {
+    if (REST_API_PROVIDERS.has(slug)) {
+      await apiDelete("/api/integrations/rest/" + slug, { silent: true });
+    } else {
+      await disconnectMcp(slug);
+    }
+  };
+
   const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
     if (def.authMode === "oauth") {
       const result = await apiPost<{ status: string; authorizationUrl?: string; toolCount?: number }>(
@@ -676,8 +694,13 @@ function McpPage() {
       }
       throw new Error("The provider did not return an authorization URL. Please try again.");
     }
-    await connectMcp(def.provider, creds);
+    if (REST_API_PROVIDERS.has(def.provider)) {
+      await connectRestProvider(def.provider, creds);
+    } else {
+      await connectMcp(def.provider, creds);
+    }
     setConnectedSlugs(prev => new Set([...prev, def.provider]));
+    await loadBackendConns();
     toast.success(def.name + " connected!");
   };
 
@@ -685,8 +708,9 @@ function McpPage() {
     if (!disconnectTarget) return;
     setDisconnectBusy(true);
     try {
-      await disconnectMcp(disconnectTarget.provider);
+      await disconnectRegistryProvider(disconnectTarget.provider);
       setConnectedSlugs(prev => { const n = new Set(prev); n.delete(disconnectTarget.provider); return n; });
+      await loadBackendConns();
       toast.success(`${disconnectTarget.name} disconnected`);
       setDisconnectTarget(null);
     } catch (err) {
@@ -751,7 +775,7 @@ function McpPage() {
   if (selected) {
     const selectedConnected =
       selected.connectMode === "registry_form"
-        ? connectedSlugs.has(selected.provider)
+        ? (connectedSlugs.has(selected.provider) || (REST_API_PROVIDERS.has(selected.provider) && !!backendConns[selected.provider]))
         : selected.connectMode === "supabase_form"
         ? !!backendConns[selected.provider]
         : rows[selected.provider]?.status === "connected";
@@ -767,8 +791,9 @@ function McpPage() {
               selected.connectMode === "registry_form"
                 ? async () => {
                     try {
-                      await disconnectMcp(selected.provider);
+                      await disconnectRegistryProvider(selected.provider);
                       setConnectedSlugs(prev => { const n = new Set(prev); n.delete(selected.provider); return n; });
+                      await loadBackendConns();
                       toast.success(`${selected.name} disconnected`);
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
@@ -917,7 +942,7 @@ function McpPage() {
                       {filtered(c).map(s => {
                         const isRegistry = s.connectMode === "registry_form";
                         const connected = isRegistry
-                          ? connectedSlugs.has(s.provider)
+                          ? (connectedSlugs.has(s.provider) || (REST_API_PROVIDERS.has(s.provider) && !!backendConns[s.provider]))
                           : s.connectMode === "supabase_form"
                           ? !!backendConns[s.provider]
                           : rows[s.provider]?.status === "connected";
@@ -1166,21 +1191,14 @@ function McpDetail({
     setTestResult(null);
     try {
       if (def.connectMode === "supabase_form") {
-        const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
-          "/api/integrations/supabase/mcp",
+        const res = await apiPost<{ toolCount: number; status: string }>(
+          "/api/integrations/supabase/mcp/test",
           { accessToken: token.trim(), projectRef: projectRef.trim() || undefined },
           { silent: true },
         );
-        try {
-          const list = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string }> }>(
-            "/api/integrations", { silent: true },
-          );
-          const row = list.integrations.find(i => i.provider === "supabase" && i.status === "connected");
-          if (row) await apiDelete(`/api/integrations/${row.id}`, { silent: true });
-        } catch { /* revert failed — leave it connected */ }
         setTestResult({
           ok: true,
-          detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
+          detail: `Token verified — ${res.toolCount} MCP tools discovered. No connection was saved or changed; click "Verify & Connect" when ready.`,
         });
       } else {
         const creds: Record<string, string> = {};
@@ -1188,15 +1206,19 @@ function McpDetail({
           const v = values[f.key]?.trim();
           if (v) creds[f.key] = v;
         }
-        const res = await apiPost<{ toolCount?: number }>(
-          `/api/integrations/mcp/${def.provider}/connect`,
+        const endpoint = REST_API_PROVIDERS.has(def.provider)
+          ? `/api/integrations/rest/${def.provider}/test`
+          : `/api/integrations/mcp/${def.provider}/test`;
+        const res = await apiPost<{ toolCount?: number; status: string }>(
+          endpoint,
           { creds },
           { silent: true },
         );
-        try { await disconnectMcp(def.provider); } catch { /* revert failed — leave it connected */ }
         setTestResult({
           ok: true,
-          detail: `Credentials verified — ${res.toolCount ?? "all"} tools reachable. Click "Verify & Connect" to save them.`,
+          detail: REST_API_PROVIDERS.has(def.provider)
+            ? `Provider API credentials verified. Nothing was saved or changed; click "Verify & Connect" when ready.`
+            : `Credentials verified — ${res.toolCount ?? "available"} MCP tools discovered. Nothing was saved or changed; click "Verify & Connect" when ready.`,
         });
       }
     } catch (err: unknown) {

@@ -125,12 +125,9 @@ const SERVERS: McpDef[] = [
     fields: [],
   },
   {
-    name: "Framer", desc: "Import animated components and layouts via the Framer API.",
-    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
-    fields: [
-      { key: "framer_project_url", label: "Framer Project URL", type: "url", placeholder: "https://framer.com/projects/...", help: "The project URL for the Framer Server API" },
-      { key: "framer_api_token", label: "Framer Server API Key", type: "password", placeholder: "...", help: "Use a project-scoped key from your Framer project settings" },
-    ],
+    name: "Framer", desc: "Read and manage Framer sites, pages, CMS content and branches via the hosted Framer MCP server.",
+    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -221,7 +218,7 @@ const SERVERS: McpDef[] = [
 
 const REST_API_PROVIDERS = new Set([
   "netlify", "railway", "shopify", "wordpress", "mailchimp",
-  "resend", "twilio", "sendgrid", "framer", "mongodb",
+  "resend", "twilio", "sendgrid", "mongodb",
 ]);
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;

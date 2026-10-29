@@ -31,6 +31,7 @@ import {
   clarifyPrompt,
   type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
 } from "@/lib/api";
+import { isLikelyReadOnlyMcpQuery } from "@/lib/mcp-intent";
 import { useAuthStore } from "@/lib/auth";
 import {
   ArrowUp, ChevronDown, Plus,
@@ -266,6 +267,7 @@ function WorkspacePage() {
   const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
+  const [isMcpQuerying, setIsMcpQuerying] = useState(false);
   const [followUpReceipt, setFollowUpReceipt] = useState<{ routeSessionId?: string; active?: string } | null>(null);
   // A route change must not show the prior session's receipt for even one
   // render while effects settle. Follow-up builds can have a new ID without
@@ -1138,10 +1140,99 @@ function WorkspacePage() {
     registerHandlers(newSocket);
   }, [projectId, registerHandlers, sessionId]);
 
-  // Entry point from ChatColumn — runs clarification check first.
+  // Read-only connected-service lookups must never enter the build pipeline.
+  // They use a separate backend dispatcher that receives ONLY discovered
+  // read-only MCP tools; project files and build tools are not available there.
+  const executeMcpQuery = useCallback(async (prompt: string) => {
+    pendingPromptRef.current = prompt;
+    setMessages(prev => [
+      ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
+      newMsg({ type: "text", text: prompt, role: "user" }),
+    ]);
+    setIsMcpQuerying(true);
+    setActivity("Checking connected services…");
+    setCurrentAgent(undefined);
+
+    try {
+      const response = await apiPost<{
+        routed: boolean;
+        ok: boolean;
+        status: string;
+        content: string;
+        selectedProviders: string[];
+        selectionReason?: string;
+        toolsOffered: string[];
+        toolsUsed: Array<{ name: string; ok: boolean; error?: string }>;
+        toolsOmitted?: number;
+        rounds?: number;
+      }>("/api/integrations/mcp/query", { prompt }, { silent: true });
+
+      // A positive frontend classification followed by a backend rejection is
+      // an error, not permission to fall through and start a code build.
+      if (!response.routed) {
+        setMessages(prev => [
+          ...closeStreaming(prev),
+          newMsg({
+            type: "error",
+            text: "LampCode did not accept this as a read-only service query. No project files were changed. Please phrase the request as a direct check, list, or status lookup.",
+          }),
+        ]);
+        return;
+      }
+
+      const selectedProviders = response.selectedProviders ?? [];
+      const offered = response.toolsOffered ?? [];
+      const used = response.toolsUsed ?? [];
+      const successful = used.filter(tool => tool.ok);
+      const evidence = newMsg({
+        type: "tool_result",
+        tool: "mcp_query",
+        done: true,
+        activityStatus: response.ok ? "done" : "failed",
+        text: response.ok
+          ? `Read-only lookup · ${selectedProviders.join(", ") || "connected services"} · ${successful.length} successful tool call(s)`
+          : `Read-only lookup · ${response.status.replace(/_/g, " ")}`,
+        details: [
+          `Status: ${response.status}`,
+          `Provider selection: ${response.selectionReason ?? "not reported"}`,
+          `Selected providers: ${selectedProviders.join(", ") || "none"}`,
+          `Read-only tools offered (${offered.length}): ${offered.join(", ") || "none"}`,
+          `Tools called: ${used.map(tool => `${tool.name} [${tool.ok ? "success" : "failed"}]`).join(", ") || "none"}`,
+          `Tool definitions omitted by context cap: ${response.toolsOmitted ?? 0}`,
+          "Project/build tools were not offered in this mode.",
+        ].join("\n"),
+      });
+      const answer = newMsg({
+        type: response.ok ? "assistant" : "error",
+        text: response.content || "No verified result was returned by the connected service.",
+        role: "agent",
+      });
+      setMessages(prev => [...closeStreaming(prev), evidence, answer]);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown request failure";
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({
+          type: "error",
+          text: `I couldn't verify live service data: ${reason}. I did not start a build and no project files were changed.`,
+        }),
+      ]);
+    } finally {
+      setIsMcpQuerying(false);
+      setActivity(null);
+    }
+  }, []);
+
+  // Entry point from ChatColumn — route explicit read-only service checks before
+  // clarification or build dispatch. All other prompts keep the existing flow.
   const handleFollowUp = useCallback(async (prompt: string) => {
     if (!prompt.trim()) return;
     pendingPromptRef.current = prompt;
+
+    if (isLikelyReadOnlyMcpQuery(prompt)) {
+      await executeMcpQuery(prompt);
+      return;
+    }
 
     setIsClarifying(true);
     let result: ClarifyResponse = { needsClarification: false, questions: [] };
@@ -1163,7 +1254,7 @@ function WorkspacePage() {
     } else {
       await executeBuild(prompt, [], []);
     }
-  }, [projectId, executeBuild]);
+  }, [projectId, executeBuild, executeMcpQuery]);
 
   // Keep rebuildFnRef current so the truncation toast Rebuild button always
   // re-sends the last prompt through the normal follow-up flow.
@@ -1295,6 +1386,7 @@ function WorkspacePage() {
                 activity={activity}
                 messages={messages}
                 isBuilding={isBuilding}
+                isMcpQuerying={isMcpQuerying}
                 currentAgent={currentAgent}
                 onSend={handleFollowUp}
                 onStop={handleStopBuild}
@@ -1672,7 +1764,7 @@ function WorkspaceTopBar({
 
 function ChatColumn({
   receipt, receiptSessionId, checks, activity,
-  messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  messages, isBuilding, isMcpQuerying = false, currentAgent, onSend, onStop, projectName, isClarifying,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
@@ -1682,6 +1774,7 @@ function ChatColumn({
   activity?: string | null;
   messages: BuildMessage[];
   isBuilding: boolean;
+  isMcpQuerying?: boolean;
   currentAgent?: string;
   onSend?: (prompt: string) => void;
   onStop?: () => void;
@@ -1707,7 +1800,7 @@ function ChatColumn({
 
   const handleSend = () => {
     const text = draft.trim();
-    if (!text || !onSend) return;
+    if (!text || !onSend || isBuilding || isMcpQuerying || isClarifying) return;
     onSend(text);
     setDraft("");
   };
@@ -1736,7 +1829,7 @@ function ChatColumn({
       <div className="flex-1 min-h-0">
         <ChatPanel
           messages={messages}
-          isBuilding={isBuilding}
+          isBuilding={isBuilding || isMcpQuerying}
           activity={activity}
           currentAgent={currentAgent}
           className="h-full !bg-transparent"
@@ -1774,13 +1867,14 @@ function ChatColumn({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => {
-              if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+              if (e.key === "Enter" && !e.shiftKey && draft.trim() && !isBuilding && !isMcpQuerying && !isClarifying) {
                 e.preventDefault();
                 handleSend();
               }
             }}
-            placeholder="Ask Lampcode…"
+            placeholder={isMcpQuerying ? "Checking connected services…" : "Ask Lampcode…"}
             rows={3}
+            disabled={isBuilding || isMcpQuerying || isClarifying}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
@@ -1815,6 +1909,14 @@ function ChatColumn({
                 >
                   <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-orange-400 border-t-transparent" />
                   Analyzing...
+                </button>
+              ) : isMcpQuerying ? (
+                <button
+                  disabled
+                  className="flex h-8 cursor-wait items-center gap-1.5 rounded-lg bg-white/[0.08] px-3 text-xs text-white/70"
+                >
+                  <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+                  Checking…
                 </button>
               ) : isBuilding ? (
                 <button

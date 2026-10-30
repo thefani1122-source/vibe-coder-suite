@@ -726,7 +726,7 @@ function McpPage() {
         ? connectedSlugs.has(selected.provider)
         : selected.connectMode === "supabase_form"
         ? !!backendConns[selected.provider]
-        : rows[selected.provider]?.status === "connected";
+        ? !!backendConns[selected.provider];
     return (
       <RequireAuth>
         <Shell>

@@ -17,9 +17,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
 import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -28,21 +27,6 @@ export const Route = createFileRoute("/mcp")({ component: McpPage });
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
 type ProviderType = "deploy" | "database" | "code" | "payment" | "email" | "analytics" | "auth" | "ai";
-
-interface IntegrationRow {
-  id: string;
-  user_id: string;
-  project_id: string | null;
-  provider: string;
-  provider_type: ProviderType;
-  connection_type: "mcp" | "oauth" | "api_key";
-  config: Record<string, string>;
-  status: "connected" | "disconnected" | "error" | "refreshing";
-  last_tested_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
 type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
@@ -528,8 +512,6 @@ function HintText({ text }: { text: string }) {
 function McpPage() {
   const { user } = useAuth();
   const [query, setQuery] = useState("");
-  const [loadingRows, setLoadingRows] = useState(true);
-  const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
   const [customOpen, setCustomOpen] = useState(false);
   const [customForm, setCustomForm] = useState({
     name: "", description: "", mcpServerUrl: "",
@@ -639,24 +621,12 @@ function McpPage() {
     toast.success(`${providerId} disconnected`);
   };
 
-  // Load legacy MCP integrations from Supabase (used for connected-count only)
-  useEffect(() => {
-    if (!user?.id) return;
-    supabase
-      .from("integrations")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("connection_type", "mcp")
-      .then(({ data, error }) => {
-        if (error) { console.error("[mcp] load error", error); }
-        else {
-          const map: Record<string, IntegrationRow> = {};
-          for (const row of (data ?? []) as IntegrationRow[]) map[row.provider] = row;
-          setRows(map);
-        }
-        setLoadingRows(false);
-      });
-  }, [user?.id]);
+  // NOTE: the legacy `integrations` table query that used to live here gated the
+  // whole card grid behind a spinner that never cleared when the table was
+  // missing or slow, which blanked the MCP Store. Connected state now comes
+  // from the backend endpoints below (connectedSlugs + backendConns), so the
+  // grid renders immediately and never depends on that query.
+
 
   const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
     if (def.authMode === "oauth") {
@@ -752,9 +722,7 @@ function McpPage() {
     const selectedConnected =
       selected.connectMode === "registry_form"
         ? connectedSlugs.has(selected.provider)
-        : selected.connectMode === "supabase_form"
-        ? !!backendConns[selected.provider]
-        : rows[selected.provider]?.status === "connected";
+        : !!backendConns[selected.provider];
     return (
       <RequireAuth>
         <Shell>
@@ -907,20 +875,13 @@ function McpPage() {
 
             {CATEGORIES.map(c => (
               <TabsContent key={c} value={c} className="mt-4">
-                {loadingRows ? (
-                  <div className="flex items-center justify-center py-16">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {filtered(c).map(s => {
-                        const isRegistry = s.connectMode === "registry_form";
-                        const connected = isRegistry
-                          ? connectedSlugs.has(s.provider)
-                          : s.connectMode === "supabase_form"
-                          ? !!backendConns[s.provider]
-                          : rows[s.provider]?.status === "connected";
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {filtered(c).map(s => {
+                      const isRegistry = s.connectMode === "registry_form";
+                      const connected = isRegistry
+                        ? connectedSlugs.has(s.provider)
+                        : !!backendConns[s.provider];
 
                         if (isRegistry) {
                           return (
@@ -949,7 +910,6 @@ function McpPage() {
                       </div>
                     )}
                   </>
-                )}
               </TabsContent>
             ))}
           </Tabs>

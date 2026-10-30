@@ -19,6 +19,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";

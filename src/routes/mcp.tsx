@@ -912,7 +912,6 @@ function McpPage() {
                       </div>
                     )}
                   </>
-                )}
               </TabsContent>
             ))}
           </Tabs>

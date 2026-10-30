@@ -724,9 +724,7 @@ function McpPage() {
     const selectedConnected =
       selected.connectMode === "registry_form"
         ? connectedSlugs.has(selected.provider)
-        : selected.connectMode === "supabase_form"
-        ? !!backendConns[selected.provider]
-        ? !!backendConns[selected.provider];
+        : !!backendConns[selected.provider];
     return (
       <RequireAuth>
         <Shell>

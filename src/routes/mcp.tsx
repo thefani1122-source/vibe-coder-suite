@@ -514,8 +514,6 @@ function HintText({ text }: { text: string }) {
 function McpPage() {
   const { user } = useAuth();
   const [query, setQuery] = useState("");
-  const [loadingRows, setLoadingRows] = useState(true);
-  const [rows, setRows] = useState<Record<string, IntegrationRow>>({});
   const [customOpen, setCustomOpen] = useState(false);
   const [customForm, setCustomForm] = useState({
     name: "", description: "", mcpServerUrl: "",

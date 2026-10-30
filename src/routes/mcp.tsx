@@ -623,24 +623,12 @@ function McpPage() {
     toast.success(`${providerId} disconnected`);
   };
 
-  // Load legacy MCP integrations from Supabase (used for connected-count only)
-  useEffect(() => {
-    if (!user?.id) return;
-    supabase
-      .from("integrations")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("connection_type", "mcp")
-      .then(({ data, error }) => {
-        if (error) { console.error("[mcp] load error", error); }
-        else {
-          const map: Record<string, IntegrationRow> = {};
-          for (const row of (data ?? []) as IntegrationRow[]) map[row.provider] = row;
-          setRows(map);
-        }
-        setLoadingRows(false);
-      });
-  }, [user?.id]);
+  // NOTE: the legacy `integrations` table query that used to live here gated the
+  // whole card grid behind a spinner that never cleared when the table was
+  // missing or slow, which blanked the MCP Store. Connected state now comes
+  // from the backend endpoints below (connectedSlugs + backendConns), so the
+  // grid renders immediately and never depends on that query.
+
 
   const handleRegistryConnect = async (def: McpDef, creds: Record<string, string>) => {
     if (def.authMode === "oauth") {

@@ -30,21 +30,6 @@ export const Route = createFileRoute("/mcp")({ component: McpPage });
 
 type ProviderType = "deploy" | "database" | "code" | "payment" | "email" | "analytics" | "auth" | "ai";
 
-interface IntegrationRow {
-  id: string;
-  user_id: string;
-  project_id: string | null;
-  provider: string;
-  provider_type: ProviderType;
-  connection_type: "mcp" | "oauth" | "api_key";
-  config: Record<string, string>;
-  status: "connected" | "disconnected" | "error" | "refreshing";
-  last_tested_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
 type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
 

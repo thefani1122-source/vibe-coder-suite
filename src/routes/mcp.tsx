@@ -216,29 +216,11 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Environment Variables", desc: "Sync env vars across preview and production environments." },
     { title: "Build Logs", desc: "Inspect deployment status and tail build logs in real time." },
   ],
-  netlify: [
-    { title: "Instant Previews", desc: "Every change ships a preview URL you can share with reviewers." },
-    { title: "Build Hooks", desc: "Trigger rebuilds from chat or external services." },
-    { title: "Serverless Functions", desc: "Deploy Netlify Functions alongside your static site." },
-    { title: "DNS & Domains", desc: "Manage custom domains and SSL certificates." },
-  ],
-  railway: [
-    { title: "Service Provisioning", desc: "Spin up Postgres, Redis, and Node services from a prompt." },
-    { title: "Log Streaming", desc: "Tail production logs directly inside chat." },
-    { title: "Environment Promotion", desc: "Promote builds between staging and production." },
-    { title: "Database Migrations", desc: "Run migrations against managed Postgres safely." },
-  ],
   cloudflare: [
     { title: "Workers Deploy", desc: "Ship edge functions to Cloudflare Workers from a prompt." },
     { title: "DNS Management", desc: "Add, update and verify DNS records on your zones." },
     { title: "R2 & KV Storage", desc: "Create buckets, namespaces and read/write objects." },
     { title: "Cache Purge", desc: "Invalidate cached assets after a deploy." },
-  ],
-  mongodb: [
-    { title: "Managed Cluster", desc: "Connect any app to a managed MongoDB Atlas cluster." },
-    { title: "Full CRUD", desc: "Read and write collections through the official driver." },
-    { title: "Aggregation Pipelines", desc: "Run aggregations and analytics queries from chat." },
-    { title: "Seed & Migrate", desc: "Seed sample data and migrate document shapes." },
   ],
   shopify: [
     { title: "Products & Orders", desc: "Read and update products, variants, and orders via the Admin API." },
@@ -251,12 +233,6 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Design Tokens", desc: "Extract colors, typography, and spacing into your code." },
     { title: "Figma-to-React", desc: "Translate selected frames into React components." },
     { title: "Stay in Sync", desc: "Keep code components aligned with the source of truth." },
-  ],
-  framer: [
-    { title: "Motion Components", desc: "Import Framer's animated layouts into your React app." },
-    { title: "Layout Starting Points", desc: "Pull Framer pages as launchpads for new builds." },
-    { title: "Brand Assets", desc: "Sync logos, colors, and typography from Framer." },
-    { title: "Iterate Faster", desc: "Use Framer prototypes as the spec for generated code." },
   ],
   "google-stitch": [
     { title: "Prompt → UI", desc: "Generate UI directions from a written description." },
@@ -317,30 +293,6 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "5000+ Apps", desc: "Reach every SaaS app supported by Zapier." },
     { title: "Personal Endpoint", desc: "Uses your private Zapier MCP URL — never shared." },
     { title: "Multi-step Flows", desc: "Chain multiple Zaps for complex workflows." },
-  ],
-  mailchimp: [
-    { title: "Audience Management", desc: "Add, segment, and update subscribers from a signup form." },
-    { title: "Campaigns", desc: "Create and send email campaigns from chat." },
-    { title: "Automations", desc: "Trigger Mailchimp journeys on app events." },
-    { title: "Reporting", desc: "Pull open, click, and bounce rates for any campaign." },
-  ],
-  resend: [
-    { title: "Transactional Email", desc: "Send welcome, receipt, and notification emails reliably." },
-    { title: "React Email Templates", desc: "Use React components as email templates." },
-    { title: "Magic Links", desc: "Power magic-link and passwordless auth flows." },
-    { title: "Domain Verification", desc: "Verify sending domains with SPF, DKIM, and DMARC." },
-  ],
-  twilio: [
-    { title: "SMS Messaging", desc: "Send SMS for OTPs, alerts, and notifications." },
-    { title: "WhatsApp Business", desc: "Reach users on WhatsApp from your app." },
-    { title: "Voice Calls", desc: "Place automated voice calls and IVR flows." },
-    { title: "Number Provisioning", desc: "Buy and configure Twilio phone numbers." },
-  ],
-  sendgrid: [
-    { title: "Transactional Email", desc: "Send order confirmations, receipts, and alerts." },
-    { title: "Marketing Campaigns", desc: "Run drip campaigns and broadcast sends." },
-    { title: "Delivery Tracking", desc: "Track opens, clicks, bounces, and unsubscribes." },
-    { title: "Template Library", desc: "Reuse dynamic templates across your sends." },
   ],
 };
 

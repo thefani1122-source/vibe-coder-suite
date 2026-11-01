@@ -1050,7 +1050,7 @@ function RegistryCard({
 /* ─── MCP detail page (all providers) ────────────────────────────────────── */
 
 function McpDetail({
-  def, onBack, connected, onConnectSupabase, onDisconnect, onConnectRegistry,
+  def, onBack, connected, onConnectSupabase, onDisconnect, onConnectRegistry, onConnectRest,
 }: {
   def: McpDef;
   onBack: () => void;
@@ -1058,6 +1058,7 @@ function McpDetail({
   onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
   onDisconnect: () => Promise<void>;
   onConnectRegistry?: (creds: Record<string, string>) => Promise<void>;
+  onConnectRest?: (creds: Record<string, string>) => Promise<void>;
 }) {
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
@@ -1113,6 +1114,29 @@ function McpDetail({
     }
   };
 
+  const handleRest = async () => {
+    if (!onConnectRest || !canSubmit || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const creds: Record<string, string> = {};
+      for (const f of fields) {
+        const v = values[f.key]?.trim();
+        if (v) creds[f.key] = v;
+      }
+      // The backend's /provider/:id route runs the provider's own
+      // testConnection against the real API before storing, so every save is
+      // verified — there is no separate store-only path.
+      await onConnectRest(creds);
+      setValues({});
+      setShowPass({});
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Connection failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /**
    * Test the credentials WITHOUT saving them. Both routes the backend offers
    * verify-before-store (the MCP route lists tools, the Supabase route checks
@@ -1141,6 +1165,27 @@ function McpDetail({
         setTestResult({
           ok: true,
           detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
+        });
+      } else if (def.connectMode === "rest_form") {
+        const creds: Record<string, string> = {};
+        for (const f of fields) {
+          const v = values[f.key]?.trim();
+          if (v) creds[f.key] = v;
+        }
+        // POST /provider/:id verifies against the provider's real API BEFORE it
+        // stores anything, so the test IS a connect; revert the row it wrote
+        // unless the delete itself fails.
+        await apiPost(`/api/integrations/provider/${def.provider}`, creds, { silent: true });
+        try {
+          const list = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string }> }>(
+            "/api/integrations", { silent: true },
+          );
+          const row = list.integrations.find(i => i.provider === def.provider && i.status === "connected");
+          if (row) await apiDelete(`/api/integrations/${row.id}`, { silent: true });
+        } catch { /* revert failed — leave it connected */ }
+        setTestResult({
+          ok: true,
+          detail: `Credentials verified against the ${def.name} API. Click "Verify & Connect" to save them.`,
         });
       } else {
         const creds: Record<string, string> = {};
@@ -1377,6 +1422,15 @@ function McpDetail({
               );
             })}
             {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+            {def.connectMode === "rest_form" && (
+              <p className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/80">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  REST integration — this provider has no MCP server. The agent calls the {def.name} REST API
+                  directly with these stored credentials.
+                </span>
+              </p>
+            )}
             <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
@@ -1386,7 +1440,7 @@ function McpDetail({
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 Test connection
               </Button>
-              <Button onClick={handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
+              <Button onClick={def.connectMode === "rest_form" ? handleRest : handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
               </Button>
             </div>

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/mcp")({ component: McpPage });
 
 type ProviderType = "deploy" | "database" | "code" | "payment" | "email" | "analytics" | "auth" | "ai";
 
-type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
+type ConnectMode = "supabase_form" | "registry_form" | "rest_form";
 type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
 
 interface CustomMcp {
@@ -72,15 +72,6 @@ const SERVERS: McpDef[] = [
     ],
   },
   {
-    name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "netlify_token", label: "Personal Access Token", type: "password", placeholder: "nfp_...", help: "Create at app.netlify.com → User settings → Applications → Personal access tokens" }],
-  },
-  {
-    name: "Railway", desc: "Deploy to Railway from generated apps via the Railway GraphQL API.",
-    category: "Deploy", emoji: "🚂", provider: "railway", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "api_token", label: "Railway API Token", type: "password", placeholder: "...", help: "Create at railway.app/account/tokens" }],
-  },
-  {
     name: "Cloudflare", desc: "Manage Workers, KV, R2, and DNS records via the Cloudflare MCP server.",
     category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form",
     fields: [{ key: "cf_token", label: "Cloudflare API Token", type: "password", placeholder: "...", help: "Create at dash.cloudflare.com/profile/api-tokens" }],
@@ -89,16 +80,12 @@ const SERVERS: McpDef[] = [
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
   {
-    name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
-    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
-    fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
-  },
-  {
-    name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
-    category: "Database", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "registry_form",
+    name: "Shopify", desc: "Read storefront products and manage store data via Shopify's REST APIs.",
+    category: "Productivity", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "rest_form",
     fields: [
-      { key: "shopify_store_domain", label: "Shopify Store Domain", type: "text", placeholder: "yourstore.myshopify.com", help: "Your Shopify store domain (without https://)" },
-      { key: "shopify_admin_token", label: "Admin API Access Token", type: "password", placeholder: "shpat_...", help: "Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API access token" },
+      { key: "shopDomain", label: "Shop Domain", type: "text", placeholder: "my-store.myshopify.com", help: "Your store's myshopify.com domain" },
+      { key: "storefrontAccessToken", label: "Storefront Access Token", type: "password", placeholder: "shpsa_...", help: "Shopify Admin → Settings → Apps and sales channels → Develop apps → Storefront API access token" },
+      { key: "adminApiAccessToken", label: "Admin API Access Token", type: "password", placeholder: "shpat_...", optional: true, help: "Needed for orders and webhooks — same custom app, Admin API integration" },
     ],
   },
 
@@ -107,11 +94,6 @@ const SERVERS: McpDef[] = [
     name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma MCP server.",
     category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form", authMode: "oauth",
     fields: [],
-  },
-  {
-    name: "Framer", desc: "Import animated components and layouts via the Framer API.",
-    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "framer_api_token", label: "Framer API Token", type: "password", placeholder: "...", help: "Create at framer.com/developers → API Tokens" }],
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -148,11 +130,12 @@ const SERVERS: McpDef[] = [
     fields: [{ key: "stripe_key", label: "Stripe Restricted API Key", type: "password", placeholder: "rk_test_... or rk_live_...", help: "Use a restricted key from dashboard.stripe.com/apikeys with only the permissions you need" }],
   },
   {
-    name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the REST API.",
-    category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "registry_form",
+    name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the WordPress REST API.",
+    category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "rest_form",
     fields: [
-      { key: "wordpress_site_url", label: "WordPress Site URL", type: "url", placeholder: "https://yoursite.com", help: "The root URL of your WordPress site" },
-      { key: "wordpress_app_password", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx xxxx xxxx", help: "WordPress Admin → Users → Profile → Application Passwords → Generate" },
+      { key: "siteUrl", label: "Site URL", type: "url", placeholder: "https://myblog.com", help: "The root URL of your WordPress site" },
+      { key: "username", label: "Username", type: "text", placeholder: "admin", help: "A WordPress user with write access" },
+      { key: "appPassword", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx", help: "WP Admin → Users → Profile → Application Passwords" },
     ],
   },
   {
@@ -173,30 +156,6 @@ const SERVERS: McpDef[] = [
     category: "Productivity", emoji: "⚡", provider: "zapier", providerType: "code", connectMode: "registry_form",
     fields: [{ key: "zapier_mcp_url", label: "Zapier MCP URL", type: "url", placeholder: "https://mcp.zapier.com/api/mcp/s/YOUR_TOKEN/mcp", help: "Go to zapier.com/mcp → Create MCP → Copy your unique URL" }],
   },
-  {
-    name: "Mailchimp", desc: "Manage audiences, campaigns, and subscribers via the Mailchimp API.",
-    category: "Productivity", emoji: "🐵", provider: "mailchimp", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "Mailchimp API Key", type: "password", placeholder: "xxxxxxxxxxxxxxxx-us1", help: "Find at mailchimp.com/account → Extras → API keys" }],
-  },
-  {
-    name: "Resend", desc: "Transactional email sending via the Resend API.",
-    category: "Productivity", emoji: "📨", provider: "resend", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "Resend API Key", type: "password", placeholder: "re_...", help: "Create an API key at resend.com/api-keys" }],
-  },
-  {
-    name: "Twilio", desc: "Send SMS, WhatsApp messages, and make calls via the Twilio API.",
-    category: "Productivity", emoji: "📱", provider: "twilio", providerType: "code", connectMode: "registry_form",
-    fields: [
-      { key: "account_sid", label: "Account SID", type: "text", placeholder: "ACxxxxxxxxxxxxxxxx", help: "Found on your Twilio Console dashboard" },
-      { key: "auth_token", label: "Auth Token", type: "password", placeholder: "...", help: "Found on your Twilio Console dashboard" },
-      { key: "phone_number", label: "Twilio Phone Number", type: "text", placeholder: "+15551234567", optional: true, help: "Your Twilio phone number in E.164 format (optional)" },
-    ],
-  },
-  {
-    name: "SendGrid", desc: "Send transactional and marketing email via the SendGrid API.",
-    category: "Productivity", emoji: "📧", provider: "sendgrid", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "SendGrid API Key", type: "password", placeholder: "SG...", help: "Create at app.sendgrid.com/settings/api_keys" }],
-  },
 ];
 
 const CATEGORIES = ["All", "Deploy", "Database", "Design", "Dev Tools", "Productivity"] as const;
@@ -216,29 +175,11 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Environment Variables", desc: "Sync env vars across preview and production environments." },
     { title: "Build Logs", desc: "Inspect deployment status and tail build logs in real time." },
   ],
-  netlify: [
-    { title: "Instant Previews", desc: "Every change ships a preview URL you can share with reviewers." },
-    { title: "Build Hooks", desc: "Trigger rebuilds from chat or external services." },
-    { title: "Serverless Functions", desc: "Deploy Netlify Functions alongside your static site." },
-    { title: "DNS & Domains", desc: "Manage custom domains and SSL certificates." },
-  ],
-  railway: [
-    { title: "Service Provisioning", desc: "Spin up Postgres, Redis, and Node services from a prompt." },
-    { title: "Log Streaming", desc: "Tail production logs directly inside chat." },
-    { title: "Environment Promotion", desc: "Promote builds between staging and production." },
-    { title: "Database Migrations", desc: "Run migrations against managed Postgres safely." },
-  ],
   cloudflare: [
     { title: "Workers Deploy", desc: "Ship edge functions to Cloudflare Workers from a prompt." },
     { title: "DNS Management", desc: "Add, update and verify DNS records on your zones." },
     { title: "R2 & KV Storage", desc: "Create buckets, namespaces and read/write objects." },
     { title: "Cache Purge", desc: "Invalidate cached assets after a deploy." },
-  ],
-  mongodb: [
-    { title: "Managed Cluster", desc: "Connect any app to a managed MongoDB Atlas cluster." },
-    { title: "Full CRUD", desc: "Read and write collections through the official driver." },
-    { title: "Aggregation Pipelines", desc: "Run aggregations and analytics queries from chat." },
-    { title: "Seed & Migrate", desc: "Seed sample data and migrate document shapes." },
   ],
   shopify: [
     { title: "Products & Orders", desc: "Read and update products, variants, and orders via the Admin API." },
@@ -251,12 +192,6 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Design Tokens", desc: "Extract colors, typography, and spacing into your code." },
     { title: "Figma-to-React", desc: "Translate selected frames into React components." },
     { title: "Stay in Sync", desc: "Keep code components aligned with the source of truth." },
-  ],
-  framer: [
-    { title: "Motion Components", desc: "Import Framer's animated layouts into your React app." },
-    { title: "Layout Starting Points", desc: "Pull Framer pages as launchpads for new builds." },
-    { title: "Brand Assets", desc: "Sync logos, colors, and typography from Framer." },
-    { title: "Iterate Faster", desc: "Use Framer prototypes as the spec for generated code." },
   ],
   "google-stitch": [
     { title: "Prompt → UI", desc: "Generate UI directions from a written description." },
@@ -318,30 +253,6 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Personal Endpoint", desc: "Uses your private Zapier MCP URL — never shared." },
     { title: "Multi-step Flows", desc: "Chain multiple Zaps for complex workflows." },
   ],
-  mailchimp: [
-    { title: "Audience Management", desc: "Add, segment, and update subscribers from a signup form." },
-    { title: "Campaigns", desc: "Create and send email campaigns from chat." },
-    { title: "Automations", desc: "Trigger Mailchimp journeys on app events." },
-    { title: "Reporting", desc: "Pull open, click, and bounce rates for any campaign." },
-  ],
-  resend: [
-    { title: "Transactional Email", desc: "Send welcome, receipt, and notification emails reliably." },
-    { title: "React Email Templates", desc: "Use React components as email templates." },
-    { title: "Magic Links", desc: "Power magic-link and passwordless auth flows." },
-    { title: "Domain Verification", desc: "Verify sending domains with SPF, DKIM, and DMARC." },
-  ],
-  twilio: [
-    { title: "SMS Messaging", desc: "Send SMS for OTPs, alerts, and notifications." },
-    { title: "WhatsApp Business", desc: "Reach users on WhatsApp from your app." },
-    { title: "Voice Calls", desc: "Place automated voice calls and IVR flows." },
-    { title: "Number Provisioning", desc: "Buy and configure Twilio phone numbers." },
-  ],
-  sendgrid: [
-    { title: "Transactional Email", desc: "Send order confirmations, receipts, and alerts." },
-    { title: "Marketing Campaigns", desc: "Run drip campaigns and broadcast sends." },
-    { title: "Delivery Tracking", desc: "Track opens, clicks, bounces, and unsubscribes." },
-    { title: "Template Library", desc: "Reuse dynamic templates across your sends." },
-  ],
 };
 
 /* ─── Rich per-provider metadata (About / Inputs / Use-cases) ────────────── */
@@ -358,16 +269,6 @@ const META: Record<string, McpMeta> = {
     inputs: [],
     useCases: ["Ship preview deploys for every build", "Promote a build to production", "Attach a custom domain and verify DNS"],
   },
-  netlify: {
-    longDesc: "Netlify MCP automates site deploys, build hooks, and environment variables on your Netlify team.",
-    inputs: [{ name: "auth_token", type: "secret", desc: "Personal access token from app.netlify.com." }],
-    useCases: ["Deploy a static site with previews", "Trigger build hooks from chat", "Rotate environment variables"],
-  },
-  railway: {
-    longDesc: "Railway MCP provisions services, runs migrations, and tails logs on your Railway projects via the GraphQL API.",
-    inputs: [{ name: "api_token", type: "secret", desc: "Railway account token with project access." }],
-    useCases: ["Spin up Postgres + a Node service", "Stream production logs into chat", "Promote a build between environments"],
-  },
   cloudflare: {
     longDesc: "Cloudflare MCP manages Workers, KV namespaces, R2 buckets, and DNS records on your Cloudflare account.",
     inputs: [{ name: "cf_token", type: "secret", desc: "Scoped API token with Workers / DNS edit permissions." }],
@@ -381,28 +282,19 @@ const META: Record<string, McpMeta> = {
     ],
     useCases: ["Create tables with RLS in one prompt", "Wire up email + Google sign-in", "Generate edge functions and call them from the UI"],
   },
-  mongodb: {
-    longDesc: "MongoDB Atlas MCP connects your app to a managed Mongo cluster with full CRUD via the official driver.",
-    inputs: [{ name: "connection_string", type: "secret", desc: "mongodb+srv:// URI including credentials and database." }],
-    useCases: ["Persist user data in collections", "Run aggregation pipelines from chat", "Seed and migrate documents"],
-  },
   shopify: {
-    longDesc: "Shopify MCP reads and writes products, orders, and customers through the Admin GraphQL API.",
+    longDesc: "Shopify integration reads storefront products and manages store data through Shopify's Storefront and Admin REST APIs — a REST connection, not an MCP server.",
     inputs: [
-      { name: "shopify_store_domain", type: "text", desc: "yourstore.myshopify.com — without https://." },
-      { name: "shopify_admin_token", type: "secret", desc: "Admin API access token from a custom app." },
+      { name: "shopDomain", type: "text", desc: "Your store's myshopify.com domain, e.g. my-store.myshopify.com." },
+      { name: "storefrontAccessToken", type: "secret", desc: "Storefront API access token from a custom app." },
+      { name: "adminApiAccessToken", type: "secret", desc: "Optional — Admin API token, needed for orders and webhooks." },
     ],
-    useCases: ["Sync products into a custom storefront", "Build a back-office dashboard for orders", "Push customer segments into email tools"],
+    useCases: ["Show live products in a custom storefront", "Build a back-office dashboard for orders", "Trigger workflows from store events"],
   },
   figma: {
     longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow.",
     inputs: [],
     useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
-  },
-  framer: {
-    longDesc: "Framer MCP imports motion-rich components and layouts straight from Framer projects.",
-    inputs: [{ name: "framer_api_token", type: "secret", desc: "Token from framer.com/developers." }],
-    useCases: ["Reuse Framer animations in React", "Pull layouts as starting points", "Sync brand assets"],
   },
   "google-stitch": {
     longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect through its OAuth authorization flow.",
@@ -435,10 +327,11 @@ const META: Record<string, McpMeta> = {
     useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
   },
   wordpress: {
-    longDesc: "WordPress MCP creates and manages posts, pages, and media via the WP REST API.",
+    longDesc: "WordPress integration publishes and manages posts, pages, and media through the WordPress REST API with application-password auth — a REST connection, not an MCP server.",
     inputs: [
-      { name: "wordpress_site_url", type: "url", desc: "Root URL of your WordPress install." },
-      { name: "wordpress_app_password", type: "secret", desc: "Application password generated from Users → Profile." },
+      { name: "siteUrl", type: "url", desc: "Root URL of your WordPress install." },
+      { name: "username", type: "text", desc: "A WordPress user with write access." },
+      { name: "appPassword", type: "secret", desc: "Application password generated from Users → Profile." },
     ],
     useCases: ["Publish a blog post from a prompt", "Bulk update SEO meta", "Upload media from chat"],
   },
@@ -459,30 +352,6 @@ const META: Record<string, McpMeta> = {
     longDesc: "Zapier MCP fires Zap actions from your personal Zapier MCP endpoint.",
     inputs: [{ name: "zapier_mcp_url", type: "url", desc: "Personal Zapier MCP URL from zapier.com/mcp." }],
     useCases: ["Send a Slack message", "Add a row to a Google Sheet", "Kick off any Zap from chat"],
-  },
-  mailchimp: {
-    longDesc: "Mailchimp MCP manages audiences, campaigns, and subscribers via the Mailchimp Marketing API.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from mailchimp.com → Account → Extras → API keys." }],
-    useCases: ["Add subscribers from a signup form", "Send a campaign", "Segment your audience"],
-  },
-  resend: {
-    longDesc: "Resend MCP sends transactional email with React Email templates.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from resend.com/api-keys." }],
-    useCases: ["Send welcome emails", "Magic-link authentication", "Notify users on app events"],
-  },
-  twilio: {
-    longDesc: "Twilio MCP sends SMS, WhatsApp messages, and places voice calls via the Twilio API.",
-    inputs: [
-      { name: "account_sid", type: "text", desc: "Account SID from Twilio Console." },
-      { name: "auth_token", type: "secret", desc: "Auth token from Twilio Console." },
-      { name: "phone_number", type: "text", desc: "Optional Twilio phone number in E.164 format." },
-    ],
-    useCases: ["Send OTP codes by SMS", "Notify users on WhatsApp", "Trigger voice alerts"],
-  },
-  sendgrid: {
-    longDesc: "SendGrid MCP sends transactional and marketing email via the SendGrid v3 API.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from app.sendgrid.com/settings/api_keys." }],
-    useCases: ["Send order confirmations", "Run drip campaigns", "Track delivery and opens"],
   },
 };
 
@@ -539,7 +408,7 @@ function McpPage() {
     const params = new URLSearchParams(window.location.search);
     const wanted = params.get("connect");
     if (wanted) {
-      const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
+      const def = SERVERS.find(s => s.provider === wanted);
       if (def) setSelected(def);
       params.delete("connect");
     }
@@ -651,6 +520,16 @@ function McpPage() {
     toast.success(def.name + " connected!");
   };
 
+  // REST-only providers (WordPress, Shopify) connect through the backend's
+  // provider registry route, which validates the payload and runs the
+  // provider's own testConnection against the real API before storing. Their
+  // rows live in user_integrations (backendConns), not the MCP table.
+  const handleRestConnect = async (def: McpDef, creds: Record<string, string>) => {
+    await apiPost(`/api/integrations/provider/${def.provider}`, creds, { silent: true });
+    await loadBackendConns();
+    toast.success(def.name + " connected!");
+  };
+
   const handleRegistryDisconnect = async () => {
     if (!disconnectTarget) return;
     setDisconnectBusy(true);
@@ -745,6 +624,7 @@ function McpPage() {
                 : () => disconnectProvider(selected.provider)
             }
             onConnectRegistry={(creds) => handleRegistryConnect(selected, creds)}
+            onConnectRest={(creds) => handleRestConnect(selected, creds)}
           />
         </Shell>
       </RequireAuth>
@@ -948,6 +828,11 @@ function McpPage() {
               </div>
             </div>
           )}
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Netlify, Railway, MongoDB Atlas, Framer, Mailchimp, Resend, Twilio and SendGrid are REST-only and
+            cannot be connected yet — they will appear here once the server can verify and store their credentials.
+          </p>
         </div>
 
         {/* Registry disconnect confirm */}
@@ -974,7 +859,7 @@ function McpPage() {
   );
 }
 
-/* ─── Store card (supabase / coming_soon) ────────────────────────────────── */
+/* ─── Store card (supabase / rest_form) ─────────────────────────────────── */
 
 function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boolean; onClick: () => void }) {
   return (
@@ -1050,7 +935,7 @@ function RegistryCard({
 /* ─── MCP detail page (all providers) ────────────────────────────────────── */
 
 function McpDetail({
-  def, onBack, connected, onConnectSupabase, onDisconnect, onConnectRegistry,
+  def, onBack, connected, onConnectSupabase, onDisconnect, onConnectRegistry, onConnectRest,
 }: {
   def: McpDef;
   onBack: () => void;
@@ -1058,6 +943,7 @@ function McpDetail({
   onConnectSupabase: (accessToken: string, projectRef: string) => Promise<{ toolCount: number; anonKeyResolved: boolean }>;
   onDisconnect: () => Promise<void>;
   onConnectRegistry?: (creds: Record<string, string>) => Promise<void>;
+  onConnectRest?: (creds: Record<string, string>) => Promise<void>;
 }) {
   const featureBullets: string[] =
     def.features ?? (FEATURES[def.provider]?.map((f) => `${f.title} — ${f.desc}`) ?? []);
@@ -1113,6 +999,29 @@ function McpDetail({
     }
   };
 
+  const handleRest = async () => {
+    if (!onConnectRest || !canSubmit || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const creds: Record<string, string> = {};
+      for (const f of fields) {
+        const v = values[f.key]?.trim();
+        if (v) creds[f.key] = v;
+      }
+      // The backend's /provider/:id route runs the provider's own
+      // testConnection against the real API before storing, so every save is
+      // verified — there is no separate store-only path.
+      await onConnectRest(creds);
+      setValues({});
+      setShowPass({});
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Connection failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   /**
    * Test the credentials WITHOUT saving them. Both routes the backend offers
    * verify-before-store (the MCP route lists tools, the Supabase route checks
@@ -1141,6 +1050,27 @@ function McpDetail({
         setTestResult({
           ok: true,
           detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
+        });
+      } else if (def.connectMode === "rest_form") {
+        const creds: Record<string, string> = {};
+        for (const f of fields) {
+          const v = values[f.key]?.trim();
+          if (v) creds[f.key] = v;
+        }
+        // POST /provider/:id verifies against the provider's real API BEFORE it
+        // stores anything, so the test IS a connect; revert the row it wrote
+        // unless the delete itself fails.
+        await apiPost(`/api/integrations/provider/${def.provider}`, creds, { silent: true });
+        try {
+          const list = await apiGet<{ integrations: Array<{ id: string; provider: string; status: string }> }>(
+            "/api/integrations", { silent: true },
+          );
+          const row = list.integrations.find(i => i.provider === def.provider && i.status === "connected");
+          if (row) await apiDelete(`/api/integrations/${row.id}`, { silent: true });
+        } catch { /* revert failed — leave it connected */ }
+        setTestResult({
+          ok: true,
+          detail: `Credentials verified against the ${def.name} API. Click "Verify & Connect" to save them.`,
         });
       } else {
         const creds: Record<string, string> = {};
@@ -1377,6 +1307,15 @@ function McpDetail({
               );
             })}
             {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+            {def.connectMode === "rest_form" && (
+              <p className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/80">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  REST integration — this provider has no MCP server. The agent calls the {def.name} REST API
+                  directly with these stored credentials.
+                </span>
+              </p>
+            )}
             <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-xs text-emerald-300/80">
               <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
@@ -1386,7 +1325,7 @@ function McpDetail({
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 Test connection
               </Button>
-              <Button onClick={handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
+              <Button onClick={def.connectMode === "rest_form" ? handleRest : handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
               </Button>
             </div>

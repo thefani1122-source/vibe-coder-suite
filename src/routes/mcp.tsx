@@ -358,16 +358,6 @@ const META: Record<string, McpMeta> = {
     inputs: [],
     useCases: ["Ship preview deploys for every build", "Promote a build to production", "Attach a custom domain and verify DNS"],
   },
-  netlify: {
-    longDesc: "Netlify MCP automates site deploys, build hooks, and environment variables on your Netlify team.",
-    inputs: [{ name: "auth_token", type: "secret", desc: "Personal access token from app.netlify.com." }],
-    useCases: ["Deploy a static site with previews", "Trigger build hooks from chat", "Rotate environment variables"],
-  },
-  railway: {
-    longDesc: "Railway MCP provisions services, runs migrations, and tails logs on your Railway projects via the GraphQL API.",
-    inputs: [{ name: "api_token", type: "secret", desc: "Railway account token with project access." }],
-    useCases: ["Spin up Postgres + a Node service", "Stream production logs into chat", "Promote a build between environments"],
-  },
   cloudflare: {
     longDesc: "Cloudflare MCP manages Workers, KV namespaces, R2 buckets, and DNS records on your Cloudflare account.",
     inputs: [{ name: "cf_token", type: "secret", desc: "Scoped API token with Workers / DNS edit permissions." }],
@@ -381,28 +371,19 @@ const META: Record<string, McpMeta> = {
     ],
     useCases: ["Create tables with RLS in one prompt", "Wire up email + Google sign-in", "Generate edge functions and call them from the UI"],
   },
-  mongodb: {
-    longDesc: "MongoDB Atlas MCP connects your app to a managed Mongo cluster with full CRUD via the official driver.",
-    inputs: [{ name: "connection_string", type: "secret", desc: "mongodb+srv:// URI including credentials and database." }],
-    useCases: ["Persist user data in collections", "Run aggregation pipelines from chat", "Seed and migrate documents"],
-  },
   shopify: {
-    longDesc: "Shopify MCP reads and writes products, orders, and customers through the Admin GraphQL API.",
+    longDesc: "Shopify integration reads storefront products and manages store data through Shopify's Storefront and Admin REST APIs — a REST connection, not an MCP server.",
     inputs: [
-      { name: "shopify_store_domain", type: "text", desc: "yourstore.myshopify.com — without https://." },
-      { name: "shopify_admin_token", type: "secret", desc: "Admin API access token from a custom app." },
+      { name: "shopDomain", type: "text", desc: "Your store's myshopify.com domain, e.g. my-store.myshopify.com." },
+      { name: "storefrontAccessToken", type: "secret", desc: "Storefront API access token from a custom app." },
+      { name: "adminApiAccessToken", type: "secret", desc: "Optional — Admin API token, needed for orders and webhooks." },
     ],
-    useCases: ["Sync products into a custom storefront", "Build a back-office dashboard for orders", "Push customer segments into email tools"],
+    useCases: ["Show live products in a custom storefront", "Build a back-office dashboard for orders", "Trigger workflows from store events"],
   },
   figma: {
     longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow.",
     inputs: [],
     useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
-  },
-  framer: {
-    longDesc: "Framer MCP imports motion-rich components and layouts straight from Framer projects.",
-    inputs: [{ name: "framer_api_token", type: "secret", desc: "Token from framer.com/developers." }],
-    useCases: ["Reuse Framer animations in React", "Pull layouts as starting points", "Sync brand assets"],
   },
   "google-stitch": {
     longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect through its OAuth authorization flow.",
@@ -435,10 +416,11 @@ const META: Record<string, McpMeta> = {
     useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
   },
   wordpress: {
-    longDesc: "WordPress MCP creates and manages posts, pages, and media via the WP REST API.",
+    longDesc: "WordPress integration publishes and manages posts, pages, and media through the WordPress REST API with application-password auth — a REST connection, not an MCP server.",
     inputs: [
-      { name: "wordpress_site_url", type: "url", desc: "Root URL of your WordPress install." },
-      { name: "wordpress_app_password", type: "secret", desc: "Application password generated from Users → Profile." },
+      { name: "siteUrl", type: "url", desc: "Root URL of your WordPress install." },
+      { name: "username", type: "text", desc: "A WordPress user with write access." },
+      { name: "appPassword", type: "secret", desc: "Application password generated from Users → Profile." },
     ],
     useCases: ["Publish a blog post from a prompt", "Bulk update SEO meta", "Upload media from chat"],
   },
@@ -459,30 +441,6 @@ const META: Record<string, McpMeta> = {
     longDesc: "Zapier MCP fires Zap actions from your personal Zapier MCP endpoint.",
     inputs: [{ name: "zapier_mcp_url", type: "url", desc: "Personal Zapier MCP URL from zapier.com/mcp." }],
     useCases: ["Send a Slack message", "Add a row to a Google Sheet", "Kick off any Zap from chat"],
-  },
-  mailchimp: {
-    longDesc: "Mailchimp MCP manages audiences, campaigns, and subscribers via the Mailchimp Marketing API.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from mailchimp.com → Account → Extras → API keys." }],
-    useCases: ["Add subscribers from a signup form", "Send a campaign", "Segment your audience"],
-  },
-  resend: {
-    longDesc: "Resend MCP sends transactional email with React Email templates.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from resend.com/api-keys." }],
-    useCases: ["Send welcome emails", "Magic-link authentication", "Notify users on app events"],
-  },
-  twilio: {
-    longDesc: "Twilio MCP sends SMS, WhatsApp messages, and places voice calls via the Twilio API.",
-    inputs: [
-      { name: "account_sid", type: "text", desc: "Account SID from Twilio Console." },
-      { name: "auth_token", type: "secret", desc: "Auth token from Twilio Console." },
-      { name: "phone_number", type: "text", desc: "Optional Twilio phone number in E.164 format." },
-    ],
-    useCases: ["Send OTP codes by SMS", "Notify users on WhatsApp", "Trigger voice alerts"],
-  },
-  sendgrid: {
-    longDesc: "SendGrid MCP sends transactional and marketing email via the SendGrid v3 API.",
-    inputs: [{ name: "api_key", type: "secret", desc: "API key from app.sendgrid.com/settings/api_keys." }],
-    useCases: ["Send order confirmations", "Run drip campaigns", "Track delivery and opens"],
   },
 };
 

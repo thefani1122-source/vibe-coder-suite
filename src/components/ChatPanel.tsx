@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, AlertCircle, XCircle, ChevronRight, Sparkles } from "lucide-react";
 import { DiffView, type FileDiff } from "./DiffView";
-import { activityFromReasoning } from "@/lib/build-timeline";
+import { latestThoughtLine } from "@/lib/build-timeline";
+import { splitReasoningParagraphs } from "@/lib/build-activity";
 import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
 export interface BuildMessage {
   id: string;
@@ -143,32 +144,25 @@ export function ChatPanel({
 }
 
 /**
- * One paragraph of the builder's reasoning, as flowing text.
+ * The builder's reasoning, shown the way a terminal shows it: while the
+ * thought streams, ONE dim line that names it and a live preview of the
+ * sentence being written right now; when it settles, the line reads
+ * "Thought for Ns" and the full text hides behind it.
  *
- * This was a card: a violet-tinted box with a 💡, an uppercase THOUGHTS
- * header, a chevron, and the text clamped inside a 200px scroll pane. Two
- * things were wrong with it, and the second only appeared after the first
- * attempt at a fix.
- *
- * The box itself was the complaint — reasoning arrived all at once inside a
- * container the user could not comfortably read, which is the opposite of
- * watching someone think. Then the stream was split into one message per
- * paragraph to make it readable, and because each message rendered its own
- * card, a long stretch of reasoning became a STACK of violet boxes, each with
- * its own header and its own scrollbar. Strictly worse than the one box.
- *
- * So the chrome goes. Thinking is dim italic prose in the transcript, with
- * nothing around it, the way a terminal shows it — the split now does what it
- * was meant to do, because consecutive paragraphs simply read as paragraphs.
- * No clamp either: the transcript already scrolls, and a scroll pane inside a
- * scrolling transcript is what hid the text in the first place.
+ * This row has been three things before. A violet card with an uppercase
+ * THOUGHTS header; then one card per paragraph, a stack of boxes; then a box
+ * with a mono scroll pane inside a scrolling transcript, which hid the text.
+ * What the transcript actually wants is the least chrome possible: a plain
+ * line, and readable prose when it is opened. The expanded view is therefore
+ * normal paragraphs — NOT mono, NOT clamped — and follows the stream to the
+ * bottom while it is open, the way the transcript itself does.
  */
 function ThinkingRow({ msg }: { msg: BuildMessage }) {
   const isStreaming = msg.streaming === true;
   const startedAt = msg.startedAt ?? Date.now();
   const [elapsed, setElapsed] = useState(() => Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
   const [isOpen, setIsOpen] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -178,10 +172,12 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     return () => clearInterval(interval);
   }, [isStreaming, startedAt]);
 
-  // Keep the thinking box scrolled to the latest line as tokens stream in when expanded
+  // While open, follow the stream to the latest paragraph. The transcript's
+  // own follow-the-bottom effect keeps the collapsed view pinned; the expanded
+  // view needs its own.
   useEffect(() => {
-    if (isStreaming && isOpen && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (isStreaming && isOpen && textRef.current) {
+      textRef.current.scrollTop = textRef.current.scrollHeight;
     }
   }, [msg.text, isStreaming, isOpen]);
 
@@ -198,64 +194,66 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     return `${sec}s`;
   };
 
-  const label = isStreaming ? "Thinking..." : `Thought for ${formatTime(finalSec)}`;
+  const label = isStreaming ? "Thinking" : `Thought for ${formatTime(finalSec)}`;
 
-  // Extract a clean one-line preview of what it's thinking while collapsed
-  const lines = (msg.text ?? "")
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const latestLine = lines[lines.length - 1] || "";
+  // The sentence being written right now. latestThoughtLine declines
+  // headings, code and JSON fragments rather than showing them as glitches,
+  // and returns null while the text is too thin to read — the row simply
+  // shows the label alone for that beat.
+  const preview = latestThoughtLine(msg.text ?? "");
+
+  const paragraphs = splitReasoningParagraphs(msg.text ?? "");
 
   return (
-    <div className="my-1 rounded-lg border border-white/5 bg-white/[0.02] text-xs transition-colors hover:bg-white/[0.04]">
+    <div className="my-1 text-xs">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full cursor-pointer items-center justify-between px-3 py-1.5 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-lg gap-2"
+        aria-expanded={isOpen}
+        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          {isStreaming ? (
-            <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-          ) : (
-            <Sparkles className="h-3 w-3 text-white/40 shrink-0" />
-          )}
-          <span className="font-mono text-[11px] text-white/70 shrink-0">{label}</span>
-          {isStreaming && (
-            <span className="font-mono text-[10px] text-white/40 tabular-nums shrink-0">
-              {formatTime(elapsed)}
-            </span>
-          )}
-          {isStreaming && !isOpen && latestLine && (
-            <span className="truncate font-mono text-[11px] text-white/35 italic min-w-0">
-              {latestLine}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1 text-[11px] text-white/40 shrink-0">
-          <span>{isOpen ? "Hide" : "Show"}</span>
+        {isStreaming ? (
+          <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+        ) : (
+          <Sparkles className="h-3 w-3 text-white/35 shrink-0" />
+        )}
+        <span className="font-mono text-[11px] text-white/60 shrink-0">{label}</span>
+        {isStreaming && (
+          <span className="font-mono text-[10px] tabular-nums text-white/35 shrink-0">
+            {formatTime(elapsed)}
+          </span>
+        )}
+        {isStreaming && !isOpen && preview && (
+          <span className="min-w-0 flex-1 truncate text-[12px] italic text-white/40">
+            {preview}
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-white/40">
+          {isOpen ? "Hide" : "Show"}
           <ChevronRight
             aria-hidden="true"
             className={cn("h-3 w-3 transition-transform duration-200", isOpen && "rotate-90")}
           />
-        </div>
+        </span>
       </button>
 
       {isOpen && (
         <div
-          ref={scrollRef}
-          className="max-h-56 overflow-y-auto border-t border-white/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/50 whitespace-pre-wrap select-text scrollbar-thin scrollbar-thumb-white/10"
+          ref={textRef}
+          className="mt-0.5 ml-[22px] flex max-h-72 flex-col gap-2 overflow-y-auto border-l border-white/8 pl-3 py-1 text-[13px] leading-relaxed text-white/55 select-text scrollbar-thin scrollbar-thumb-white/10"
         >
-          {msg.text?.trim() ? (
-            <>
-              {msg.text.trim()}
-              {isStreaming && <BlinkCursor />}
-            </>
+          {paragraphs.length > 0 ? (
+            paragraphs.map((paragraph, i) => (
+              <p key={i} className="whitespace-pre-wrap break-words">
+                {paragraph}
+                {isStreaming && i === paragraphs.length - 1 && <BlinkCursor />}
+              </p>
+            ))
           ) : (
-            <span className="italic text-white/30 flex items-center gap-1.5">
-              <span>Thinking...</span>
+            <p className="italic text-white/30">
+              Thinking…
               {isStreaming && <BlinkCursor />}
-            </span>
+            </p>
           )}
         </div>
       )}

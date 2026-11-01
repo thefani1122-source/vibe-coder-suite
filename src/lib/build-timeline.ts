@@ -130,3 +130,35 @@ export function activityFromReasoning(paragraph: string): string | null {
   if (clean.length > 90) return `${clean.slice(0, 87).trimEnd()}…`;
   return clean;
 }
+
+/**
+ * The sentence the model is writing RIGHT NOW, for the collapsed thinking
+ * row's live preview. `activityFromReasoning` reads the FIRST sentence of a
+ * segment, which stays still while the paragraph streams under it; this reads
+ * the LAST one, which is what makes the preview feel like the thought is being
+ * typed in front of you.
+ *
+ * Same rules apply: headings, list markers, code fences and JSON fragments are
+ * declined rather than truncated into nonsense, markdown emphasis is stripped,
+ * and anything too short to carry meaning is dropped so the caller keeps
+ * whatever it showed before.
+ */
+export function latestThoughtLine(text: string): string | null {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const last = lines[lines.length - 1];
+  if (!last) return null;
+
+  const cleaned = last.replace(/^#{1,6}\s*/, "").replace(/^[-*+]\s+/, "");
+  if (/^[`{[\]}]/.test(cleaned)) return null;
+  if (cleaned.includes("```")) return null;
+
+  const sentence = (/^(.*?[.!?])(\s|$)/.exec(cleaned)?.[1] ?? cleaned).trim();
+  const fresh = sentence.replace(/\*\*/g, "").replace(/`/g, "").trim();
+
+  if (fresh.length < 12) return null;
+  if (fresh.length > 90) return `${fresh.slice(0, 87).trimEnd()}…`;
+  return fresh;
+}

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/mcp")({ component: McpPage });
 
 type ProviderType = "deploy" | "database" | "code" | "payment" | "email" | "analytics" | "auth" | "ai";
 
-type ConnectMode = "supabase_form" | "registry_form" | "coming_soon";
+type ConnectMode = "supabase_form" | "registry_form" | "rest_form";
 type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
 
 interface CustomMcp {
@@ -408,7 +408,7 @@ function McpPage() {
     const params = new URLSearchParams(window.location.search);
     const wanted = params.get("connect");
     if (wanted) {
-      const def = SERVERS.find(s => s.provider === wanted && s.connectMode !== "coming_soon");
+      const def = SERVERS.find(s => s.provider === wanted);
       if (def) setSelected(def);
       params.delete("connect");
     }
@@ -520,6 +520,16 @@ function McpPage() {
     toast.success(def.name + " connected!");
   };
 
+  // REST-only providers (WordPress, Shopify) connect through the backend's
+  // provider registry route, which validates the payload and runs the
+  // provider's own testConnection against the real API before storing. Their
+  // rows live in user_integrations (backendConns), not the MCP table.
+  const handleRestConnect = async (def: McpDef, creds: Record<string, string>) => {
+    await apiPost(`/api/integrations/provider/${def.provider}`, creds, { silent: true });
+    await loadBackendConns();
+    toast.success(def.name + " connected!");
+  };
+
   const handleRegistryDisconnect = async () => {
     if (!disconnectTarget) return;
     setDisconnectBusy(true);
@@ -614,6 +624,7 @@ function McpPage() {
                 : () => disconnectProvider(selected.provider)
             }
             onConnectRegistry={(creds) => handleRegistryConnect(selected, creds)}
+            onConnectRest={(creds) => handleRestConnect(selected, creds)}
           />
         </Shell>
       </RequireAuth>
@@ -817,6 +828,11 @@ function McpPage() {
               </div>
             </div>
           )}
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Netlify, Railway, MongoDB Atlas, Framer, Mailchimp, Resend, Twilio and SendGrid are REST-only and
+            cannot be connected yet — they will appear here once the server can verify and store their credentials.
+          </p>
         </div>
 
         {/* Registry disconnect confirm */}
@@ -843,7 +859,7 @@ function McpPage() {
   );
 }
 
-/* ─── Store card (supabase / coming_soon) ────────────────────────────────── */
+/* ─── Store card (supabase / rest_form) ─────────────────────────────────── */
 
 function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boolean; onClick: () => void }) {
   return (

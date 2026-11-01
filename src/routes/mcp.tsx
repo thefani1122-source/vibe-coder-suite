@@ -72,15 +72,6 @@ const SERVERS: McpDef[] = [
     ],
   },
   {
-    name: "Netlify", desc: "One-click deploys with previews and serverless functions.", category: "Deploy", emoji: "◆", provider: "netlify", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "netlify_token", label: "Personal Access Token", type: "password", placeholder: "nfp_...", help: "Create at app.netlify.com → User settings → Applications → Personal access tokens" }],
-  },
-  {
-    name: "Railway", desc: "Deploy to Railway from generated apps via the Railway GraphQL API.",
-    category: "Deploy", emoji: "🚂", provider: "railway", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "api_token", label: "Railway API Token", type: "password", placeholder: "...", help: "Create at railway.app/account/tokens" }],
-  },
-  {
     name: "Cloudflare", desc: "Manage Workers, KV, R2, and DNS records via the Cloudflare MCP server.",
     category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form",
     fields: [{ key: "cf_token", label: "Cloudflare API Token", type: "password", placeholder: "...", help: "Create at dash.cloudflare.com/profile/api-tokens" }],
@@ -89,16 +80,12 @@ const SERVERS: McpDef[] = [
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
   {
-    name: "MongoDB Atlas", desc: "MongoDB Atlas database for generated apps — connect via connection string.",
-    category: "Database", emoji: "🍃", provider: "mongodb", providerType: "database", connectMode: "registry_form",
-    fields: [{ key: "connection_string", label: "Atlas Connection String", type: "password", placeholder: "mongodb+srv://user:pass@cluster.mongodb.net/db", help: "Get from cloud.mongodb.com → Database → Connect → Drivers" }],
-  },
-  {
-    name: "Shopify", desc: "Manage Shopify store products, orders, and customers via the Admin GraphQL API.",
-    category: "Database", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "registry_form",
+    name: "Shopify", desc: "Read storefront products and manage store data via Shopify's REST APIs.",
+    category: "Productivity", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "rest_form",
     fields: [
-      { key: "shopify_store_domain", label: "Shopify Store Domain", type: "text", placeholder: "yourstore.myshopify.com", help: "Your Shopify store domain (without https://)" },
-      { key: "shopify_admin_token", label: "Admin API Access Token", type: "password", placeholder: "shpat_...", help: "Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API access token" },
+      { key: "shopDomain", label: "Shop Domain", type: "text", placeholder: "my-store.myshopify.com", help: "Your store's myshopify.com domain" },
+      { key: "storefrontAccessToken", label: "Storefront Access Token", type: "password", placeholder: "shpsa_...", help: "Shopify Admin → Settings → Apps and sales channels → Develop apps → Storefront API access token" },
+      { key: "adminApiAccessToken", label: "Admin API Access Token", type: "password", placeholder: "shpat_...", optional: true, help: "Needed for orders and webhooks — same custom app, Admin API integration" },
     ],
   },
 
@@ -107,11 +94,6 @@ const SERVERS: McpDef[] = [
     name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma MCP server.",
     category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form", authMode: "oauth",
     fields: [],
-  },
-  {
-    name: "Framer", desc: "Import animated components and layouts via the Framer API.",
-    category: "Design", emoji: "🖼️", provider: "framer", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "framer_api_token", label: "Framer API Token", type: "password", placeholder: "...", help: "Create at framer.com/developers → API Tokens" }],
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -148,11 +130,12 @@ const SERVERS: McpDef[] = [
     fields: [{ key: "stripe_key", label: "Stripe Restricted API Key", type: "password", placeholder: "rk_test_... or rk_live_...", help: "Use a restricted key from dashboard.stripe.com/apikeys with only the permissions you need" }],
   },
   {
-    name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the REST API.",
-    category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "registry_form",
+    name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the WordPress REST API.",
+    category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "rest_form",
     fields: [
-      { key: "wordpress_site_url", label: "WordPress Site URL", type: "url", placeholder: "https://yoursite.com", help: "The root URL of your WordPress site" },
-      { key: "wordpress_app_password", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx xxxx xxxx", help: "WordPress Admin → Users → Profile → Application Passwords → Generate" },
+      { key: "siteUrl", label: "Site URL", type: "url", placeholder: "https://myblog.com", help: "The root URL of your WordPress site" },
+      { key: "username", label: "Username", type: "text", placeholder: "admin", help: "A WordPress user with write access" },
+      { key: "appPassword", label: "Application Password", type: "password", placeholder: "xxxx xxxx xxxx xxxx", help: "WP Admin → Users → Profile → Application Passwords" },
     ],
   },
   {
@@ -172,30 +155,6 @@ const SERVERS: McpDef[] = [
     name: "Zapier", desc: "Trigger Zapier actions using your personal Zapier MCP endpoint.",
     category: "Productivity", emoji: "⚡", provider: "zapier", providerType: "code", connectMode: "registry_form",
     fields: [{ key: "zapier_mcp_url", label: "Zapier MCP URL", type: "url", placeholder: "https://mcp.zapier.com/api/mcp/s/YOUR_TOKEN/mcp", help: "Go to zapier.com/mcp → Create MCP → Copy your unique URL" }],
-  },
-  {
-    name: "Mailchimp", desc: "Manage audiences, campaigns, and subscribers via the Mailchimp API.",
-    category: "Productivity", emoji: "🐵", provider: "mailchimp", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "Mailchimp API Key", type: "password", placeholder: "xxxxxxxxxxxxxxxx-us1", help: "Find at mailchimp.com/account → Extras → API keys" }],
-  },
-  {
-    name: "Resend", desc: "Transactional email sending via the Resend API.",
-    category: "Productivity", emoji: "📨", provider: "resend", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "Resend API Key", type: "password", placeholder: "re_...", help: "Create an API key at resend.com/api-keys" }],
-  },
-  {
-    name: "Twilio", desc: "Send SMS, WhatsApp messages, and make calls via the Twilio API.",
-    category: "Productivity", emoji: "📱", provider: "twilio", providerType: "code", connectMode: "registry_form",
-    fields: [
-      { key: "account_sid", label: "Account SID", type: "text", placeholder: "ACxxxxxxxxxxxxxxxx", help: "Found on your Twilio Console dashboard" },
-      { key: "auth_token", label: "Auth Token", type: "password", placeholder: "...", help: "Found on your Twilio Console dashboard" },
-      { key: "phone_number", label: "Twilio Phone Number", type: "text", placeholder: "+15551234567", optional: true, help: "Your Twilio phone number in E.164 format (optional)" },
-    ],
-  },
-  {
-    name: "SendGrid", desc: "Send transactional and marketing email via the SendGrid API.",
-    category: "Productivity", emoji: "📧", provider: "sendgrid", providerType: "email", connectMode: "registry_form",
-    fields: [{ key: "api_key", label: "SendGrid API Key", type: "password", placeholder: "SG...", help: "Create at app.sendgrid.com/settings/api_keys" }],
   },
 ];
 

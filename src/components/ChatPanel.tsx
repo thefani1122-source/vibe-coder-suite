@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, AlertCircle, XCircle, ChevronRight, Sparkles } from "lucide-react";
 import { DiffView, type FileDiff } from "./DiffView";
-import { latestThoughtLine } from "@/lib/build-timeline";
+import { activityFromReasoning, latestThoughtLine } from "@/lib/build-timeline";
 import { splitReasoningParagraphs } from "@/lib/build-activity";
 import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
 export interface BuildMessage {
@@ -144,33 +144,24 @@ export function ChatPanel({
 }
 
 /**
- * The builder's reasoning, shown the way a terminal shows it: while the
- * thought streams, ONE dim line that names it and a live preview of the
- * sentence being written right now; when it settles, the line reads
- * "Thought for Ns" and the full text hides behind it.
+ * The builder's reasoning, shown the way Lovable shows it: ONE plain muted
+ * line whose text is the thought itself — its opening sentence once the
+ * thought settles, the sentence being written right now while it streams —
+ * and a small chevron at the end that opens the full text as ordinary prose.
  *
  * This row has been three things before. A violet card with an uppercase
- * THOUGHTS header; then one card per paragraph, a stack of boxes; then a box
- * with a mono scroll pane inside a scrolling transcript, which hid the text.
- * What the transcript actually wants is the least chrome possible: a plain
- * line, and readable prose when it is opened. The expanded view is therefore
- * normal paragraphs — NOT mono, NOT clamped — and follows the stream to the
- * bottom while it is open, the way the transcript itself does.
+ * THOUGHTS header; then one card per paragraph; then a terminal-style line
+ * that read "Thought for Ns" with a running timer and a Show label. The
+ * timer labeled the row with HOW LONG it took when the row can simply say
+ * WHAT it was, and the Show/Hide word spent width a chevron already spends.
+ * What a transcript wants is the least chrome possible: a plain line that
+ * reads like the agent's quiet voice between actions, readable prose when
+ * opened, nothing else.
  */
 function ThinkingRow({ msg }: { msg: BuildMessage }) {
   const isStreaming = msg.streaming === true;
-  const startedAt = msg.startedAt ?? Date.now();
-  const [elapsed, setElapsed] = useState(() => Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
   const [isOpen, setIsOpen] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!isStreaming) return;
-    const interval = setInterval(() => {
-      setElapsed(Math.max(1, Math.round((Date.now() - startedAt) / 1000)));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isStreaming, startedAt]);
 
   // While open, follow the stream to the latest paragraph. The transcript's
   // own follow-the-bottom effect keeps the collapsed view pinned; the expanded
@@ -181,66 +172,46 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
     }
   }, [msg.text, isStreaming, isOpen]);
 
-  const finalSec = msg.durationMs
-    ? Math.max(1, Math.round(msg.durationMs / 1000))
-    : elapsed;
-
-  const formatTime = (sec: number) => {
-    if (sec >= 60) {
-      const mins = Math.floor(sec / 60);
-      const rem = sec % 60;
-      return `${mins}m ${rem}s`;
-    }
-    return `${sec}s`;
-  };
-
-  const label = isStreaming ? "Thinking" : `Thought for ${formatTime(finalSec)}`;
-
-  // The sentence being written right now. latestThoughtLine declines
-  // headings, code and JSON fragments rather than showing them as glitches,
-  // and returns null while the text is too thin to read — the row simply
-  // shows the label alone for that beat.
-  const preview = latestThoughtLine(msg.text ?? "");
-
   const paragraphs = splitReasoningParagraphs(msg.text ?? "");
 
+  // The line the collapsed row reads. While streaming it is the sentence
+  // being typed right now (latestThoughtLine declines headings, code and
+  // JSON fragments rather than showing them as glitches); once settled it is
+  // the thought's own opening sentence. A thought that never produced a
+  // readable sentence falls back to a plain word rather than a timer.
+  const preview = latestThoughtLine(msg.text ?? "");
+  const summary = paragraphs.map(activityFromReasoning).find((line) => line !== null) ?? null;
+  const line = isStreaming ? (preview ?? "Thinking...") : (summary ?? "Thought");
+
   return (
-    <div className="my-1 text-xs">
+    <div className="my-0.5 text-xs">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-left select-none text-muted-foreground hover:text-white/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="group flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 text-left select-none hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         {isStreaming ? (
-          <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary/70" />
         ) : (
-          <Sparkles className="h-3 w-3 text-white/35 shrink-0" />
+          <Sparkles className="h-3 w-3 shrink-0 text-white/25" />
         )}
-        <span className="font-mono text-[11px] text-white/60 shrink-0">{label}</span>
-        {isStreaming && (
-          <span className="font-mono text-[10px] tabular-nums text-white/35 shrink-0">
-            {formatTime(elapsed)}
-          </span>
-        )}
-        {isStreaming && !isOpen && preview && (
-          <span className="min-w-0 flex-1 truncate text-[12px] italic text-white/40">
-            {preview}
-          </span>
-        )}
-        <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-white/40">
-          {isOpen ? "Hide" : "Show"}
-          <ChevronRight
-            aria-hidden="true"
-            className={cn("h-3 w-3 transition-transform duration-200", isOpen && "rotate-90")}
-          />
+        <span className="min-w-0 flex-1 truncate text-[13px] italic leading-relaxed text-white/40 group-hover:text-white/60">
+          {line}
         </span>
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            "h-3 w-3 shrink-0 text-white/20 transition-transform duration-200 group-hover:text-white/45",
+            isOpen && "rotate-90",
+          )}
+        />
       </button>
 
       {isOpen && (
         <div
           ref={textRef}
-          className="mt-0.5 ml-[22px] flex max-h-72 flex-col gap-2 overflow-y-auto border-l border-white/8 pl-3 py-1 text-[13px] leading-relaxed text-white/55 select-text scrollbar-thin scrollbar-thumb-white/10"
+          className="mb-1 ml-6 mr-1 flex max-h-72 flex-col gap-2 overflow-y-auto text-[13px] leading-relaxed text-white/50 select-text scrollbar-thin scrollbar-thumb-white/10"
         >
           {paragraphs.length > 0 ? (
             paragraphs.map((paragraph, i) => (
@@ -251,7 +222,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
             ))
           ) : (
             <p className="italic text-white/30">
-              Thinking…
+              Thinking...
               {isStreaming && <BlinkCursor />}
             </p>
           )}
@@ -306,12 +277,8 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
       return (
         <div
           className={cn(
-            "min-w-0 rounded-lg border px-3 py-2",
-            isFailed
-              ? "border-rose-500/35 bg-rose-500/10"
-              : isDone
-                ? "border-border/40 bg-muted/10"
-                : "border-primary/20 bg-primary/5",
+            "min-w-0 rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.03]",
+            isFailed && "bg-rose-500/[0.08]",
           )}
         >
           <div className="flex min-w-0 items-center gap-2.5">
@@ -344,14 +311,6 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
               </span>
             )}
             {status === "running" && msg.startedAt && <ElapsedTime since={msg.startedAt} />}
-            <span
-              className={cn(
-                "shrink-0 text-[10px] font-medium uppercase tracking-wide",
-                isFailed ? "text-rose-300" : isDone ? "text-muted-foreground" : "text-primary",
-              )}
-            >
-              {isFailed ? "Failed" : isDone ? "Done" : "Running"}
-            </span>
           </div>
 
           {diffs.length > 0 && (

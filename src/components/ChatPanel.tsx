@@ -5,6 +5,7 @@ import { DiffView, type FileDiff } from "./DiffView";
 import { activityFromReasoning, latestThoughtLine } from "@/lib/build-timeline";
 import { splitReasoningParagraphs } from "@/lib/build-activity";
 import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
+
 export interface BuildMessage {
   id: string;
   type: "thinking" | "text" | "tool_call" | "tool_result" | "file_write" | "assistant" | "error";
@@ -93,7 +94,7 @@ export function ChatPanel({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20"
+        className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20"
       >
         {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
@@ -144,28 +145,15 @@ export function ChatPanel({
 }
 
 /**
- * The builder's reasoning, shown the way Lovable shows it: ONE plain muted
- * line whose text is the thought itself — its opening sentence once the
- * thought settles, the sentence being written right now while it streams —
- * and a small chevron at the end that opens the full text as ordinary prose.
- *
- * This row has been three things before. A violet card with an uppercase
- * THOUGHTS header; then one card per paragraph; then a terminal-style line
- * that read "Thought for Ns" with a running timer and a Show label. The
- * timer labeled the row with HOW LONG it took when the row can simply say
- * WHAT it was, and the Show/Hide word spent width a chevron already spends.
- * What a transcript wants is the least chrome possible: a plain line that
- * reads like the agent's quiet voice between actions, readable prose when
- * opened, nothing else.
+ * The builder's reasoning, shown the Lovable way:
+ * ONE clean, quiet muted status line with a subtle sparkles icon, clean non-italic
+ * font that matches the rest of the stream, and a small chevron to expand full thoughts.
  */
 function ThinkingRow({ msg }: { msg: BuildMessage }) {
   const isStreaming = msg.streaming === true;
   const [isOpen, setIsOpen] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
 
-  // While open, follow the stream to the latest paragraph. The transcript's
-  // own follow-the-bottom effect keeps the collapsed view pinned; the expanded
-  // view needs its own.
   useEffect(() => {
     if (isStreaming && isOpen && textRef.current) {
       textRef.current.scrollTop = textRef.current.scrollHeight;
@@ -173,12 +161,6 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
   }, [msg.text, isStreaming, isOpen]);
 
   const paragraphs = splitReasoningParagraphs(msg.text ?? "");
-
-  // The line the collapsed row reads. While streaming it is the sentence
-  // being typed right now (latestThoughtLine declines headings, code and
-  // JSON fragments rather than showing them as glitches); once settled it is
-  // the thought's own opening sentence. A thought that never produced a
-  // readable sentence falls back to a plain word rather than a timer.
   const preview = latestThoughtLine(msg.text ?? "");
   const summary = paragraphs.map(activityFromReasoning).find((line) => line !== null) ?? null;
   const line = isStreaming ? (preview ?? "Thinking...") : (summary ?? "Thought");
@@ -189,20 +171,20 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        className="group flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 text-left select-none hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="group flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-left select-none hover:bg-white/[0.04] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         {isStreaming ? (
           <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary/70" />
         ) : (
-          <Sparkles className="h-3 w-3 shrink-0 text-white/25" />
+          <Sparkles className="h-3 w-3 shrink-0 text-white/30 group-hover:text-white/50" />
         )}
-        <span className="min-w-0 flex-1 truncate text-[13px] italic leading-relaxed text-white/40 group-hover:text-white/60">
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-relaxed text-white/50 group-hover:text-white/80">
           {line}
         </span>
         <ChevronRight
           aria-hidden="true"
           className={cn(
-            "h-3 w-3 shrink-0 text-white/20 transition-transform duration-200 group-hover:text-white/45",
+            "h-3 w-3 shrink-0 text-white/20 transition-transform duration-200 group-hover:text-white/50",
             isOpen && "rotate-90",
           )}
         />
@@ -211,7 +193,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
       {isOpen && (
         <div
           ref={textRef}
-          className="mb-1 ml-6 mr-1 flex max-h-72 flex-col gap-2 overflow-y-auto text-[13px] leading-relaxed text-white/50 select-text scrollbar-thin scrollbar-thumb-white/10"
+          className="mb-1.5 ml-6 mr-1 mt-1 flex max-h-72 flex-col gap-2 overflow-y-auto rounded bg-white/[0.02] p-2 text-[12px] leading-relaxed text-white/60 select-text scrollbar-thin scrollbar-thumb-white/10"
         >
           {paragraphs.length > 0 ? (
             paragraphs.map((paragraph, i) => (
@@ -221,7 +203,7 @@ function ThinkingRow({ msg }: { msg: BuildMessage }) {
               </p>
             ))
           ) : (
-            <p className="italic text-white/30">
+            <p className="text-white/40">
               Thinking...
               {isStreaming && <BlinkCursor />}
             </p>
@@ -242,7 +224,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
     case "text": {
       if (msg.role === "user") {
         return (
-          <div className="flex justify-end">
+          <div className="flex justify-end my-1">
             <div className="max-w-[85%] rounded-2xl bg-white/[0.08] px-4 py-2.5">
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/90">
                 {msg.text}
@@ -252,8 +234,8 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
         );
       }
       return (
-        <div className="px-1">
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/80">
+        <div className="px-1.5 py-1">
+          <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-white/75">
             {msg.text}
             {showCursor && <BlinkCursor />}
           </p>
@@ -266,26 +248,16 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
       const status = msg.activityStatus ?? (msg.done ? "done" : "running");
       const isDone = status === "done";
       const isFailed = status === "failed";
-      // `text` is the human label from describeToolActivity ("Writing 4 files");
-      // `tool` is the raw identifier, kept only so build:tool_result can match
-      // this row to the call that produced it. Preferring `tool` here — which is
-      // what this line used to do — put `check_page` and `write_files` back in
-      // front of the user and silently defeated the whole label map. The raw
-      // name is the last resort, never the first choice.
       const label = msg.text?.trim() || msg.tool || "Working on a step";
       const diffs = msg.diffs ?? [];
+
       return (
-        <div
-          className={cn(
-            "min-w-0 rounded-lg px-3 py-2 transition-colors hover:bg-white/[0.03]",
-            isFailed && "bg-rose-500/[0.08]",
-          )}
-        >
-          <div className="flex min-w-0 items-center gap-2.5">
+        <div className="min-w-0 px-1.5 py-0.5">
+          <div className="flex min-w-0 items-center gap-2">
             {isFailed ? (
               <XCircle aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-rose-400" />
             ) : isDone ? (
-              <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+              <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-emerald-400/90" />
             ) : (
               <Loader2
                 aria-hidden="true"
@@ -295,18 +267,18 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
             <span
               aria-label={`${label}: ${status}`}
               className={cn(
-                "min-w-0 flex-1 break-words text-xs leading-relaxed",
+                "min-w-0 flex-1 truncate text-[13px] leading-relaxed",
                 isFailed
                   ? "font-medium text-rose-300"
                   : isDone
-                    ? "text-muted-foreground"
-                    : "text-foreground/90",
+                    ? "text-white/60"
+                    : "text-white/90",
               )}
             >
               {label}
             </span>
             {msg.delta && (
-              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              <span className="shrink-0 font-mono text-[10px] text-white/40">
                 {msg.delta}
               </span>
             )}
@@ -314,34 +286,38 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
           </div>
 
           {diffs.length > 0 && (
-            <details className="group/diff mt-2">
-              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <details className="group/diff ml-5 mt-1">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] text-white/40 hover:text-white/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                 <ChevronRight
                   aria-hidden="true"
                   className="h-3 w-3 transition-transform group-open/diff:rotate-90"
                 />
                 {diffs.length === 1 ? "View change" : `View ${diffs.length} changes`}
               </summary>
-              {diffs.map((diff) => (
-                <DiffView key={diff.path} diff={diff} />
-              ))}
+              <div className="mt-1.5">
+                {diffs.map((diff) => (
+                  <DiffView key={diff.path} diff={diff} />
+                ))}
+              </div>
             </details>
           )}
 
-          {/* Said out loud rather than silently showing nothing: a step that
-              changed files but has no diff to show is a limit of the display,
-              not a step that did nothing. */}
           {diffs.length === 0 && msg.diffsDropped && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
+            <p className="ml-5 mt-1 text-[11px] text-white/40">
               This change was too large to keep a line-by-line view of.
             </p>
           )}
+
           {msg.details && (
-            <details className="mt-2 border-t border-border/40 pt-2 text-xs">
-              <summary className="w-fit cursor-pointer text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <details className="group/details ml-5 mt-1">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-[11px] text-white/40 hover:text-white/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <ChevronRight
+                  aria-hidden="true"
+                  className="h-3 w-3 transition-transform group-open/details:rotate-90"
+                />
                 Show details
               </summary>
-              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+              <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white/[0.03] p-2 font-mono text-[10px] leading-relaxed text-white/50">
                 {msg.details}
               </pre>
             </details>
@@ -352,7 +328,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
 
     case "file_write":
       return (
-        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/40 bg-muted/20 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+        <div className="ml-5 my-0.5 inline-flex max-w-full items-center gap-1.5 rounded bg-white/[0.03] px-2 py-0.5 font-mono text-[11px] text-white/50">
           <span className="shrink-0">📄</span>
           <span className="truncate">{msg.path ?? msg.text}</span>
         </div>
@@ -360,7 +336,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
 
     case "assistant":
       return (
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-2.5 my-2">
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500/20 text-[10px] font-bold text-orange-400 mt-0.5">
             L
           </div>
@@ -372,7 +348,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
                 {msg.files.map((f) => (
                   <span
                     key={f}
-                    className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/20 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                    className="inline-flex items-center gap-1 rounded border border-border/40 bg-muted/20 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
                   >
                     📄 {f}
                   </span>
@@ -390,7 +366,7 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
 
     case "error":
       return (
-        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5">
+        <div className="flex items-start gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 my-1.5">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
           <p className="break-words text-xs leading-relaxed text-destructive">{msg.text}</p>
         </div>

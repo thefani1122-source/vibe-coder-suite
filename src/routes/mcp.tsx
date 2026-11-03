@@ -876,9 +876,15 @@ function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boo
         </div>
         <Badge
           variant={connected ? "default" : "secondary"}
-          className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "border-orange-500/30 bg-orange-500/10 text-orange-400"}
+          className={
+            def.connectMode === "unavailable"
+              ? "border-border/60 bg-muted/40 text-muted-foreground"
+              : connected
+                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                : "border-orange-500/30 bg-orange-500/10 text-orange-400"
+          }
         >
-          {connected ? "● Connected" : "Connect"}
+          {connected ? "● Connected" : def.connectMode === "unavailable" ? "Not available yet" : "Connect"}
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
@@ -1193,6 +1199,18 @@ function McpDetail({
             <Button variant="outline" disabled={busy} onClick={handleDisconnect}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
+          </div>
+        ) : def.connectMode === "unavailable" ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {def.name}'s MCP server requires a pre-registered Google OAuth client, so one-click sign-in cannot be offered
+              honestly yet. We are working on it — until then this integration is not available.
+            </p>
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>We never show a connect button that cannot complete. You'll see it here as soon as the integration works.</span>
+            </div>
           </div>
         ) : def.authMode === "oauth" ? (
           <div className="space-y-4">

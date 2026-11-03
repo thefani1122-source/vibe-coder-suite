@@ -72,9 +72,29 @@ const SERVERS: McpDef[] = [
     name: "Cloudflare", desc: "Manage Workers, KV, R2, and DNS records via the Cloudflare MCP server.",
     category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
   },
+  {
+    name: "Railway",
+    desc: "Manage Railway projects, services, variables, and deployments via the Railway MCP server.",
+    category: "Deploy",
+    emoji: "🚂",
+    provider: "railway",
+    providerType: "deploy",
+    connectMode: "registry_form",
+    authMode: "oauth",
+  },
 
   // ── Database ──────────────────────────────────────────────────────────────
   { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
+  {
+    name: "MongoDB Atlas",
+    desc: "Query and manage MongoDB Atlas clusters via MongoDB's hosted MCP server.",
+    category: "Database",
+    emoji: "🍃",
+    provider: "mongodb",
+    providerType: "database",
+    connectMode: "registry_form",
+    authMode: "oauth",
+  },
   {
     name: "Shopify", desc: "Read storefront products and manage store data via Shopify's REST APIs.",
     category: "Productivity", emoji: "🛍️", provider: "shopify", providerType: "database", connectMode: "rest_form",
@@ -144,6 +164,17 @@ const SERVERS: McpDef[] = [
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form", authMode: "oauth",
     fields: [],
   },
+  {
+    name: "Resend",
+    desc: "Send email, manage contacts, broadcasts, and webhooks via the Resend MCP server.",
+    category: "Productivity",
+    emoji: "📨",
+    provider: "resend",
+    providerType: "email",
+    connectMode: "registry_form",
+    authMode: "oauth",
+  },
+
   {
     name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the WordPress REST API.",
     category: "Productivity", emoji: "📰", provider: "wordpress", providerType: "code", connectMode: "rest_form",
@@ -855,7 +886,7 @@ function McpPage() {
           )}
 
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Netlify, Railway, MongoDB Atlas, Framer, Mailchimp, Resend, Twilio and SendGrid are REST-only and
+            Netlify, Framer, Mailchimp, Twilio and SendGrid are REST-only and
             cannot be connected yet — they will appear here once the server can verify and store their credentials.
           </p>
         </div>

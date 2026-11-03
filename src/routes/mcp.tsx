@@ -101,9 +101,13 @@ const SERVERS: McpDef[] = [
 
   // ── Dev Tools ─────────────────────────────────────────────────────────────
   {
-    name: "GitHub", desc: "Create repos, manage issues, open pull requests, and more via the GitHub MCP server.",
-    category: "Dev Tools", emoji: "🐙", provider: "github", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "github_token", label: "Personal Access Token", type: "password", placeholder: "ghp_...", help: "Create at github.com/settings/tokens — needs repo and workflow scopes" }],
+    // api.githubcopilot.com is OAuth but has no dynamic client registration —
+    // the backend starts the flow with a pre-registered GitHub OAuth App
+    // (GITHUB_MCP_CLIENT_ID / GITHUB_MCP_CLIENT_SECRET env on the server) and
+    // answers with a clear error when that app is not configured yet.
+    name: "GitHub", desc: "Create repos, manage issues, open pull requests, and more via the GitHub MCP server. Connect with one-click OAuth.",
+    category: "Dev Tools", emoji: "🐙", provider: "github", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Sentry", desc: "Query errors, manage issues, and view performance data via the Sentry MCP server.",
@@ -300,8 +304,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Brainstorm UI directions from a prompt", "Export Stitch designs as React", "Iterate on layout variants"],
   },
   github: {
-    longDesc: "GitHub MCP creates repos, opens PRs, files issues, and reads code so the agent can collaborate inside your workflow.",
-    inputs: [{ name: "github_token", type: "secret", desc: "PAT with repo + workflow scopes." }],
+    longDesc: "GitHub MCP creates repos, opens PRs, files issues, and reads code so the agent can collaborate inside your workflow. Connect through GitHub's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Open a PR with the generated diff", "Triage issues from chat", "Search across your repos for context"],
   },
   sentry: {

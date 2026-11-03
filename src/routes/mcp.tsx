@@ -113,9 +113,9 @@ const SERVERS: McpDef[] = [
 
   // ── Productivity ──────────────────────────────────────────────────────────
   {
-    name: "Linear", desc: "Read and update issues, projects and cycles via the Linear MCP server.",
-    category: "Productivity", emoji: "📋", provider: "linear", providerType: "code", connectMode: "registry_form",
-    fields: [{ key: "linear_key", label: "Linear API Key", type: "password", placeholder: "lin_api_...", help: "Create at linear.app/settings/api under Personal API Keys" }],
+    name: "Linear", desc: "Read and update issues, projects and cycles via the Linear MCP server. Connect with one-click OAuth.",
+    category: "Productivity", emoji: "📋", provider: "linear", providerType: "code", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "Notion", desc: "Read and write pages, databases, and blocks via the Notion MCP server.",
@@ -123,9 +123,9 @@ const SERVERS: McpDef[] = [
     fields: [],
   },
   {
-    name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
-    category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
-    fields: [{ key: "stripe_key", label: "Stripe Agent API Key", type: "password", placeholder: "sk_test_... (Agent key)", help: "Create an Agent API key at dashboard.stripe.com/keys — Stripe stops accepting full secret and restricted keys from December 2026" }],
+    name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server. Connect with one-click OAuth.",
+    category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form", authMode: "oauth",
+    fields: [],
   },
   {
     name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the WordPress REST API.",
@@ -268,8 +268,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Ship preview deploys for every build", "Promote a build to production", "Attach a custom domain and verify DNS"],
   },
   cloudflare: {
-    longDesc: "Cloudflare MCP manages Workers, KV namespaces, R2 buckets, and DNS records on your Cloudflare account.",
-    inputs: [{ name: "cf_token", type: "secret", desc: "Scoped API token with Workers / DNS edit permissions." }],
+    longDesc: "Cloudflare MCP manages Workers, KV namespaces, R2 buckets, and DNS records on your Cloudflare account. Connect through Cloudflare's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Deploy a Worker from a prompt", "Add or edit DNS records", "Manage R2 storage buckets"],
   },
   supabase: {
@@ -310,8 +310,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Pull the top errors for a release", "Find the stack trace for an issue", "Mark issues resolved after a fix"],
   },
   linear: {
-    longDesc: "Linear MCP reads and updates issues, projects, and cycles — perfect for turning tickets into shipped features.",
-    inputs: [{ name: "linear_key", type: "secret", desc: "Personal API key from linear.app/settings/api." }],
+    longDesc: "Linear MCP reads and updates issues, projects, and cycles — perfect for turning tickets into shipped features. Connect through Linear's OAuth authorization flow.",
+    inputs: [],
     useCases: ["Convert a Linear issue into a working PR", "Move tickets across states", "Summarize a cycle's progress"],
   },
   notion: {
@@ -320,8 +320,8 @@ const META: Record<string, McpMeta> = {
     useCases: ["Use a spec page as build context", "Append changelogs to a release page", "Mirror Notion data into the app"],
   },
   stripe: {
-    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API.",
-    inputs: [{ name: "stripe_key", type: "secret", desc: "Restricted key from dashboard.stripe.com/apikeys." }],
+    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API. Connect through Stripe's OAuth consent flow.",
+    inputs: [],
     useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
   },
   wordpress: {

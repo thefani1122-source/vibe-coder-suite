@@ -188,7 +188,7 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Twilio",
-    desc: "Look up message and call history, and draft Twilio integrations, via the Twilio REST API.",
+    desc: "Inspect message and call history, and — after your approval — send SMS via the Twilio REST API.",
     category: "Productivity",
     emoji: "📱",
     provider: "twilio",
@@ -213,7 +213,7 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "SendGrid",
-    desc: "Inspect email templates, marketing contacts, and lists via the SendGrid REST API.",
+    desc: "Inspect templates and contacts, and — after your approval — send emails or add contacts via the SendGrid REST API.",
     category: "Productivity",
     emoji: "✉️",
     provider: "sendgrid",
@@ -231,7 +231,7 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Mailchimp",
-    desc: "Inspect campaigns, audiences, and subscribers via the Mailchimp REST API.",
+    desc: "Inspect campaigns and audiences, and — after your approval — add pending subscribers or create draft campaigns.",
     category: "Productivity",
     emoji: "🐵",
     provider: "mailchimp",

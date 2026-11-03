@@ -112,6 +112,28 @@ const SERVERS: McpDef[] = [
     fields: [],
   },
   {
+    // Framer's developer surface is its Server API (npm framer-api,
+    // project-bound keys), not a plain REST endpoint. A token lets the agent
+    // prepare Framer code and CMS sync scripts against the user's project,
+    // but there is no hosted MCP server — see framer.com/developers.
+    name: "Framer",
+    desc: "Connect a Framer project API key so the agent can build Framer components, CMS sync scripts, and publish flows.",
+    category: "Design",
+    emoji: "🧩",
+    provider: "framer",
+    providerType: "code",
+    connectMode: "rest_form",
+    fields: [
+      {
+        key: "framer_api_token",
+        label: "Framer API Key",
+        type: "password",
+        placeholder: "framer...",
+        help: "Site Settings → General → create an API key for the project (framer.com/developers/server-api-quick-start)",
+      },
+    ],
+  },
+  {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
     // Stitch's MCP server offers OAuth but no dynamic client registration — it
     // Stitch's MCP server takes a Stitch API key from Google Cloud, not a
@@ -163,6 +185,67 @@ const SERVERS: McpDef[] = [
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server. Connect with one-click OAuth.",
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form", authMode: "oauth",
     fields: [],
+  },
+  {
+    name: "Twilio",
+    desc: "Look up message and call history, and draft Twilio integrations, via the Twilio REST API.",
+    category: "Productivity",
+    emoji: "📱",
+    provider: "twilio",
+    providerType: "code",
+    connectMode: "rest_form",
+    fields: [
+      {
+        key: "account_sid",
+        label: "Account SID",
+        type: "text",
+        placeholder: "AC...",
+        help: "Twilio Console → Account Info → Account SID",
+      },
+      {
+        key: "auth_token",
+        label: "Auth Token",
+        type: "password",
+        placeholder: "...",
+        help: "Twilio Console → Account Info → Auth Token",
+      },
+    ],
+  },
+  {
+    name: "SendGrid",
+    desc: "Inspect email templates, marketing contacts, and lists via the SendGrid REST API.",
+    category: "Productivity",
+    emoji: "✉️",
+    provider: "sendgrid",
+    providerType: "email",
+    connectMode: "rest_form",
+    fields: [
+      {
+        key: "api_key",
+        label: "SendGrid API Key",
+        type: "password",
+        placeholder: "SG....",
+        help: "SendGrid → Settings → API Keys (full access not required; Mail Send + Marketing read)",
+      },
+    ],
+  },
+  {
+    name: "Mailchimp",
+    desc: "Inspect campaigns, audiences, and subscribers via the Mailchimp REST API.",
+    category: "Productivity",
+    emoji: "🐵",
+    provider: "mailchimp",
+    providerType: "email",
+    connectMode: "rest_form",
+    fields: [
+      {
+        key: "api_key",
+        label: "Mailchimp API Key",
+        type: "password",
+        placeholder: "xxxxxxxx-us1",
+        help: "Mailchimp → Profile → Extras → API keys (keep the -usXX suffix)",
+      },
+    ],
   },
   {
     name: "Resend",

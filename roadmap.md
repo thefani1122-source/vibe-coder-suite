@@ -20,20 +20,20 @@ protected-resource + authorization-server metadata probes).
 
 ## Backend (thefani1122-source/Lampcode, `main` only)
 
-- [ ] registry: `vercel` + `cloudflare` → `authType: "oauth"`, drop token fields
-- [ ] registry: remove `google-stitch` (generic OAuth cannot complete without a pre-registered Google client)
-- [ ] registry: Stripe help copy → Agent API key (full keys stop working Dec 2026)
-- [ ] add `oauth?: boolean` provider flag; `oauth/start` gates on the flag (Linear OAuth enabled, token connect preserved)
-- [ ] update/extend tests; typecheck + test run
-- [ ] commit + push to `main` only (no `db-path`)
+- [x] registry: `vercel` + `cloudflare` → `authType: "oauth"`, drop token fields
+- [x] registry: remove `google-stitch` (generic OAuth cannot complete without a pre-registered Google client)
+- [x] registry: Stripe help copy → Agent API key (full keys stop working Dec 2026)
+- [x] add `oauth?: boolean` provider flag; `oauth/start` gates on the flag (Linear OAuth enabled, token connect preserved)
+- [x] update/extend tests; typecheck + test run
+- [x] commit + push to `main` only (no `db-path`)
 
 ## Frontend (vibe-coder-suite, `main` only)
 
-- [ ] Vercel + Cloudflare cards → `authMode: "oauth"` (Sign-in button, no token field)
-- [ ] Google Stitch card → honest not-available state
-- [ ] Stripe card copy → Agent API key
-- [ ] parity check of every remaining card against the backend registry
-- [ ] typecheck + build
+- [x] Vercel + Cloudflare cards → `authMode: "oauth"` (Sign-in button, no token field)
+- [x] Google Stitch card → honest not-available state
+- [x] Stripe card copy → Agent API key
+- [x] parity check of every remaining card against the backend registry
+- [x] typecheck + build
 
 ## Security notes
 

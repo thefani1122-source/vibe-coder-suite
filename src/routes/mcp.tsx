@@ -94,9 +94,22 @@ const SERVERS: McpDef[] = [
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
     // Stitch's MCP server offers OAuth but no dynamic client registration — it
-    // needs a pre-registered Google OAuth client, so an authorization button
-    // here would start a flow that can never complete. Honest state instead.
-    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "unavailable",
+    // Stitch's MCP server takes a Stitch API key from Google Cloud, not a
+    // browser OAuth flow — see stitch.withgoogle.com/docs/mcp/setup.
+    category: "Design",
+    emoji: "🧵",
+    provider: "google-stitch",
+    providerType: "code",
+    connectMode: "registry_form",
+    fields: [
+      {
+        key: "api_key",
+        label: "Stitch API Key",
+        type: "password",
+        placeholder: "AIza...",
+        help: "Create a Stitch API key in Google Cloud (stitch.withgoogle.com/docs/mcp/setup)",
+      },
+    ],
   },
 
   // ── Dev Tools ─────────────────────────────────────────────────────────────
@@ -294,14 +307,24 @@ const META: Record<string, McpMeta> = {
     useCases: ["Show live products in a custom storefront", "Build a back-office dashboard for orders", "Trigger workflows from store events"],
   },
   figma: {
-    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow.",
+    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow. Note: Figma only connects clients listed in its MCP catalog, so the connect step can be rejected until Lampcode is approved.",
     inputs: [],
     useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
   },
   "google-stitch": {
-    longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect through its OAuth authorization flow.",
-    inputs: [],
-    useCases: ["Brainstorm UI directions from a prompt", "Export Stitch designs as React", "Iterate on layout variants"],
+    longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect with a Stitch API key from Google Cloud.",
+    inputs: [
+      {
+        name: "api_key",
+        type: "secret",
+        desc: "Stitch API key from Google Cloud — see stitch.withgoogle.com/docs/mcp/setup.",
+      },
+    ],
+    useCases: [
+      "Brainstorm UI directions from a prompt",
+      "Export Stitch designs as React",
+      "Iterate on layout variants",
+    ],
   },
   github: {
     longDesc: "GitHub MCP creates repos, opens PRs, files issues, and reads code so the agent can collaborate inside your workflow. Connect through GitHub's OAuth authorization flow.",

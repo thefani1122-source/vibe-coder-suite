@@ -28,7 +28,7 @@ export const Route = createFileRoute("/mcp")({ component: McpPage });
 
 type ProviderType = "deploy" | "database" | "code" | "payment" | "email" | "analytics" | "auth" | "ai";
 
-type ConnectMode = "supabase_form" | "registry_form" | "rest_form";
+type ConnectMode = "supabase_form" | "registry_form" | "rest_form" | "unavailable";
 type Category = "Deploy" | "Database" | "Design" | "Dev Tools" | "Productivity";
 
 interface CustomMcp {
@@ -66,15 +66,11 @@ const SERVERS: McpDef[] = [
   // ── Deploy ────────────────────────────────────────────────────────────────
   {
     name: "Vercel", desc: "Deploy projects, manage domains, and view deployments via the Vercel MCP server.",
-    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form",
-    fields: [
-      { key: "vercel_token", label: "Vercel Access Token", type: "password", placeholder: "...", help: "Create a Personal Access Token at vercel.com/account/tokens" },
-    ],
+    category: "Deploy", emoji: "▲", provider: "vercel", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
   },
   {
     name: "Cloudflare", desc: "Manage Workers, KV, R2, and DNS records via the Cloudflare MCP server.",
-    category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form",
-    fields: [{ key: "cf_token", label: "Cloudflare API Token", type: "password", placeholder: "...", help: "Create at dash.cloudflare.com/profile/api-tokens" }],
+    category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
   },
 
   // ── Database ──────────────────────────────────────────────────────────────
@@ -97,8 +93,10 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
-    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "registry_form", authMode: "oauth",
-    fields: [],
+    // Stitch's MCP server offers OAuth but no dynamic client registration — it
+    // needs a pre-registered Google OAuth client, so an authorization button
+    // here would start a flow that can never complete. Honest state instead.
+    category: "Design", emoji: "🧵", provider: "google-stitch", providerType: "code", connectMode: "unavailable",
   },
 
   // ── Dev Tools ─────────────────────────────────────────────────────────────
@@ -127,7 +125,7 @@ const SERVERS: McpDef[] = [
   {
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server.",
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
-    fields: [{ key: "stripe_key", label: "Stripe Restricted API Key", type: "password", placeholder: "rk_test_... or rk_live_...", help: "Use a restricted key from dashboard.stripe.com/apikeys with only the permissions you need" }],
+    fields: [{ key: "stripe_key", label: "Stripe Agent API Key", type: "password", placeholder: "sk_test_... (Agent key)", help: "Create an Agent API key at dashboard.stripe.com/keys — Stripe stops accepting full secret and restricted keys from December 2026" }],
   },
   {
     name: "WordPress", desc: "Create and manage WordPress posts, pages, and media via the WordPress REST API.",
@@ -878,9 +876,15 @@ function McpStoreCard({ def, connected, onClick }: { def: McpDef; connected: boo
         </div>
         <Badge
           variant={connected ? "default" : "secondary"}
-          className={connected ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "border-orange-500/30 bg-orange-500/10 text-orange-400"}
+          className={
+            def.connectMode === "unavailable"
+              ? "border-border/60 bg-muted/40 text-muted-foreground"
+              : connected
+                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                : "border-orange-500/30 bg-orange-500/10 text-orange-400"
+          }
         >
-          {connected ? "● Connected" : "Connect"}
+          {connected ? "● Connected" : def.connectMode === "unavailable" ? "Not available yet" : "Connect"}
         </Badge>
       </div>
       <p className="text-sm text-muted-foreground line-clamp-2">{def.desc}</p>
@@ -1195,6 +1199,18 @@ function McpDetail({
             <Button variant="outline" disabled={busy} onClick={handleDisconnect}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Disconnect"}
             </Button>
+          </div>
+        ) : def.connectMode === "unavailable" ? (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {def.name}'s MCP server requires a pre-registered Google OAuth client, so one-click sign-in cannot be offered
+              honestly yet. We are working on it — until then this integration is not available.
+            </p>
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-300/80">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>We never show a connect button that cannot complete. You'll see it here as soon as the integration works.</span>
+            </div>
           </div>
         ) : def.authMode === "oauth" ? (
           <div className="space-y-4">

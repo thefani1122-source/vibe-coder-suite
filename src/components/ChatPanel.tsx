@@ -5,6 +5,7 @@ import { DiffView, type FileDiff } from "./DiffView";
 import { activityFromReasoning, latestThoughtLine } from "@/lib/build-timeline";
 import { splitReasoningParagraphs } from "@/lib/build-activity";
 import { groupRows, ArchivedGroup, ActivityLine, ElapsedTime, SummaryText } from "./BuildTimeline";
+import { AgentMarkdown } from "@/components/AgentText";
 
 export interface BuildMessage {
   id: string;
@@ -233,12 +234,12 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
           </div>
         );
       }
+      // The agent's words render like prose — same renderer as the final
+      // summary — so a stray table or heading never shows as raw pipes.
       return (
         <div className="px-1.5 py-1">
-          <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-white/75">
-            {msg.text}
-            {showCursor && <BlinkCursor />}
-          </p>
+          <AgentMarkdown text={msg.text} className="text-[13px] text-white/75" />
+          {showCursor && <BlinkCursor />}
         </div>
       );
     }

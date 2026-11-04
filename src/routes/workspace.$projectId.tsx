@@ -316,6 +316,9 @@ function WorkspacePage() {
   const socketRef               = useRef<Socket | null>(null);
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
+  // Files written during the CURRENT run only — restore/hydration fill
+  // filesRef with historical files, which must never auto-open the panel.
+  const wroteThisRunRef          = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const chatPanelRef            = usePanelRef();
   const pendingPromptRef        = useRef<string>("");
@@ -589,6 +592,7 @@ function WorkspacePage() {
         const path = data.path ?? data.file ?? "file";
         const code = data.content ?? data.code ?? "";
         filesRef.current = { ...filesRef.current, [path]: code };
+        wroteThisRunRef.current = true;
         setFiles(prev => ({ ...prev, [path]: code }));
         setNewFiles(prev => new Set([...prev, path]));
         setSelectedFile(prev => prev ?? path);
@@ -660,9 +664,11 @@ function WorkspacePage() {
         setIsFullstack(true);
         setPreviewLoading(true);
       }
-      // Chat-first: the preview panel opens HERE — when the build has
-      // something to show — not when the build starts.
-      if (completePreviewUrl || Object.keys(mergedFiles).length > 0) {
+      // Chat-first: the preview panel opens HERE — when THIS RUN produced
+      // something to show. Historical files restored into filesRef (a query
+      // run in an existing session, a page reload) must never pop the panel.
+      const filesWrittenThisRun = wroteThisRunRef.current || Object.keys(data?.files ?? {}).length > 0;
+      if (completePreviewUrl || filesWrittenThisRun) {
         setSidePanelOpen(true);
       }
     });
@@ -873,7 +879,7 @@ function WorkspacePage() {
             const cachedPreviewUrl = extractPreviewUrl(data);
             if (data.isFullstack || cachedPreviewUrl || hasBackendFiles(data.files)) {
               setIsFullstack(true);
-              if (!cachedPreviewUrl) setPreviewLoading(true);
+              if (!cachedPreviewUrl && data.buildStatus === "running") setPreviewLoading(true);
             }
             if (cachedPreviewUrl) setPreviewUrl(cachedPreviewUrl);
             hadCache = true;
@@ -937,13 +943,17 @@ function WorkspacePage() {
         // Same fullstack detection as the live build:complete handler — otherwise
         // historical fullstack sessions render Sandpack instead of E2B.
         const restoredPreviewUrl = extractPreviewUrl(data);
+        const restoredStatus = extractBuildStatus(data) ?? "complete";
         if (restoredPreviewUrl || hasBackendFiles(filesMap)) {
           setIsFullstack(true);
           if (restoredPreviewUrl) {
             setPreviewUrl(restoredPreviewUrl);
             setPreviewLoading(false);
           } else {
-            setPreviewLoading(true);
+            // Only spin "starting preview" when a build is genuinely running.
+            // A finished session without a saved URL shows the Code tab until
+            // the user opens preview — not a spinner for nothing.
+            setPreviewLoading(restoredStatus === "running");
           }
         }
         // Use functional updater — never overwrite messages that already exist
@@ -994,7 +1004,8 @@ function WorkspacePage() {
           setPreviewError(null);
           setPreviewUrl(url);
           setPreviewLoading(false);
-          setSidePanelOpen(true);
+          // No setSidePanelOpen here: this URL belongs to a previous build
+          // found by polling, not to something produced in this run.
           return;
         }
 
@@ -1151,6 +1162,7 @@ function WorkspacePage() {
     setCurrentAgent(undefined);
     completedRef.current = false;
     filesRef.current = {};
+    wroteThisRunRef.current = false;
     setIsFullstack(false);
     setPreviewUrl(null);
     setPreviewLoading(false);

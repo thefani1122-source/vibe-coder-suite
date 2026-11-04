@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AgentMarkdown } from "@/components/AgentText";
 import type { BuildMessage } from "./ChatPanel";
 import { type Group } from "@/lib/build-timeline";
 
@@ -93,73 +93,12 @@ export function ActivityLine({ activity }: { activity: string }) {
 }
 
 /**
- * The model writes its closing summary in Markdown, because models do. It was
- * being printed raw, so a user read "**Features implemented:**" asterisks and
- * all, with every bullet run together in one block.
- *
- * This is not a Markdown implementation and should not become one. It covers
- * what these summaries actually contain — bold runs, dash bullets, blank-line
- * paragraphs — and anything else is shown as the plain text it already is.
- * Elements are built, never injected as HTML, so a summary cannot carry markup
- * into the page.
+ * The completion summary and every agent message share one safe renderer
+ * (AgentText.tsx). It reads like the agent talks — short paragraphs, dash
+ * bullets, bold names, inline code — and normalizes the odd markdown table
+ * or fenced block a provider still emits instead of showing raw pipes.
+ * Elements are built, never injected as HTML.
  */
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  return text
-    .split(/(\*\*[^*]+\*\*)/g)
-    .filter(Boolean)
-    .map((part, i) =>
-      part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
-        <strong key={`${keyPrefix}-${i}`} className="font-semibold text-white/95">
-          {part.slice(2, -2)}
-        </strong>
-      ) : (
-        <span key={`${keyPrefix}-${i}`}>{part}</span>
-      ),
-    );
-}
-
 export function SummaryText({ text }: { text: string }) {
-  const blocks: ReactNode[] = [];
-  let bullets: string[] = [];
-
-  const flushBullets = () => {
-    if (bullets.length === 0) return;
-    const items = bullets;
-    bullets = [];
-    blocks.push(
-      <ul key={`ul-${blocks.length}`} className="ml-1 flex flex-col gap-1">
-        {items.map((item, i) => (
-          <li key={i} className="flex gap-2">
-            <span aria-hidden="true" className="select-none text-white/30">
-              •
-            </span>
-            <span className="min-w-0 flex-1">{renderInline(item, `b-${blocks.length}-${i}`)}</span>
-          </li>
-        ))}
-      </ul>,
-    );
-  };
-
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    const bullet = /^[-*•]\s+(.*)$/.exec(line);
-    if (bullet?.[1]) {
-      bullets.push(bullet[1]);
-      continue;
-    }
-    flushBullets();
-    if (!line) continue;
-    const heading = /^#{1,4}\s+(.*)$/.exec(line);
-    blocks.push(
-      <p
-        key={`p-${blocks.length}`}
-        className={cn("break-words", heading && "font-semibold text-white/95")}
-      >
-        {renderInline(heading?.[1] ?? line, `p-${blocks.length}`)}
-      </p>,
-    );
-  }
-  flushBullets();
-
-  return <div className="flex flex-col gap-2 text-sm leading-relaxed text-white/80">{blocks}</div>;
+  return <AgentMarkdown text={text} />;
 }

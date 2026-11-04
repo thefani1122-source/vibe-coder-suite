@@ -1227,6 +1227,22 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
+  // Chat-first layout (Claude-style): chat owns the screen; the preview/code
+  // panel opens BY ITSELF when a build starts and closes again when the build
+  // finishes, handing the centre back to the conversation. The top-bar tabs
+  // reopen the panel on demand.
+  const [sidePanelOpen, setSidePanelOpen] = useState(isBuilding);
+  const wasBuildingRef = useRef(isBuilding);
+  useEffect(() => {
+    if (isBuilding) setSidePanelOpen(true);
+    else if (wasBuildingRef.current) setSidePanelOpen(false);
+    wasBuildingRef.current = isBuilding;
+  }, [isBuilding]);
+  const handleTabSelect = useCallback((tab: ActiveTab) => {
+    setActiveTab(tab);
+    setSidePanelOpen(true);
+  }, []);
+
   return (
     <RequireAuth>
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
@@ -1235,7 +1251,7 @@ function WorkspacePage() {
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={handleTabSelect}
           changeCount={edits.length}
           device={device}
           setDevice={setDevice}
@@ -1281,7 +1297,7 @@ function WorkspacePage() {
           {/* Left: Chat panel — resizable, collapsible */}
           <Panel
             panelRef={chatPanelRef}
-            defaultSize={25}
+            defaultSize={sidePanelOpen ? 25 : 100}
             minSize={15}
             collapsible={true}
             collapsedSize={0}
@@ -1299,6 +1315,7 @@ function WorkspacePage() {
                 onSend={handleFollowUp}
                 onStop={handleStopBuild}
                 projectName={projectName}
+                centered={!sidePanelOpen}
                 isClarifying={isClarifying}
                 pendingWrites={pendingWrites}
                 onWriteDecision={(toolCallId, approved) => {
@@ -1368,6 +1385,8 @@ function WorkspacePage() {
             </div>
           </Panel>
 
+          {sidePanelOpen && (
+            <>
           <Separator className="w-[3px] bg-white/[0.08] hover:bg-white/[0.25] active:bg-blue-500/50 cursor-col-resize transition-colors" />
 
           {/* Right: preview / code — takes remaining space */}
@@ -1450,6 +1469,8 @@ function WorkspacePage() {
               )}
             </div>
           </Panel>
+            </>
+          )}
         </Group>
 
       {showContextPanel && (
@@ -1673,6 +1694,7 @@ function WorkspaceTopBar({
 function ChatColumn({
   receipt, receiptSessionId, checks, activity,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  centered = false,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
@@ -1686,6 +1708,9 @@ function ChatColumn({
   onSend?: (prompt: string) => void;
   onStop?: () => void;
   projectName?: string;
+  /** Chat-first mode: the conversation is centred like ChatGPT instead of
+   *  hugging the edge of a split view. */
+  centered?: boolean;
   isClarifying?: boolean;
   /** Destructive tool calls the build is currently blocked on. */
   pendingWrites?: PendingWriteAction[];
@@ -1733,7 +1758,7 @@ function ChatColumn({
     <div className="flex h-full flex-col">
 
       {/* Messages */}
-      <div className="flex-1 min-h-0">
+      <div className={cn("flex-1 min-h-0", centered && "mx-auto w-full max-w-3xl")}>
         <ChatPanel
           messages={messages}
           isBuilding={isBuilding}
@@ -1769,7 +1794,7 @@ function ChatColumn({
 
       {/* Input bar */}
       <div className="shrink-0 p-3">
-        <div className="group relative w-full rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50">
+        <div className={cn("group relative rounded-2xl border border-white/[0.08]", centered && "mx-auto w-full max-w-3xl")} bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50">
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}

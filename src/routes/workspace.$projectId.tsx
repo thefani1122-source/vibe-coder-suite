@@ -1611,7 +1611,9 @@ function WorkspaceTopBar({
         <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
-          <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">vibe coder</span>
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">
+            vibe coder · ui-2026-11-04b
+          </span>
         </div>
         <button className="ml-0.5 flex h-7 w-5 items-center justify-center rounded-md text-white/40 transition hover:bg-white/[0.06] hover:text-white/80" title="Switch project">
           <ChevronDown className="h-3.5 w-3.5" />

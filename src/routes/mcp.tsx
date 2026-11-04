@@ -73,6 +73,21 @@ const SERVERS: McpDef[] = [
     category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
   },
   {
+    // Netlify's remote MCP server speaks OAuth 2.1; the REST path with a
+    // personal access token is verified before storage and covers the read
+    // surface (sites, deploys). Writes stay behind the approval gate.
+    name: "Netlify",
+    desc: "Inspect Netlify sites, deploys, and deploy state via the Netlify REST API.",
+    category: "Deploy",
+    emoji: "🌐",
+    provider: "netlify",
+    providerType: "deploy",
+    connectMode: "rest_form",
+    fields: [
+      { key: "api_token", label: "Netlify Personal Access Token", type: "password", placeholder: "nfp_...", help: "Netlify → User settings → Applications → Personal access tokens" },
+    ],
+  },
+  {
     name: "Railway",
     desc: "Manage Railway projects, services, variables, and deployments via the Railway MCP server.",
     category: "Deploy",
@@ -107,9 +122,15 @@ const SERVERS: McpDef[] = [
 
   // ── Design ────────────────────────────────────────────────────────────────
   {
-    name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma MCP server.",
-    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "registry_form", authMode: "oauth",
-    fields: [],
+    // mcp.figma.com only authorizes clients in Figma's MCP catalog, so the
+    // hosted MCP server cannot authorize Lampcode. The working path is the
+    // documented REST API with a personal access token (verified against
+    // /v1/me before storage).
+    name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma REST API.",
+    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "rest_form",
+    fields: [
+      { key: "figma_pat", label: "Figma Personal Access Token", type: "password", placeholder: "figd_...", help: "Figma → Settings → Account → Personal access tokens (needs File content read)" },
+    ],
   },
   {
     // Framer's developer surface is its Server API (npm framer-api,
@@ -182,9 +203,15 @@ const SERVERS: McpDef[] = [
     fields: [],
   },
   {
-    name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server. Connect with one-click OAuth.",
-    category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form", authMode: "oauth",
-    fields: [],
+    // Stripe's OAuth consent flow vets new client redirect URIs against an
+    // allowlist, so one-click OAuth is unavailable here. mcp.stripe.com
+    // accepts an Agent API key (Dashboard → Developer → API keys, "Agent"
+    // tag) as a plain bearer token; full-access secret keys are rejected.
+    name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server. Connect with a Stripe Agent API key.",
+    category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
+    fields: [
+      { key: "api_key", label: "Stripe Agent API Key", type: "password", placeholder: "sk_...", help: "Stripe Dashboard → Developer → API keys → create an Agent key (not a secret key)" },
+    ],
   },
   {
     name: "Twilio",
@@ -316,6 +343,12 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Custom Storefronts", desc: "Power headless storefronts with live Shopify data." },
     { title: "Inventory Sync", desc: "Keep inventory aligned across systems automatically." },
   ],
+  netlify: [
+    { title: "Site Inventory", desc: "List your Netlify sites with live URLs and ids." },
+    { title: "Deploy Status", desc: "See recent deploys per site with state and timing." },
+    { title: "Deploy Details", desc: "Inspect a specific deploy's state, URL, and commit." },
+    { title: "Publish Gate", desc: "Anything that creates or publishes a deploy asks you first." },
+  ],
   figma: [
     { title: "Read Design Files", desc: "Pull frames, components, and pages directly from Figma." },
     { title: "Design Tokens", desc: "Extract colors, typography, and spacing into your code." },
@@ -421,9 +454,18 @@ const META: Record<string, McpMeta> = {
     useCases: ["Show live products in a custom storefront", "Build a back-office dashboard for orders", "Trigger workflows from store events"],
   },
   figma: {
-    longDesc: "Figma MCP reads frames, components, and design tokens so the agent can rebuild your designs in code. Connect through Figma's OAuth authorization flow. Note: Figma only connects clients listed in its MCP catalog, so the connect step can be rejected until Lampcode is approved.",
-    inputs: [],
-    useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "Keep components in sync with design"],
+    longDesc: "Figma integration reads files, components, and design tokens through the Figma REST API with a personal access token (Figma's hosted MCP server only authorizes catalog-approved clients, so REST is the working path). The token is verified against your account before it is stored.",
+    inputs: [
+      { name: "figma_pat", type: "secret", desc: "Personal access token from Figma → Settings → Account (needs File content read)." },
+    ],
+    useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "List a team's projects and components"],
+  },
+  netlify: {
+    longDesc: "Netlify integration inspects your sites and deploys through the Netlify REST API with a personal access token. Reads are unrestricted; anything that creates or publishes a deploy goes through the approval gate.",
+    inputs: [
+      { name: "api_token", type: "secret", desc: "Personal access token from Netlify → User settings → Applications." },
+    ],
+    useCases: ["List sites and their live URLs", "Check the latest deploy state", "Debug a failed deploy"],
   },
   "google-stitch": {
     longDesc: "Google Stitch generates UI designs from prompts and exports production-ready code that the agent can drop into your app. Connect with a Stitch API key from Google Cloud.",
@@ -461,8 +503,10 @@ const META: Record<string, McpMeta> = {
     useCases: ["Use a spec page as build context", "Append changelogs to a release page", "Mirror Notion data into the app"],
   },
   stripe: {
-    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API. Connect through Stripe's OAuth consent flow.",
-    inputs: [],
+    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API. Stripe's OAuth consent flow vets new clients against an allowlist, so connect with a Stripe Agent API key (Dashboard → Developer → API keys, 'Agent' tag) — the MCP server accepts it directly as a bearer token.",
+    inputs: [
+      { name: "api_key", type: "secret", desc: "Stripe Agent API key — a restricted key scoped to agent use, not a full-access secret key." },
+    ],
     useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
   },
   wordpress: {
@@ -969,8 +1013,9 @@ function McpPage() {
           )}
 
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Netlify, Framer, Mailchimp, Twilio and SendGrid are REST-only and
-            cannot be connected yet — they will appear here once the server can verify and store their credentials.
+            Each REST connection is verified against the provider before its
+            credential is stored, and the agent never sees the raw token — only the
+            results of the calls it makes with it.
           </p>
         </div>
 

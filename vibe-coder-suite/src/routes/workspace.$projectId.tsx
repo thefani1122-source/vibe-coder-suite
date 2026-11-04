@@ -1,0 +1,2448 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { Socket } from "socket.io-client";
+import { Group, Panel, Separator, usePanelRef, type PanelImperativeHandle } from "react-resizable-panels";
+import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/BrandMark";
+import { RequireAuth } from "@/components/RequireAuth";
+import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
+import type { CheckRow } from "@/components/BuildReceipt";
+import { ChangesPanel } from "@/components/ChangesPanel";
+import { collectEdits } from "@/lib/build-timeline";
+import type { FileDiff } from "@/components/DiffView";
+import { BuildReceipt } from "@/components/BuildReceipt";
+import { useBuildReceipt } from "@/hooks/use-build-receipt";
+import type { BuildReceiptOutcome } from "@/lib/build-receipt";
+import {
+  describePipelineActivity,
+  describeToolActivity,
+  splitReasoningParagraphs,
+} from "@/lib/build-activity";
+import { WriteApprovalPrompt, type PendingWriteAction } from "@/components/WriteApprovalPrompt";
+import { QuestionPrompt, type PendingQuestion } from "@/components/QuestionPrompt";
+import { ConnectDatabaseCard } from "@/components/ConnectDatabaseCard";
+import { FileTree } from "@/components/FileTree";
+import { SandpackPreview } from "@/components/SandpackPreview";
+import { E2BPreview } from "@/components/E2BPreview";
+import { HistoryPanel } from "@/components/HistoryPanel";
+import { createBuildSocket } from "@/lib/websocket";
+import {
+  apiGet, apiPost,
+  clarifyPrompt,
+  type ClarifyQuestion, type ClarifyResponse, type QuestionAnswer,
+} from "@/lib/api";
+import { useAuthStore } from "@/lib/auth";
+import {
+  ArrowUp, ChevronDown, Plus,
+  RotateCw, Monitor, Smartphone, Tablet,
+  Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
+  Square, ExternalLink, Link2, X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/workspace/$projectId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    sessionId: typeof search.sessionId === "string" ? search.sessionId : undefined,
+    mode: search.mode === "plan" || search.mode === "fast" ? (search.mode as "plan" | "fast") : undefined,
+  }),
+  component: WorkspacePage,
+});
+
+type BuildStatus = "running" | "complete" | "error";
+type ActiveTab  = "preview" | "code" | "changes";
+type Device     = "desktop" | "mobile" | "tablet";
+
+type McpEventKind = "thinking" | "tool_call" | "tool_result" | "done";
+interface McpEvent {
+  id: string;
+  kind: McpEventKind;
+  tool?: string;
+  text?: string;
+  success?: boolean;
+  summary?: string;
+}
+
+const DEVICE_CYCLE: Device[] = ["desktop", "mobile", "tablet"];
+
+function toolToAgent(tool: string): string {
+  if (/file|write|create/i.test(tool)) return "frontend";
+  if (/deploy|publish/i.test(tool))    return "deploy";
+  if (/db|sql|database/i.test(tool))   return "db";
+  if (/test|security|verify/i.test(tool)) return "security";
+  return "connection";
+}
+
+function newMsg(partial: Omit<BuildMessage, "id">): BuildMessage {
+  return { id: crypto.randomUUID(), ...partial };
+}
+
+function closeStreaming(prev: BuildMessage[]): BuildMessage[] {
+  if (!prev.length || !prev[prev.length - 1].streaming) return prev;
+  const last = prev[prev.length - 1];
+  if (last.type === "thinking" && !last.text?.trim()) {
+    return prev.slice(0, -1);
+  }
+  const endedAt = Date.now();
+  const durationMs = last.startedAt ? Math.max(1000, endedAt - last.startedAt) : undefined;
+  return [...prev.slice(0, -1), { ...last, streaming: false, durationMs }];
+}
+
+function appendCommentary(prev: BuildMessage[], chunk: string): BuildMessage[] {
+  const last = prev[prev.length - 1];
+  if (last && last.type === "thinking" && last.streaming === true) {
+    return [
+      ...prev.slice(0, -1),
+      { ...last, text: last.text + chunk },
+    ];
+  }
+  return [
+    ...closeStreaming(prev),
+    newMsg({
+      type: "thinking",
+      text: chunk,
+      streaming: true,
+      startedAt: Date.now(),
+    }),
+  ];
+}
+
+// Legacy pipeline labels without the typed `internal` flag. Current backend
+// events mark pipeline status explicitly; model stream text is never displayed.
+//
+// FRAGILE: These patterns must stay in sync with stream-handler.ts on the backend.
+// TODO(backend): Always send `internal: true` on pipeline/status messages and
+// `internal: false` on real AI thinking — once every event carries the flag,
+// this regex list can be deleted entirely.
+const HARDCODED_PATTERNS: RegExp[] = [
+  /^Building:/i,
+  /^Starting new build/i,
+  /^Finalizing and preparing preview/i,
+  /^Writing files\.\.\./i,
+  /^Writing src\/.+\(\d+ lines/i,
+  /^Editing existing project/i,
+];
+
+// Paths/content that indicate a fullstack build requiring the E2B sandbox preview instead of Sandpack.
+const BACKEND_PATH_RE = [
+  /^src\/server\//,
+  /^src\/db\//,
+  /^src\/lib\/api\./,
+  /^src\/routes\/api\//,
+  /^api\//,
+  /^app\/api\//,
+  /^pages\/api\//,
+  /(^|\/)(server|middleware)\.(ts|tsx|js|jsx|mjs|cjs)$/,
+  /(^|\/)(next\.config|drizzle\.config|prisma\/schema\.prisma|schema\.sql)$/,
+];
+const BACKEND_CONTENT_RE = [
+  /\bcreateServerFn\s*\(/,
+  /\bexpress\s*\(/,
+  /\bapp\.(get|post|put|patch|delete)\s*\(/,
+  /fetch\(["']\/api\//,
+  /\bnew\s+PrismaClient\b/,
+];
+
+const SANDBOX_PREVIEW_CONSTRAINTS = `
+
+---
+Sandbox preview compatibility requirements:
+- The live preview runs inside a Vite browser sandbox. Do not generate Express, Node server files, src/server/*, src/db/* API handlers, or app/page API routes unless the platform explicitly provides a backend runtime.
+- Do not make browser components call fetch('/api/...') unless you also generate a working Vite-compatible mock/fallback for that endpoint. Prefer direct client-side state/localStorage for demo persistence.
+- If auth or database features are requested, the preview must still be fully clickable without configured environment variables: show a demo auth path and in-memory/localStorage data fallback, while keeping real integration code isolated behind env checks.
+- Never leave buttons dependent on missing env vars; New/Edit/Delete/Done/Sign In should visibly work in the preview demo.
+`;
+
+function hasBackendFiles(files: Record<string, string>): boolean {
+  return Object.entries(files).some(([path, content]) =>
+    BACKEND_PATH_RE.some(r => r.test(path)) || BACKEND_CONTENT_RE.some(r => r.test(content)),
+  );
+}
+
+function extractPreviewUrl(payload: unknown): string | null {
+  if (typeof payload === "string") return payload;
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const direct = record.url ?? record.previewUrl ?? record.preview_url ?? record.previewURL;
+  if (typeof direct === "string" && direct.trim()) {
+    const trimmed = direct.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/^http:\/\//i, "https://");
+    if (/^(5173-|[a-z0-9-]+\.)/i.test(trimmed)) return `https://${trimmed}`;
+    return trimmed;
+  }
+  return extractPreviewUrl(record.data) ?? extractPreviewUrl(record.preview) ?? extractPreviewUrl(record.sandbox);
+}
+
+function extractFilesMap(payload: unknown): Record<string, string> {
+  const filesMap: Record<string, string> = {};
+  if (!payload || typeof payload !== "object") return filesMap;
+  const record = payload as Record<string, unknown>;
+  const addFile = (file: unknown) => {
+    if (!file || typeof file !== "object") return;
+    const item = file as Record<string, unknown>;
+    const path = item.path ?? item.file ?? item.filename;
+    const content = item.content ?? item.code;
+    if (typeof path === "string" && typeof content === "string") filesMap[path] = content;
+  };
+
+  if (Array.isArray(record.groups)) {
+    record.groups.forEach(group => {
+      if (!group || typeof group !== "object") return;
+      const g = group as Record<string, unknown>;
+      if (Array.isArray(g.files)) g.files.forEach(addFile);
+      if (Array.isArray(g.items)) g.items.forEach(addFile);
+    });
+  }
+  if (Array.isArray(record.files)) record.files.forEach(addFile);
+  if (record.files && typeof record.files === "object" && !Array.isArray(record.files)) {
+    for (const [path, content] of Object.entries(record.files as Record<string, unknown>)) {
+      if (typeof content === "string") filesMap[path] = content;
+    }
+  }
+  return filesMap;
+}
+
+function extractBuildStatus(payload: unknown): BuildStatus | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const raw = record.status ?? (record.session && typeof record.session === "object" ? (record.session as Record<string, unknown>).status : undefined);
+  if (typeof raw !== "string") return null;
+  if (/^(complete|completed|success)$/i.test(raw)) return "complete";
+  if (/^(error|failed|cancelled|canceled)$/i.test(raw)) return "error";
+  if (/^(running|pending|processing|building)$/i.test(raw)) return "running";
+  return null;
+}
+
+// Heuristic truncation check — flags code files that don't end with a closing
+// brace or JSX tag, a strong signal the AI was cut off mid-file (e.g. token limit).
+const CODE_FILE_RE = /\.(tsx?|jsx?|css|json)$/;
+function looksTruncated(path: string, content: string): boolean {
+  if (!CODE_FILE_RE.test(path)) return false;
+  const trimmed = content.trimEnd();
+  return trimmed.length > 0 && !/[}>]$/.test(trimmed);
+}
+
+
+// ── Business context ─────────────────────────────────────────────────────────
+
+type BusinessContext = {
+  appDescription?: string;
+  userType?: string;
+  isMultiTenant?: boolean;
+  hasPaidFeatures?: boolean;
+  industry?: string;
+};
+
+function hasFilledContext(bc: BusinessContext): boolean {
+  return !!(bc.appDescription || bc.userType || bc.industry ||
+    bc.isMultiTenant !== undefined || bc.hasPaidFeatures !== undefined);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Page                                                                       */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function WorkspacePage() {
+  const { projectId } = Route.useParams();
+  const { sessionId }  = Route.useSearch();
+
+  const [messages,     setMessages]     = useState<BuildMessage[]>([]);
+  // A queue, not a single value: the agent can request several writes in
+  // one turn and the backend blocks on each, so dropping all but the last
+  // would strand the others until they time out.
+  const [pendingWrites, setPendingWrites] = useState<PendingWriteAction[]>([]);
+  const [pendingQuestions, setPendingQuestions] = useState<PendingQuestion[]>([]);
+  /** The question whose "Connect Supabase" button was pressed. While this is
+   *  set the page watches for the integration to appear and answers on the
+   *  person's behalf, so they never have to come back and click again. */
+  const [awaitingConnect, setAwaitingConnect] = useState<string | null>(null);
+  /** The database question, if one is open. Singular on purpose — the backend
+   *  asks it at most once per person, so a second would be a bug worth seeing
+   *  rather than a second card to stack. */
+  const connectQuestion = pendingQuestions.find(q =>
+    q.options.some(o => o.action === "connect-supabase"),
+  );
+  const [files,        setFiles]        = useState<Record<string, string>>({});
+  const [newFiles,     setNewFiles]     = useState<Set<string>>(new Set());
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [buildStatus,  setBuildStatus]  = useState<BuildStatus>("running");
+  const [followUpReceipt, setFollowUpReceipt] = useState<{ routeSessionId?: string; active?: string } | null>(null);
+  // A route change must not show the prior session's receipt for even one
+  // render while effects settle. Follow-up builds can have a new ID without
+  // changing the route's search parameter.
+  const receiptSessionId = followUpReceipt && followUpReceipt.routeSessionId === sessionId
+    ? followUpReceipt.active : sessionId;
+  const receipt = useBuildReceipt(receiptSessionId, buildStatus === "running");
+  const [currentAgent, setCurrentAgent] = useState<string | undefined>();
+  const [activeTab,    setActiveTab]    = useState<ActiveTab>("preview");
+  const [device,       setDevice]       = useState<Device>("desktop");
+  const [reloadKey,    setReloadKey]    = useState(0);
+  const [projectName,  setProjectName]  = useState<string>("");
+  const [chatCollapsed,  setChatCollapsed]  = useState(false);
+  const [showHistory,    setShowHistory]    = useState(false);
+  const [activity, setActivity] = useState<string | null>(null);
+  // Arrives on its own event just before build:complete, and on replay of a
+  // finished session, so it survives a reload rather than only existing in
+  // the moment it was emitted.
+  const [checks, setChecks] = useState<CheckRow[] | null>(null);
+  // Read off the messages rather than tracked separately — the diffs are
+  // already on the rows that reported them, and those are already saved and
+  // replayed.
+  const edits = useMemo(() => collectEdits(messages), [messages]);
+  const [isFullstack, setIsFullstack] = useState(false);
+  const [codeQuery,   setCodeQuery]   = useState("");
+
+  // E2B preview state — the backend creates the E2B sandbox and emits the
+  // public preview URL via Socket.IO. The iframe loads it directly: no Service
+  // Workers, no COEP headers, no cross-origin isolation required.
+  const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError,   setPreviewError]   = useState<string | null>(null);
+
+  const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
+  const [isMcpActive, setIsMcpActive] = useState(false);
+
+  const [clarifyQuestions,     setClarifyQuestions]     = useState<ClarifyQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionAnswers,      setQuestionAnswers]       = useState<QuestionAnswer[]>([]);
+  const [showClarifyModal,     setShowClarifyModal]     = useState(false);
+  const [isClarifying,         setIsClarifying]         = useState(false);
+  const [selectedOptions,      setSelectedOptions]      = useState<Set<string>>(new Set());
+  const [customText,           setCustomText]           = useState("");
+
+  const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
+  const [showContextPanel,  setShowContextPanel]  = useState(false);
+
+  const socketRef               = useRef<Socket | null>(null);
+  const completedRef            = useRef(false);
+  const filesRef                = useRef<Record<string, string>>({});
+  const currentSessionIdRef     = useRef<string | undefined>(sessionId);
+  const chatPanelRef            = usePanelRef();
+  const pendingPromptRef        = useRef<string>("");
+  const rebuildFnRef            = useRef<(() => void) | null>(null);
+
+  // Fetch project name with auth via apiGet (handles token automatically).
+  // API returns { project: { name, description } }; fall back to flat shapes.
+  useEffect(() => {
+    apiGet<{ project?: { name?: string; description?: string; businessContext?: BusinessContext }; name?: string; title?: string }>(
+      `/api/projects/${projectId}`,
+      { silent: true },
+    )
+      .then(d => {
+        const name = d?.project?.name ?? d?.name ?? d?.title;
+        if (name) setProjectName(name);
+        const bc = d?.project?.businessContext;
+        if (bc && typeof bc === "object") setBusinessContext(bc);
+      })
+      .catch(() => {});
+  }, [projectId]);
+
+  // F3: Show a toast when the build socket fails to connect at all.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ message: string }>).detail;
+      console.error("[Workspace] Socket connection failed:", detail.message);
+      toast.error("Build server connection failed. Check your connection and try again.");
+    };
+    window.addEventListener("socket:connection_failed", handler);
+    return () => window.removeEventListener("socket:connection_failed", handler);
+  }, []);
+
+  // A dropped link under a running build looks exactly like a dead build: the
+  // screen just stops. Say which it is. "Restored" only fires after a real
+  // loss, because connect also fires on the FIRST connect of every build.
+  useEffect(() => {
+    let wasLost = false;
+    const onLost = () => {
+      wasLost = true;
+      toast.error("Connection lost — reconnecting. Your build is still running.");
+    };
+    const onRestored = () => {
+      if (!wasLost) return;
+      wasLost = false;
+      toast.success("Reconnected — catching up on what you missed.");
+    };
+    window.addEventListener("socket:connection_lost", onLost);
+    window.addEventListener("socket:connection_restored", onRestored);
+    return () => {
+      window.removeEventListener("socket:connection_lost", onLost);
+      window.removeEventListener("socket:connection_restored", onRestored);
+    };
+  }, []);
+
+  // F5: Stop the AI stream and emit cancel-build to the backend.
+  const handleStopBuild = useCallback(() => {
+    const socket = socketRef.current;
+    if (socket?.connected) {
+      socket.emit("cancel-build", { sessionId: currentSessionIdRef.current });
+    }
+    setBuildStatus("complete");
+    setCurrentAgent(undefined);
+    setActivity(null);
+    toast("Stopping build…");
+  }, []);
+
+  const registerHandlers = useCallback((socket: Socket) => {
+    // The server is about to replay a finished session's stored messages.
+    // Clear first: this arrives when the chat was restored from the local
+    // sessionStorage snapshot as well, and appending to that would show the
+    // whole conversation twice.
+    socket.on("build:history", () => {
+      completedRef.current = false;
+      setMessages(prev => prev.filter(m => m.archived));
+    });
+
+    // The mid-build equivalent. Refreshing DURING a build restores this tab's
+    // sessionStorage snapshot and then receives the server's Redis event
+    // buffer on join; appending the second to the first showed the agent's
+    // thinking and replies twice.
+    //
+    // But it keeps the USER's own messages, and that distinction is the whole
+    // fix: clearing everything here made the typed prompt vanish from the chat
+    // on a normal build. The buffer only ever holds what the SERVER emitted,
+    // and the prompt bubble is added locally when the person hits send — so
+    // nothing in the replay puts it back. build:history is different: that
+    // path re-emits build:prompt from stored history, so it can clear freely.
+    //
+    // It keeps ARCHIVED messages for a second reason, and that one is a race:
+    // a follow-up build is already running by the time the POST that started
+    // it returns, so buffer:{newSessionId} is non-empty before this tab can
+    // join that room — which means joining always replays, and this handler
+    // always fired. Without the archived guard it deleted the PREVIOUS
+    // build's thinking and tool cards every time someone asked for an edit.
+    // Reported 2026-10-23.
+    socket.on("build:replay_start", () => {
+      completedRef.current = false;
+      setMessages(prev => prev.filter(m => m.archived || m.role === "user"));
+    });
+
+    socket.on("build:prompt", (data: { text?: string; prompt?: string }) => {
+      const t = (data.text ?? data.prompt ?? "").trim();
+      if (!t) return;
+      setMessages(prev =>
+        prev.some(m => m.role === "user")
+          ? prev
+          : [newMsg({ type: "text", text: t, role: "user" }), ...prev],
+      );
+    });
+
+    socket.on("build:thinking", (data: { text?: string; content?: string; internal?: boolean }) => {
+      setCurrentAgent("planning");
+      const chunk = data.text ?? data.content ?? "";
+      if (!chunk.trim()) return;
+
+      if (completedRef.current) return;
+
+      const trimmed = chunk.trim();
+
+      // Drop synthetic/placeholder ticks and criteria extraction lines
+      // so they never render as thoughts or corrupt the thinking transcript.
+      if (
+        /^(calling (the )?ai model|analyzing your prompt|understanding your request|planning the next step)/i.test(trimmed) ||
+        /^here's (what i understood|the one thing)/i.test(trimmed) ||
+        /^if i misunderstood/i.test(trimmed) ||
+        /^the list is partial/i.test(trimmed) ||
+        trimmed.startsWith("•") ||
+        trimmed.startsWith("  •")
+      ) {
+        setActivity("Thinking...");
+        return;
+      }
+
+      // Pipeline status lines belong in the live activity row. The backend
+      // marks them with `internal`; legacy statuses use the keyword fallback.
+      const isPipelineStatus = data.internal === true
+        || (data.internal === undefined && HARDCODED_PATTERNS.some(p => p.test(trimmed)));
+      if (isPipelineStatus) {
+        setActivity(describePipelineActivity(trimmed));
+        return;
+      }
+
+      // Real model thinking arrived - clear live activity and append to thinking
+      setActivity(null);
+      setMessages((prev) => appendCommentary(prev, chunk));
+    });
+
+    socket.on("build:checks", (data: { rows?: CheckRow[] }) => {
+      if (Array.isArray(data.rows)) setChecks(data.rows);
+    });
+
+    socket.on("build:token", (data: { text?: string; token?: string }) => {
+      const text = data.text ?? data.token ?? "";
+      if (!text) return;
+      // Same rule as build:thinking above — nothing lands in the chat after the
+      // build has reported complete.
+      if (completedRef.current) return;
+      // Legacy token events can contain provider reasoning. Use the progress
+      // row instead of echoing raw model tokens into the transcript.
+      setActivity("Working on the next step");
+      setCurrentAgent(a => a ?? "planning");
+    });
+
+    socket.on(
+      "build:tool_call",
+      (data: { id?: string; tool?: string; name?: string; args?: string; label?: string; active?: string }) => {
+        const tool = data.tool ?? data.name;
+        const described = describeToolActivity(tool, data.args);
+        if (tool) setCurrentAgent(toolToAgent(tool));
+        // A running tool carries its own spinner and clock, so the live line
+        // would only be saying the same thing a second time.
+        setActivity(null);
+        setMessages((prev) => [
+          ...closeStreaming(prev),
+          newMsg({
+            type: "tool_call",
+            // Present tense while it runs; build:tool_result swaps in the past
+            // tense when it finishes. Using the finished wording up front put
+            // "Wrote 3 files" on screen beside a RUNNING badge.
+            text: data.active?.trim() || data.label?.trim() || described.label,
+            tool: described.tool,
+            ...(data.id ? { toolCallId: data.id } : {}),
+            startedAt: Date.now(),
+            activityStatus: "running",
+            details: described.details,
+          }),
+        ]);
+      },
+    );
+
+    socket.on(
+      "build:tool_result",
+      (data: {
+        id?: string;
+        tool?: string;
+        result?: string;
+        label?: string;
+        delta?: string;
+        diffs?: FileDiff[];
+        diffsDropped?: boolean;
+      }) => {
+      if (data.result !== "success" && data.result !== "error") return;
+      setMessages((prev) => {
+        // By id when the backend sent one: matching on the tool NAME alone
+        // settles whichever row happened to be running last, which is the
+        // wrong one as soon as the same tool is called twice. The name match
+        // stays as the fallback for rows replayed from before ids existed.
+        const ri = [...prev]
+          .reverse()
+          .findIndex((m) =>
+            data.id && m.toolCallId
+              ? m.toolCallId === data.id
+              : m.type === "tool_call" &&
+                m.activityStatus === "running" &&
+                (!data.tool || m.tool === data.tool),
+          );
+        if (ri === -1) return prev;
+        const idx = prev.length - 1 - ri;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          activityStatus: data.result === "error" ? "failed" : "done",
+          ...(data.label?.trim() ? { text: data.label.trim() } : {}),
+          ...(data.delta ? { delta: data.delta } : {}),
+          ...(data.diffs && data.diffs.length > 0 ? { diffs: data.diffs } : {}),
+          ...(data.diffsDropped ? { diffsDropped: true } : {}),
+        };
+        return updated;
+      });
+    },
+    );
+
+    socket.on("build:file_writing", (_data: { filename?: string; path?: string }) => {
+      // Files are tracked in the sidebar only — no chat messages
+    })
+
+    socket.on("build:file_done", (_data: { filename?: string; path?: string }) => {
+      // Files are tracked in the sidebar only — no chat messages
+    })
+
+    socket.on(
+      "build:file_write",
+      (data: { path?: string; file?: string; content?: string; code?: string }) => {
+        setActivity(null);
+        const path = data.path ?? data.file ?? "file";
+        const code = data.content ?? data.code ?? "";
+        filesRef.current = { ...filesRef.current, [path]: code };
+        setFiles(prev => ({ ...prev, [path]: code }));
+        setNewFiles(prev => new Set([...prev, path]));
+        setSelectedFile(prev => prev ?? path);
+        setCurrentAgent("frontend");
+      },
+    );
+
+    socket.on("build:complete", (data?: { files?: Record<string, string>; summary?: string; totalFiles?: number; hint?: string; url?: string; previewUrl?: string; preview_url?: string }) => {
+      setPendingWrites([]);
+      setPendingQuestions([]);
+      if (completedRef.current) {
+        const latePreviewUrl = extractPreviewUrl(data);
+        if (latePreviewUrl) {
+          setIsFullstack(true);
+          setActiveTab("preview");
+          setPreviewError(null);
+          setPreviewUrl(latePreviewUrl);
+          setPreviewLoading(false);
+        }
+        return;
+      }
+      completedRef.current = true;
+      setActivity(null);
+
+      // Merge build:complete files into what file_write events already accumulated.
+      const mergedFiles = { ...filesRef.current };
+      if (data?.files) {
+        for (const [path, content] of Object.entries(data.files)) {
+          if (!mergedFiles[path]) mergedFiles[path] = content;
+        }
+      }
+      filesRef.current = mergedFiles;
+      setFiles(mergedFiles);
+      setSelectedFile(prev => prev ?? Object.keys(mergedFiles)[0] ?? null);
+
+      // The backend normally sends a written summary; this only shows if that
+      // call failed. Keep it plain — a file count isn't what someone wants to
+      // read back after asking for an app.
+      const summaryText = data?.summary || "Your app is ready — the preview is on the right."
+      setBuildStatus("complete");
+      setCurrentAgent(undefined);
+      setNewFiles(new Set());
+      setActiveTab("preview");
+      // Add summary as assistant message for history persistence
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "assistant", text: summaryText, hint: data?.hint }),
+      ]);
+      const completePreviewUrl = extractPreviewUrl(data);
+      if (completePreviewUrl) {
+        setIsFullstack(true);
+        setPreviewError(null);
+        setPreviewUrl(completePreviewUrl);
+        setPreviewLoading(false);
+      } else if (hasBackendFiles(mergedFiles)) {
+        // Detect fullstack builds from file paths/content — fallback if build:backend_ready wasn't fired.
+        setIsFullstack(true);
+        setPreviewLoading(true);
+      }
+    });
+
+    // ── Write-action approval ────────────────────────────────────────────
+    // The build is BLOCKED while this is pending. Answering is the only thing
+    // that unblocks it; the backend otherwise denies on a 2-minute timeout.
+    socket.on(
+      "build:write_action_approval_required",
+      (d: { toolCallId: string; serverSlug: string; toolName: string; toolInput: unknown; timeoutMs?: number }) => {
+        setPendingWrites(prev =>
+          prev.some(p => p.toolCallId === d.toolCallId)
+            ? prev
+            : [...prev, {
+                toolCallId: d.toolCallId,
+                serverSlug: d.serverSlug,
+                toolName: d.toolName,
+                toolInput: d.toolInput,
+                expiresAt: Date.now() + (d.timeoutMs ?? 120_000),
+              }],
+        );
+      },
+    );
+
+    socket.on(
+      "build:question_asked",
+      (d: { toolCallId: string; question: string; options?: unknown[]; timeoutMs?: number }) => {
+        setPendingQuestions(prev =>
+          prev.some(q => q.toolCallId === d.toolCallId)
+            ? prev
+            : [...prev, {
+                toolCallId: d.toolCallId,
+                question: d.question,
+                options: Array.isArray(d.options)
+                  ? (d.options as PendingQuestion["options"])
+                  : [],
+                expiresAt: Date.now() + (d.timeoutMs ?? 600_000),
+              }],
+        );
+      },
+    );
+
+    // Clear on every terminal signal the backend can send for an action, so a
+    // prompt cannot outlive the thing it was asking about: an explicit deny, a
+    // timeout sweep, or the socket dropping and the server denying everything.
+    const clearPending = (d?: { toolCallId?: string }) => {
+      setPendingWrites(prev => (d?.toolCallId ? prev.filter(p => p.toolCallId !== d.toolCallId) : []));
+    };
+    socket.on("build:write_action_denied", clearPending);
+    socket.on("build:write_action_cancelled", clearPending);
+    socket.on("build:write_action_declined", clearPending);
+
+    socket.on("build:warning", ({ message, truncated }: { message: string; truncated?: boolean }) => {
+      if (truncated) {
+        toast.warning("⚠️ Output was too long — click Rebuild to try again", {
+          duration: 10000,
+          action: {
+            label: "Rebuild",
+            onClick: () => rebuildFnRef.current?.(),
+          },
+        });
+      } else {
+        toast.warning(message, { duration: 6000 });
+      }
+      console.warn("[Build Warning]", message);
+    });
+
+    socket.on("build:error", (data?: { message?: string; error?: string }) => {
+      setPendingWrites([]);
+      setPendingQuestions([]);
+      setActivity(null);
+      setBuildStatus("error");
+      setCurrentAgent(undefined);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "error", text: data?.message ?? data?.error ?? "Build failed" }),
+      ]);
+    });
+
+    socket.on("build:backend_ready", () => {
+      console.log("[FRONTEND] build:backend_ready received — switching to E2B preview");
+      setIsFullstack(true);
+      setActiveTab("preview");
+      setPreviewError(null);
+      setPreviewLoading(true);
+    });
+
+    // E2B sandbox preview — the backend emits the public URL once the sandbox
+    // dev server is live. The iframe loads it directly, no SW required.
+    const handlePreviewUrl = (payload: unknown) => {
+      const url = extractPreviewUrl(payload);
+      if (!url) return;
+      console.log("[Preview] E2B URL received:", url);
+      setIsFullstack(true);
+      setActiveTab("preview");
+      setPreviewError(null);
+      setPreviewUrl(url);
+      setPreviewLoading(false);
+    };
+    ["build:preview_url", "build:preview_ready", "build:preview", "preview_url", "preview_ready", "preview:ready"].forEach(event => {
+      socket.on(event, handlePreviewUrl);
+    });
+
+    const handlePreviewLoading = () => {
+      console.log("[Preview] E2B sandbox starting…");
+      setIsFullstack(true);
+      setActiveTab("preview");
+      setPreviewError(null);
+      setPreviewLoading(true);
+      setPreviewUrl(null);
+    };
+    ["build:preview_loading", "build:preview_starting", "preview_loading", "preview:loading"].forEach(event => {
+      socket.on(event, handlePreviewLoading);
+    });
+
+    const handlePreviewError = (payload: unknown) => {
+      const message = typeof payload === "string"
+        ? payload
+        : payload && typeof payload === "object" && "message" in payload
+        ? String((payload as { message?: unknown }).message ?? "Preview failed")
+        : "Preview failed";
+      console.error("[Preview] E2B sandbox error:", message);
+      setIsFullstack(true);
+      setActiveTab("preview");
+      setPreviewLoading(false);
+      setPreviewError(message);
+    };
+    ["build:preview_error", "preview_error", "preview:error"].forEach(event => {
+      socket.on(event, handlePreviewError);
+    });
+
+    socket.on("build:cancelled", () => {
+      setPendingWrites([]);
+      setPendingQuestions([]);
+      setActivity(null);
+      setBuildStatus("error");
+      setCurrentAgent(undefined);
+      setMessages(prev => [
+        ...closeStreaming(prev),
+        newMsg({ type: "text", text: "Build stopped." }),
+      ]);
+      toast.success("Build stopped");
+    });
+
+    socket.on("mcp:thinking", (data: { text?: string }) => {
+      setIsMcpActive(true);
+      const text = data.text ?? "";
+      if (!text) return;
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "thinking", text }]);
+    });
+
+    socket.on("mcp:tool_call", (data: { tool?: string; server?: string }) => {
+      const tool = [data.tool, data.server].filter(Boolean).join(" @ ");
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "tool_call", tool }]);
+    });
+
+    socket.on("mcp:tool_result", (data: { success?: boolean }) => {
+      setMcpEvents(prev => {
+        const lastCallIdx = prev.map((e, i) => (e.kind === "tool_call" && e.success === undefined ? i : -1)).filter(i => i !== -1).at(-1);
+        if (lastCallIdx === undefined) return prev;
+        const updated = [...prev];
+        updated[lastCallIdx] = { ...updated[lastCallIdx], kind: "tool_result", success: data.success ?? true };
+        return updated;
+      });
+    });
+
+    socket.on("mcp:done", (data: { summary?: string }) => {
+      setIsMcpActive(false);
+      setMcpEvents(prev => [...prev, { id: crypto.randomUUID(), kind: "done", summary: data.summary ?? "" }]);
+    });
+  }, []);
+
+  // 1. Restore from sessionStorage THEN connect socket in one effect so they
+  //    never race. If cache exists, skip the "blank slate" setMessages(initial).
+  useEffect(() => {
+    completedRef.current = false;
+    currentSessionIdRef.current = sessionId;
+    setChecks(null);
+    setActivity(null);
+    setFollowUpReceipt(null);
+
+    let hadCache = false;
+    if (sessionId) {
+      try {
+        const raw = sessionStorage.getItem(`build_${sessionId}`);
+        if (raw) {
+          const data = JSON.parse(raw) as {
+            files?: Record<string, string>;
+            messages?: BuildMessage[];
+            buildStatus?: BuildStatus;
+            activeTab?: ActiveTab;
+            previewUrl?: string | null;
+            isFullstack?: boolean;
+          };
+          if (data.files && Object.keys(data.files).length > 0) {
+            filesRef.current = data.files;
+            setFiles(data.files);
+            // Old snapshots contain provider reasoning mixed with pipeline
+            // text. New builds use the activity row and tool timeline instead.
+            const clean = (data.messages ?? []).filter((m) => m.type !== "thinking");
+            setMessages(clean);
+            setBuildStatus(data.buildStatus ?? "complete");
+            setActiveTab(data.activeTab ?? "preview");
+            // Restore fullstack detection + E2B preview URL — without this, reloading
+            // a fullstack session silently downgrades to the Sandpack preview.
+            const cachedPreviewUrl = extractPreviewUrl(data);
+            if (data.isFullstack || cachedPreviewUrl || hasBackendFiles(data.files)) {
+              setIsFullstack(true);
+              if (!cachedPreviewUrl) setPreviewLoading(true);
+            }
+            if (cachedPreviewUrl) setPreviewUrl(cachedPreviewUrl);
+            hadCache = true;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    const socket = createBuildSocket(sessionId);
+    socketRef.current = socket;
+
+    // Only reset to the original prompt when there is no cached state.
+    // If we already loaded messages from cache, leave them untouched.
+    if (!hadCache) {
+      const storedPrompt =
+        sessionId ? (window.sessionStorage.getItem(`prompt:${sessionId}`) ?? "") : "";
+      const initial: BuildMessage[] = [];
+      if (storedPrompt.trim()) {
+        initial.push(newMsg({ type: "text", text: storedPrompt, role: "user" }));
+      }
+      setMessages(initial);
+      setActivity("Thinking...");
+    }
+
+    registerHandlers(socket);
+    return () => { socket.disconnect(); socketRef.current = null; };
+  }, [sessionId, registerHandlers]);
+
+  // Fetch files from the API only when sessionStorage has no data for this session
+  // (e.g. navigating to a historical session on a fresh page load).
+  // Never called when cache already hydrated messages above.
+  useEffect(() => {
+    if (!sessionId) return;
+
+    // Skip if sessionStorage already has a usable snapshot for this session.
+    try {
+      const raw = sessionStorage.getItem(`build_${sessionId}`);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.files && Object.keys(data.files).length > 0) return;
+      }
+    } catch { /* ignore */ }
+
+    const token = useAuthStore.getState().session?.access_token;
+    if (!token) return;
+
+    const controller = new AbortController();
+
+    fetch(`${import.meta.env.VITE_BACKEND_URL}/api/build/${sessionId}/files`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: unknown | null) => {
+        if (!data) return;
+        const filesMap = extractFilesMap(data);
+        if (Object.keys(filesMap).length === 0) return;
+        setFiles(filesMap);
+        setBuildStatus(extractBuildStatus(data) ?? "complete");
+        setActiveTab("preview");
+        // Same fullstack detection as the live build:complete handler — otherwise
+        // historical fullstack sessions render Sandpack instead of E2B.
+        const restoredPreviewUrl = extractPreviewUrl(data);
+        if (restoredPreviewUrl || hasBackendFiles(filesMap)) {
+          setIsFullstack(true);
+          if (restoredPreviewUrl) {
+            setPreviewUrl(restoredPreviewUrl);
+            setPreviewLoading(false);
+          } else {
+            setPreviewLoading(true);
+          }
+        }
+        // Use functional updater — never overwrite messages that already exist
+        // (e.g. live build messages). Only set the restore note when chat is empty.
+        setMessages(prev =>
+          prev.length > 0
+            ? prev
+            : [newMsg({
+                type: "text",
+                text: `Restored: ${Object.keys(filesMap).length} files loaded from previous build.`,
+              })],
+        );
+      })
+      .catch(() => {});
+
+    return () => controller.abort();
+  }, [sessionId]);
+
+  // If the preview socket event is missed (common when a build finishes before
+  // the workspace reconnects), poll the session endpoint for a saved preview URL.
+  useEffect(() => {
+    const activeSessionId = currentSessionIdRef.current ?? sessionId;
+    if (!activeSessionId || !isFullstack || previewUrl || previewError || buildStatus === "error") return;
+
+    const controller = new AbortController();
+    const startedAt = Date.now();
+    let stopped = false;
+
+    // A build that is still running has not failed to produce a preview — it
+    // has not got there yet. This effect re-runs when buildStatus changes, so
+    // once the build settles `startedAt` is the moment it stopped, and the
+    // timeout below measures the wait for the preview rather than the length
+    // of the build. Without this, a build past two minutes — which is most of
+    // them, since a real one can use all 40 rounds — told the user "Build
+    // finished, but no preview URL was returned" while the agent was visibly
+    // still editing files. Reported 2026-10-23.
+    const stillBuilding = buildStatus === "running";
+
+    const pollPreview = async () => {
+      if (stopped) return;
+      try {
+        const data = await apiGet<unknown>(`/api/build/${activeSessionId}/files`, {
+          silent: true,
+          signal: controller.signal,
+        });
+        const url = extractPreviewUrl(data);
+        if (url) {
+          setPreviewError(null);
+          setPreviewUrl(url);
+          setPreviewLoading(false);
+          return;
+        }
+
+        const restoredFiles = extractFilesMap(data);
+        if (Object.keys(restoredFiles).length > 0) {
+          filesRef.current = { ...filesRef.current, ...restoredFiles };
+          setFiles(prev => ({ ...prev, ...restoredFiles }));
+        }
+
+        const status = extractBuildStatus(data);
+        if (status === "error") {
+          setPreviewLoading(false);
+          setPreviewError("Build finished, but the preview server failed to start.");
+          return;
+        }
+
+        if (!stillBuilding && Date.now() - startedAt > 120_000) {
+          setPreviewLoading(false);
+          setPreviewError(
+            "The build finished, but its preview never came up. The code is on the Code tab — " +
+              "send me a follow-up message and I will look at why.",
+          );
+        }
+      } catch {
+        if (!stillBuilding && Date.now() - startedAt > 120_000) {
+          setPreviewLoading(false);
+          setPreviewError("The preview could not be fetched from the backend.");
+        }
+      }
+    };
+
+    setPreviewLoading(true);
+    void pollPreview();
+    const interval = window.setInterval(() => void pollPreview(), 3000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+      controller.abort();
+    };
+  }, [buildStatus, isFullstack, previewError, previewUrl, sessionId]);
+
+  // 2. Persist build state to sessionStorage whenever files/messages/buildStatus change.
+  useEffect(() => {
+    if (!sessionId || Object.keys(files).length === 0) return;
+    try {
+      sessionStorage.setItem(`build_${sessionId}`, JSON.stringify({
+        files, messages, buildStatus, activeTab, previewUrl, isFullstack,
+      }));
+    } catch { /* ignore quota errors */ }
+  }, [files, messages, buildStatus, activeTab, previewUrl, isFullstack, sessionId]);
+
+  // 3. Reconnect the socket when the user returns to this tab mid-build.
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        buildStatus === "running" &&
+        socketRef.current?.disconnected
+      ) {
+        socketRef.current.connect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [buildStatus]);
+
+  // Watch for the Supabase connection the person went off to make.
+  //
+  // The build is blocked on a question that only this session can answer, and
+  // the connecting happens in another tab, so nothing would bring them back
+  // here except remembering to. Polling is the honest tool for that: there is
+  // no event from the other tab to listen for, and the window is bounded by
+  // the question's own expiry, so this cannot run forever.
+  //
+  // A failed poll is never treated as an answer. Only seeing the integration
+  // actually connected ends the wait — and the backend re-reads it anyway, so
+  // a wrong guess here would change nothing except the wording.
+  useEffect(() => {
+    if (!awaitingConnect) return;
+    let cancelled = false;
+
+    const check = async () => {
+      try {
+        const res = await apiGet<{ integrations?: Array<{ provider?: string; status?: string }> }>(
+          "/api/integrations",
+          { silent: true },
+        );
+        if (cancelled) return;
+        const connected = (res?.integrations ?? []).some(
+          (i) => i.provider === "supabase" && i.status === "connected",
+        );
+        if (!connected) return;
+        socketRef.current?.emit("build:answer", {
+          toolCallId: awaitingConnect,
+          sessionId,
+          answer: "Connected Supabase",
+        });
+        setPendingQuestions(prev => prev.filter(q => q.toolCallId !== awaitingConnect));
+        setAwaitingConnect(null);
+      } catch {
+        // Offline, or the request lost a race with a reconnect. Try again.
+      }
+    };
+
+    void check();
+    const id = window.setInterval(() => void check(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [awaitingConnect, sessionId]);
+
+  // One place to stop watching, covering every way a question can end — an
+  // answer, a timeout sweep, a failed build, the socket dropping. Each of
+  // those already clears pendingQuestions, so deriving from it means a new
+  // ending cannot leave this poll running behind it.
+  useEffect(() => {
+    if (awaitingConnect && !pendingQuestions.some(q => q.toolCallId === awaitingConnect)) {
+      setAwaitingConnect(null);
+    }
+  }, [awaitingConnect, pendingQuestions]);
+
+  // Actual build dispatch — accepts enriched prompt + question/answer context.
+  const executeBuild = useCallback(async (
+    prompt: string,
+    answers: QuestionAnswer[],
+    questions: ClarifyQuestion[],
+  ) => {
+    const answerContext = answers.length > 0
+      ? "\n\n---\nUser Clarifications:\n" +
+        answers
+          .map(a => {
+            const q = questions.find(cq => cq.id === a.questionId);
+            const selected = a.selected.join(", ");
+            const custom = a.custom ? ` (custom: ${a.custom})` : "";
+            return `- ${q?.question ?? a.questionId}: ${selected}${custom}`;
+          })
+          .join("\n")
+      : "";
+
+    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
+
+    // Everything on screen belongs to a build that has finished. Mark it so
+    // the new session's replay cannot clear it (see build:replay_start), and
+    // so the chat can fold it instead of dropping it.
+    setMessages(prev => [
+      ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
+      newMsg({ type: "text", text: prompt, role: "user" }),
+    ]);
+    setActivity("Thinking...");
+    setBuildStatus("running");
+    setChecks(null);
+    setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });
+    setCurrentAgent(undefined);
+    completedRef.current = false;
+    filesRef.current = {};
+    setIsFullstack(false);
+    setPreviewUrl(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
+
+    const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
+      project_id: projectId,
+      prompt: enrichedPrompt,
+    });
+
+    const newSessionId = (
+      (buildRes?.session as Record<string, unknown>)?.sessionId
+      ?? (buildRes?.session as Record<string, unknown>)?.session_id
+      ?? buildRes?.sessionId
+      ?? buildRes?.session_id
+    ) as string | undefined;
+
+    if (!newSessionId) {
+      setBuildStatus("error");
+      setMessages(prev => [...prev, newMsg({ type: "error", text: "Build failed to start — no session ID returned." })]);
+      return;
+    }
+
+    currentSessionIdRef.current = newSessionId;
+    setFollowUpReceipt({ routeSessionId: sessionId, active: newSessionId });
+
+    // Connect socket to receive build events from fast path
+    socketRef.current?.disconnect();
+    const newSocket = createBuildSocket(newSessionId);
+    socketRef.current = newSocket;
+    registerHandlers(newSocket);
+  }, [projectId, registerHandlers, sessionId]);
+
+  // Entry point from ChatColumn — runs clarification check first.
+  const handleFollowUp = useCallback(async (prompt: string) => {
+    if (!prompt.trim()) return;
+    pendingPromptRef.current = prompt;
+
+    setIsClarifying(true);
+    let result: ClarifyResponse = { needsClarification: false, questions: [] };
+    try {
+      result = await clarifyPrompt(prompt, projectId);
+    } catch {
+      // network failure → skip clarify, build directly
+    } finally {
+      setIsClarifying(false);
+    }
+
+    if (result.needsClarification && result.questions.length > 0) {
+      setClarifyQuestions(result.questions);
+      setCurrentQuestionIndex(0);
+      setQuestionAnswers([]);
+      setSelectedOptions(new Set());
+      setCustomText("");
+      setShowClarifyModal(true);
+    } else {
+      await executeBuild(prompt, [], []);
+    }
+  }, [projectId, executeBuild]);
+
+  // Keep rebuildFnRef current so the truncation toast Rebuild button always
+  // re-sends the last prompt through the normal follow-up flow.
+  rebuildFnRef.current = () => {
+    const prompt = pendingPromptRef.current;
+    if (prompt) void handleFollowUp(prompt);
+  };
+
+  // Advance through clarify questions; on last → close modal and start build.
+  const handleNextQuestion = useCallback(() => {
+    const q = clarifyQuestions[currentQuestionIndex];
+    if (!q) return;
+
+    const answer: QuestionAnswer = {
+      questionId: q.id,
+      selected: Array.from(selectedOptions),
+      custom: customText.trim() || undefined,
+    };
+    const newAnswers = [...questionAnswers, answer];
+    setQuestionAnswers(newAnswers);
+
+    if (currentQuestionIndex < clarifyQuestions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+      setSelectedOptions(new Set());
+      setCustomText("");
+    } else {
+      setShowClarifyModal(false);
+      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions);
+    }
+  }, [clarifyQuestions, currentQuestionIndex, selectedOptions, customText, questionAnswers, executeBuild]);
+
+  const handleSkipAllQuestions = useCallback(() => {
+    setShowClarifyModal(false);
+    void executeBuild(pendingPromptRef.current, [], []);
+  }, [executeBuild]);
+
+  const handleToggleOption = useCallback((option: string) => {
+    const q = clarifyQuestions[currentQuestionIndex];
+    setSelectedOptions(prev => {
+      const next = new Set(prev);
+      if (q?.allowMultiple) {
+        if (next.has(option)) next.delete(option);
+        else next.add(option);
+      } else {
+        next.clear();
+        next.add(option);
+      }
+      return next;
+    });
+  }, [clarifyQuestions, currentQuestionIndex]);
+
+  const toggleChat = useCallback(() => {
+    if (chatPanelRef.current?.isCollapsed()) {
+      chatPanelRef.current.expand();
+      setChatCollapsed(false);
+    } else {
+      chatPanelRef.current?.collapse();
+      setChatCollapsed(true);
+    }
+  }, [chatPanelRef]);
+
+  const isBuilding = buildStatus === "running";
+
+  // Chat-first layout (Claude-style): the conversation owns the whole screen
+  // while the agent works. The preview/code panel never opens on build start —
+  // it opens only when there is a UI to show: the E2B preview URL arrives
+  // (sandbox dev server live) or the build finishes with files (Sandpack).
+  // The top-bar tabs reopen the panel on demand.
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  const wasBuildingRef = useRef(isBuilding);
+  useEffect(() => {
+    if (previewUrl) {
+      setSidePanelOpen(true);
+      return;
+    }
+    if (!isBuilding && wasBuildingRef.current && buildStatus === "complete"
+        && Object.keys(filesRef.current).length > 0) {
+      setSidePanelOpen(true);
+    }
+    wasBuildingRef.current = isBuilding;
+  }, [previewUrl, isBuilding, buildStatus]);
+  const handleTabSelect = useCallback((tab: ActiveTab) => {
+    setActiveTab(tab);
+    setSidePanelOpen(true);
+  }, []);
+
+  return (
+    <RequireAuth>
+      <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
+
+        <WorkspaceTopBar
+          projectId={projectId}
+          projectName={projectName}
+          activeTab={activeTab}
+          setActiveTab={handleTabSelect}
+          changeCount={edits.length}
+          device={device}
+          setDevice={setDevice}
+          buildStatus={buildStatus}
+          onReload={() => setReloadKey(k => k + 1)}
+          files={files}
+          businessContext={businessContext}
+          showContextPanel={showContextPanel}
+          previewUrl={previewUrl}
+          codeQuery={codeQuery}
+          onCodeQueryChange={setCodeQuery}
+          chatCollapsed={chatCollapsed}
+          onCollapse={toggleChat}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(v => !v)}
+        />
+
+        {/* Mounted over the whole workspace, not inside the chat panel: the
+            build is stopped until this is answered, so it should not be
+            possible to keep working around it in the editor. */}
+        {connectQuestion && (
+          <ConnectDatabaseCard
+            question={connectQuestion}
+            pending={awaitingConnect !== null}
+            onConnect={(action, toolCallId) => {
+              if (action !== "connect-supabase") return false;
+              window.open("/mcp?connect=supabase", "_blank", "noopener");
+              setAwaitingConnect(toolCallId);
+              return true;
+            }}
+            onAnswer={(toolCallId, answer) => {
+              socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
+              setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
+            }}
+          />
+        )}
+
+        <Group
+          key={sidePanelOpen ? "split" : "full"}
+          orientation="horizontal"
+          className="flex-1 min-h-0"
+          style={{ overflow: "hidden" }}
+        >
+          {/* Left: Chat panel — resizable, collapsible */}
+          <Panel
+            panelRef={chatPanelRef}
+            defaultSize={sidePanelOpen ? 75 : 100}
+            minSize={15}
+            collapsible={true}
+            collapsedSize={0}
+            onResize={(size) => setChatCollapsed(size.asPercentage < 1)}
+          >
+            <div className="relative h-full border-r border-white/[0.06] bg-[#0d0d12]">
+              <ChatColumn
+                receipt={receipt}
+                receiptSessionId={receiptSessionId}
+                checks={checks}
+                activity={activity}
+                messages={messages}
+                isBuilding={isBuilding}
+                currentAgent={currentAgent}
+                onSend={handleFollowUp}
+                onStop={handleStopBuild}
+                projectName={projectName}
+                centered={!sidePanelOpen}
+                isClarifying={isClarifying}
+                pendingWrites={pendingWrites}
+                onWriteDecision={(toolCallId, approved) => {
+                  // Answering is what unblocks the build — the backend is
+                  // sitting on this call until it hears back or times out.
+                  socketRef.current?.emit("build:write_action_decision", {
+                    toolCallId, sessionId, approved,
+                  });
+                  setPendingWrites(prev => prev.filter(p => p.toolCallId !== toolCallId));
+                }}
+                /* The connect-database question is lifted out into a centred
+                   card below — it is a task with one button, not a question,
+                   and inline it reads as another status line to scroll past. */
+                pendingQuestions={pendingQuestions.filter(
+                  q => !q.options.some(o => o.action === "connect-supabase"),
+                )}
+                onAnswer={(toolCallId, answer) => {
+                  socketRef.current?.emit("build:answer", { toolCallId, sessionId, answer });
+                  setPendingQuestions(prev => prev.filter(q => q.toolCallId !== toolCallId));
+                }}
+                questionActionPending={awaitingConnect !== null}
+                onQuestionAction={(action, toolCallId) => {
+                  if (action !== "connect-supabase") return false;
+                  // A new tab, not a navigation: leaving this page would drop
+                  // the socket, and the build on the other end is holding a
+                  // question that only this session can answer.
+                  window.open("/mcp?connect=supabase", "_blank", "noopener");
+                  setAwaitingConnect(toolCallId);
+                  return true;
+                }}
+              />
+              {showHistory && (
+                <div className="absolute inset-0 z-10 flex flex-col bg-[#0d0d12]">
+                  <div className="flex shrink-0 items-center justify-between border-b border-white/[0.08] px-4 py-3">
+                    <span className="text-sm font-medium text-white/80">History</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowHistory(false)}
+                      className="grid h-6 w-6 place-content-center rounded text-white/40 transition hover:bg-white/[0.06] hover:text-white/70"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-auto">
+                    <HistoryPanel
+                      projectId={projectId}
+                      onSelect={() => setShowHistory(false)}
+                    />
+                  </div>
+                </div>
+              )}
+              {/* ClarifyModal — slides up from above the prompt input */}
+              {showClarifyModal && clarifyQuestions.length > 0 && (
+                <div className="absolute bottom-[80px] left-3 right-3 z-50 animate-in slide-in-from-bottom-4 duration-200">
+                  <ClarifyModal
+                    questions={clarifyQuestions}
+                    currentIndex={currentQuestionIndex}
+                    selectedOptions={selectedOptions}
+                    customText={customText}
+                    onToggleOption={handleToggleOption}
+                    onCustomChange={setCustomText}
+                    onNext={handleNextQuestion}
+                    onSkip={handleSkipAllQuestions}
+                  />
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          {sidePanelOpen && (
+            <>
+          <Separator className="w-[3px] bg-white/[0.08] hover:bg-white/[0.25] active:bg-blue-500/50 cursor-col-resize transition-colors" />
+
+          {/* Right: preview / code — takes remaining space */}
+          <Panel defaultSize={25} minSize={20}>
+            <div className="relative flex min-h-0 h-full bg-[#080808]">
+              {/* Floating reopen button when chat is collapsed */}
+              {chatCollapsed && (
+                <button
+                  onClick={toggleChat}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white/60 hover:text-white transition-all"
+                  title="Show chat"
+                >
+                  <PanelLeftOpen size={15} />
+                </button>
+              )}
+
+              {/* MCP Action Panel — overlay in bottom-right, shown only during/after MCP execution */}
+              {(isMcpActive || mcpEvents.length > 0) && (
+                <McpActionPanel
+                  events={mcpEvents}
+                  active={isMcpActive}
+                  onClear={() => { setMcpEvents([]); setIsMcpActive(false); }}
+                />
+              )}
+              {activeTab === "changes" && (
+                <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
+                  <div className="flex h-full flex-col overflow-hidden rounded-xl border border-white/[0.08]">
+                    <ChangesPanel edits={edits} />
+                  </div>
+                </div>
+              )}
+              {activeTab === "code" && (
+                <div className="h-full w-full bg-[#080808]" style={{ padding: 24 }}>
+                  <div style={{
+                    width: "100%", height: "100%",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    overflow: "hidden",
+                    display: "flex", flexDirection: "column",
+                  }}>
+                    <CodePanel
+                      files={files}
+                      newFiles={newFiles}
+                      selectedFile={selectedFile}
+                      setSelectedFile={setSelectedFile}
+                      isBuilding={isBuilding}
+                      externalQuery={codeQuery}
+                    />
+                  </div>
+                </div>
+              )}
+              {activeTab === "preview" && (
+                <div key={reloadKey} className="flex h-full w-full items-start justify-center overflow-hidden bg-[#080808] transition-all duration-300">
+                  <div className={`h-full transition-all duration-300 ${
+                    device === "desktop" ? "w-full" :
+                    device === "tablet"  ? "w-[768px] border-x border-white/10" :
+                                          "w-[375px] border-x border-white/10"
+                  }`}>
+                    {isFullstack ? (
+                      <div className="relative h-full w-full">
+                        <E2BPreview
+                          url={previewUrl}
+                          loading={previewLoading}
+                          error={previewError}
+                          isFullstack={isFullstack}
+                          files={files}
+                          device={device}
+                        />
+                      </div>
+                    ) : (
+                      <SandpackPreview
+                        files={buildStatus === "complete" ? files : {}}
+                        isBuilding={isBuilding}
+                        externalDevice={device}
+                        className="h-full w-full"
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Panel>
+            </>
+          )}
+        </Group>
+
+      {showContextPanel && (
+        <BusinessContextPanel
+          projectId={projectId}
+          initial={businessContext}
+          onClose={() => setShowContextPanel(false)}
+          onSaved={setBusinessContext}
+        />
+      )}
+      </div>
+    </RequireAuth>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Top Bar                                                                     */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function WorkspaceTopBar({
+  projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
+  buildStatus, onReload, files,
+  businessContext, showContextPanel,
+  previewUrl, codeQuery, onCodeQueryChange,
+  chatCollapsed, onCollapse, showHistory, onToggleHistory,
+}: {
+  projectId: string;
+  projectName: string;
+  activeTab: ActiveTab;
+  setActiveTab: (t: ActiveTab) => void;
+  changeCount: number;
+  device: Device;
+  setDevice: (d: Device) => void;
+  buildStatus: BuildStatus;
+  onReload: () => void;
+  files: Record<string, string>;
+  businessContext: BusinessContext;
+  showContextPanel: boolean;
+  previewUrl: string | null;
+  codeQuery: string;
+  onCodeQueryChange: (v: string) => void;
+  chatCollapsed: boolean;
+  onCollapse: () => void;
+  showHistory: boolean;
+  onToggleHistory: () => void;
+}) {
+  const navigate = useNavigate();
+  void navigate;
+  const isBuilding = buildStatus === "running";
+  const rawName = projectName || projectId.slice(0, 8);
+  const words = rawName.split(/\s+/).filter(Boolean);
+  const displayName = words.length > 4 ? words.slice(0, 4).join(" ") + "…" : rawName;
+
+  const handleDownload = () => {
+    const entries = Object.entries(files);
+    if (entries.length === 0) { toast("No files to download yet"); return; }
+    const blob = new Blob(
+      [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
+      { type: "text/plain" },
+    );
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob),
+      download: `${projectId.slice(0, 12)}-code.txt`,
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast.success("Codebase downloaded");
+  };
+
+  return (
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#0a0a0a] px-4">
+
+      {/* ── Left: brand + project ─────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-2.5">
+        {/* Matches the sidebar mark exactly (AppSidebar.tsx) — this used to be a
+            primary→accent gradient, which read as a different brand colour on
+            the one screen where both are never seen side by side. */}
+        <BrandMark />
+        <div className="flex flex-col leading-tight">
+          <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">vibe coder</span>
+        </div>
+        <button className="ml-0.5 flex h-7 w-5 items-center justify-center rounded-md text-white/40 transition hover:bg-white/[0.06] hover:text-white/80" title="Switch project">
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+        {hasFilledContext(businessContext) && !showContextPanel && (
+          <span className="hidden lg:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            🧠 AI context
+          </span>
+        )}
+        {/* Chat controls sit with the chat side of the header, above the panel
+            they actually act on, rather than across the header with the
+            preview actions. */}
+        <div className="ml-1 flex items-center gap-0.5">
+          <button
+            onClick={onToggleHistory}
+            className={cn("ws-iconbtn", showHistory && "text-orange-400")}
+            title="Build history"
+          >
+            <History className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onCollapse}
+            className="ws-iconbtn"
+            title={chatCollapsed ? "Show chat" : "Hide chat"}
+          >
+            {chatCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Center-left: tab pills ─────────────────────────────────── */}
+      <div className="ml-8 flex items-center gap-1 rounded-xl bg-white/[0.04] p-1">
+        <IconTab active={activeTab === "preview"} onClick={() => setActiveTab("preview")} title="Preview">
+          <Globe className="h-4 w-4" />
+        </IconTab>
+        <IconTab active={activeTab === "code"} onClick={() => setActiveTab("code")} title="Code">
+          <Code2 className="h-4 w-4" />
+        </IconTab>
+        {/* Only offered once there is something to look at: an always-present
+            tab that is usually empty teaches people to ignore it. */}
+        {changeCount > 0 && (
+          <IconTab
+            active={activeTab === "changes"}
+            onClick={() => setActiveTab("changes")}
+            title={`Changes (${changeCount})`}
+          >
+            <span className="relative inline-flex">
+              <FileDiffIcon className="h-4 w-4" />
+              <span className="absolute -right-1.5 -top-1 rounded-full bg-primary px-1 text-[9px] font-semibold leading-[1.4] text-primary-foreground">
+                {changeCount}
+              </span>
+            </span>
+          </IconTab>
+        )}
+      </div>
+
+      {/* ── Center: device + route ─────────────────────────────────── */}
+      <div className="flex flex-1 items-center justify-center gap-3">
+        {activeTab === "preview" && (() => {
+          const cycle: Device[] = ["desktop", "mobile", "tablet"];
+          const next = cycle[(cycle.indexOf(device) + 1) % cycle.length];
+          const Icon = device === "desktop" ? Monitor : device === "mobile" ? Smartphone : Tablet;
+          return (
+            <button
+              onClick={() => setDevice(next)}
+              title={`${device} — click to switch`}
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-white/70 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <Icon size={15} />
+            </button>
+          );
+        })()}
+
+        {activeTab === "code" && (
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 min-w-[240px] max-w-[420px] flex-1">
+            <Search className="h-3.5 w-3.5 shrink-0 text-white/30" />
+            <input
+              value={codeQuery}
+              onChange={(e) => onCodeQueryChange(e.target.value)}
+              placeholder="Search code…"
+              className="flex-1 bg-transparent text-xs text-white/80 placeholder:text-white/35 outline-none"
+            />
+          </div>
+        )}
+
+        {isBuilding && (
+          <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            Building…
+          </span>
+        )}
+      </div>
+
+      {/* ── Right: actions ─────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-1">
+        {activeTab === "preview" && (
+          <>
+            <button className="ws-iconbtn" title="Reload preview" onClick={onReload}>
+              <RotateCw className="h-4 w-4" />
+            </button>
+            <button
+              className={cn("ws-iconbtn", !previewUrl && "cursor-not-allowed opacity-40")}
+              title={previewUrl ? "Open preview in new tab" : "Preview not ready yet"}
+              disabled={!previewUrl}
+              onClick={() => previewUrl && window.open(previewUrl, "_blank", "noopener,noreferrer")}
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </>
+        )}
+        <button className="ws-iconbtn" title="GitHub" onClick={() => toast("GitHub integration coming soon")}>
+          <Github className="h-4 w-4" />
+        </button>
+        <button className="ws-iconbtn" title="Download codebase" onClick={handleDownload}>
+          <Download className="h-4 w-4" />
+        </button>
+        <div className="mx-1.5 h-5 w-px bg-white/[0.08]" />
+        <button
+          className="inline-flex h-8 items-center rounded-lg border border-white/[0.12] px-3.5 text-xs font-semibold text-white/85 transition hover:bg-white/[0.06]"
+          onClick={() => toast("Share link coming soon")}
+        >
+          Share
+        </button>
+        <button
+          className="ml-1 inline-flex h-8 items-center rounded-lg bg-orange-500 px-3.5 text-xs font-semibold text-white transition hover:bg-orange-400 active:bg-orange-600"
+          onClick={() => toast("Deploy to Vercel coming soon")}
+        >
+          Publish
+        </button>
+      </div>
+
+    </header>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Left: Chat Column                                                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ChatColumn({
+  receipt, receiptSessionId, checks, activity,
+  messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
+  centered = false,
+  pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
+  onQuestionAction, questionActionPending,
+}: {
+  receipt?: BuildReceiptOutcome | null;
+  receiptSessionId?: string;
+  checks?: CheckRow[] | null;
+  activity?: string | null;
+  messages: BuildMessage[];
+  isBuilding: boolean;
+  currentAgent?: string;
+  onSend?: (prompt: string) => void;
+  onStop?: () => void;
+  projectName?: string;
+  /** Chat-first mode: the conversation is centred like ChatGPT instead of
+   *  hugging the edge of a split view. */
+  centered?: boolean;
+  isClarifying?: boolean;
+  /** Destructive tool calls the build is currently blocked on. */
+  pendingWrites?: PendingWriteAction[];
+  onWriteDecision?: (toolCallId: string, approved: boolean) => void;
+  /** Questions the build is currently paused on. */
+  pendingQuestions?: PendingQuestion[];
+  onAnswer?: (toolCallId: string, answer: string) => void;
+  /** Runs an option's action; false means this page does not know it. */
+  onQuestionAction?: (action: string, toolCallId: string) => boolean;
+  questionActionPending?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const receiptFooter = useMemo(
+    () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
+    [receipt, receiptSessionId, checks],
+  );
+  const fileRef = useRef<HTMLInputElement>(null);
+  void currentAgent;
+
+  const handleSend = () => {
+    const text = draft.trim();
+    if (!text || !onSend) return;
+    onSend(text);
+    setDraft("");
+  };
+
+  // Same idea as the landing composer: put the link in the prompt, because the
+  // builder reads the prompt. Web links resolve through the always-on Firecrawl
+  // tool.
+  const addReference = () => {
+    const entered = window.prompt("Paste a link to use as a reference");
+    if (entered === null) return;
+    const trimmed = entered.trim();
+    if (!trimmed) return;
+    if (!/^https?:\/\/\S+$/i.test(trimmed)) {
+      toast.error("That doesn't look like a valid link — it should start with https://");
+      return;
+    }
+    const line = `Use this page as a reference: ${trimmed}`;
+    setDraft((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
+    toast.success("Link added to your message");
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+
+      {/* Messages */}
+      <div className={cn("flex-1 min-h-0", centered && "mx-auto w-full max-w-3xl")}>
+        <ChatPanel
+          messages={messages}
+          isBuilding={isBuilding}
+          activity={activity}
+          currentAgent={currentAgent}
+          className="h-full !bg-transparent"
+          projectName={projectName}
+          footer={receiptFooter}
+        />
+      </div>
+
+      {/* Write-action approval — pinned above the input so it cannot be
+          scrolled past while the build waits on it. */}
+      {pendingWrites.map(action => (
+        <div key={action.toolCallId} className="shrink-0 px-3">
+          <WriteApprovalPrompt
+            action={action}
+            onDecision={(toolCallId, approved) => onWriteDecision?.(toolCallId, approved)}
+          />
+        </div>
+      ))}
+
+      {pendingQuestions.map(q => (
+        <div key={q.toolCallId} className="shrink-0 px-3">
+          <QuestionPrompt
+            question={q}
+            onAnswer={(toolCallId, answer) => onAnswer?.(toolCallId, answer)}
+            onAction={(action, toolCallId) => onQuestionAction?.(action, toolCallId) ?? false}
+            actionPending={questionActionPending}
+          />
+        </div>
+      ))}
+
+      {/* Input bar */}
+      <div className="shrink-0 p-3">
+        <div className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}>
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Ask Lampcode…"
+            rows={3}
+            className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
+          />
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
+                title="Attach image or file"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                hidden
+                multiple
+                accept="image/*,.pdf,.txt,.md,.json,.csv"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) toast.success(`Attached ${f.name}`);
+                }}
+              />
+              <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
+                <Link2 className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {isClarifying ? (
+                <button
+                  disabled
+                  className="flex h-8 cursor-wait items-center gap-1.5 rounded-lg bg-orange-500/10 px-3 text-xs text-orange-300/70"
+                >
+                  <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-orange-400 border-t-transparent" />
+                  Analyzing...
+                </button>
+              ) : isBuilding ? (
+                <button
+                  className="grid h-8 w-8 place-content-center rounded-lg bg-white/[0.08] text-white/80 transition hover:bg-white/[0.13] active:bg-red-500/20"
+                  title="Stop build"
+                  onClick={onStop}
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <>
+                  <button
+                    disabled={!draft.trim()}
+                    onClick={handleSend}
+                    className="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-white/90 transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Build
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    aria-label="Send message"
+                    disabled={!draft.trim()}
+                    onClick={handleSend}
+                    className="grid h-8 w-8 place-content-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Right: Code Panel                                                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function CodePanel({
+  files, newFiles, selectedFile, setSelectedFile, isBuilding, externalQuery,
+}: {
+  files: Record<string, string>;
+  newFiles: Set<string>;
+  selectedFile: string | null;
+  setSelectedFile: (p: string) => void;
+  isBuilding: boolean;
+  externalQuery?: string;
+}) {
+  const query = externalQuery ?? "";
+
+  const filteredFiles = useMemo(() => {
+    if (!query.trim()) return files;
+    const q = query.toLowerCase();
+    return Object.fromEntries(Object.entries(files).filter(([p]) => p.toLowerCase().includes(q)));
+  }, [files, query]);
+
+  const code = selectedFile ? files[selectedFile] : undefined;
+
+  const handleDownload = () => {
+    const entries = Object.entries(files);
+    if (entries.length === 0) { toast("No files to download yet"); return; }
+    const blob = new Blob(
+      [entries.map(([p, c]) => `// === ${p} ===\n${c}`).join("\n\n")],
+      { type: "text/plain" },
+    );
+    const a = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob),
+      download: "codebase.txt",
+    });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast.success("Codebase downloaded");
+  };
+
+  return (
+    <div className="flex h-full w-full bg-[#080808]">
+
+      {/* Left: file tree column */}
+      <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-white/[0.06] bg-[#0b0b0b]">
+        <div className="min-h-0 flex-1 overflow-auto">
+          {Object.keys(files).length === 0 ? (
+            <EmptyCodeSkeleton building={isBuilding} />
+          ) : (
+            <FileTree
+              files={filteredFiles}
+              selectedFile={selectedFile}
+              onFileSelect={setSelectedFile}
+              newFiles={newFiles}
+              className="h-full"
+            />
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-white/[0.06] p-2">
+          <button
+            onClick={handleDownload}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-500 active:bg-blue-700"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download codebase
+          </button>
+        </div>
+      </div>
+
+      {/* Right: code viewer */}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        {selectedFile && code !== undefined ? (
+          <CodeViewer path={selectedFile} content={code} building={isBuilding} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+            <Code2 className="h-6 w-6 text-white/20" />
+            <p className="text-xs text-white/40">
+              {Object.keys(files).length === 0
+                ? (isBuilding ? "Waiting for files…" : "No files yet")
+                : "Select a file to view its code"}
+            </p>
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Code Viewer                                                                 */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function EmptyCodeSkeleton({ building }: { building: boolean }) {
+  return (
+    <div className="space-y-2 p-3">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className="skeleton-shimmer h-5 rounded-md"
+          style={{ width: `${50 + ((i * 13) % 45)}%` }}
+        />
+      ))}
+      <p className="pt-3 text-center text-[11px] text-white/40">
+        {building ? "Waiting for build…" : "No files yet"}
+      </p>
+    </div>
+  );
+}
+
+function CodeViewer({
+  path, content, building,
+}: {
+  path: string;
+  content?: string;
+  building: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  if (content === undefined) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
+        <div className="w-full space-y-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton-shimmer h-4 rounded-md" style={{ width: `${40 + ((i * 17) % 50)}%` }} />
+          ))}
+        </div>
+        <p className="pt-3 text-[11px] text-white/40">
+          {building ? "Waiting for build…" : "Select a file to view"}
+        </p>
+      </div>
+    );
+  }
+
+  const lines = content.split("\n");
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-3 py-1.5">
+        <span className="truncate font-mono text-[11px] text-white/60">{path}</span>
+        <button
+          onClick={async () => {
+            await navigator.clipboard.writeText(content);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1400);
+          }}
+          className="ws-iconbtn !h-7 !w-7"
+          title="Copy"
+        >
+          {copied
+            ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+            : <Copy  className="h-3.5 w-3.5" />
+          }
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto bg-[#08080d] font-mono text-[12px] leading-[1.55]">
+        <div className="flex min-w-full">
+          <div className="sticky left-0 select-none border-r border-white/[0.05] bg-[#08080d] px-3 py-3 text-right text-white/20">
+            {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
+          </div>
+          <pre className="flex-1 whitespace-pre px-4 py-3 text-white/85">{content}</pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Shared primitives                                                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function IconTab({
+  active, onClick, title, children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "grid h-8 w-8 place-content-center rounded-md transition",
+        active
+          ? "bg-white/10 text-white"
+          : "text-white/35 hover:bg-white/[0.05] hover:text-white/70",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  MCP Action Panel                                                           */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Clarify Modal                                                               */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ClarifyModal({
+  questions,
+  currentIndex,
+  selectedOptions,
+  customText,
+  onToggleOption,
+  onCustomChange,
+  onNext,
+  onSkip,
+}: {
+  questions: ClarifyQuestion[];
+  currentIndex: number;
+  selectedOptions: Set<string>;
+  customText: string;
+  onToggleOption: (option: string) => void;
+  onCustomChange: (value: string) => void;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const question = questions[currentIndex];
+  if (!question) return null;
+  const total = questions.length;
+  const canProceed = selectedOptions.size > 0 || customText.trim().length > 0;
+
+  return (
+    <div className="w-full rounded-xl border border-white/20 bg-[#1a1a2e] p-5 shadow-2xl max-h-[70vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="mb-1 text-xs uppercase tracking-wider text-orange-400">
+              Before I start building...
+            </p>
+            <h2 className="text-lg font-semibold text-white">
+              {question.heading}
+            </h2>
+          </div>
+          <button
+            onClick={onSkip}
+            className="text-sm text-white/40 transition-colors hover:text-white/70"
+          >
+            Skip all
+          </button>
+        </div>
+
+        {/* Reason banner */}
+        <div className="mb-5 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+          <p className="text-sm leading-relaxed text-white/60">
+            💡 {question.reason}
+          </p>
+        </div>
+
+        {/* Question */}
+        <p className="mb-4 font-medium text-white">
+          {question.question}
+        </p>
+
+        {/* Options */}
+        <div className="mb-4 space-y-2">
+          {question.options.map(option => {
+            const isSelected = selectedOptions.has(option);
+            return (
+              <button
+                key={option}
+                onClick={() => onToggleOption(option)}
+                className={cn(
+                  "w-full rounded-lg border px-4 py-3 text-left text-sm transition-all",
+                  isSelected
+                    ? "border-orange-500 bg-orange-500/10 text-white"
+                    : "border-white/10 bg-white/5 text-white/70 hover:border-white/30 hover:text-white",
+                )}
+              >
+                <span className={cn(
+                  "mr-3 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]",
+                  isSelected
+                    ? "border-orange-500 bg-orange-500 text-white"
+                    : "border-white/30",
+                )}>
+                  {isSelected ? "✓" : ""}
+                </span>
+                {option}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Custom input */}
+        {question.allowCustom && (
+          <input
+            type="text"
+            placeholder="Or type a custom answer..."
+            value={customText}
+            onChange={e => onCustomChange(e.target.value)}
+            className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white placeholder-white/30 focus:border-orange-500/50 focus:outline-none"
+          />
+        )}
+
+        {/* Footer */}
+        <div className="mt-6 flex items-center justify-between">
+          {/* Progress dots */}
+          <div className="flex gap-1.5">
+            {questions.map((_, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "h-1.5 rounded-full transition-all",
+                  i === currentIndex
+                    ? "w-6 bg-orange-500"
+                    : i < currentIndex
+                    ? "w-1.5 bg-orange-500/50"
+                    : "w-1.5 bg-white/20",
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-white/30">
+              {currentIndex + 1} of {total}
+            </span>
+            <button
+              onClick={onNext}
+              disabled={!canProceed}
+              className={cn(
+                "rounded-lg px-5 py-2 text-sm font-medium transition-all",
+                canProceed
+                  ? "bg-orange-500 text-white hover:bg-orange-600"
+                  : "cursor-not-allowed bg-white/10 text-white/30",
+              )}
+            >
+              {currentIndex === total - 1 ? "Start Building →" : "Next →"}
+            </button>
+          </div>
+        </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  Business Context Panel                                                      */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ContextToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className="flex flex-1 items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-white/60 transition hover:bg-white/[0.06]"
+    >
+      <span>{label}</span>
+      <span className={cn(
+        "relative ml-2 h-4 w-7 shrink-0 rounded-full transition-colors",
+        value ? "bg-orange-500" : "bg-white/20",
+      )}>
+        <span className={cn(
+          "absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform",
+          value ? "translate-x-3.5" : "translate-x-0.5",
+        )} />
+      </span>
+    </button>
+  );
+}
+
+function BusinessContextPanel({
+  projectId, initial, onClose, onSaved,
+}: {
+  projectId: string;
+  initial: BusinessContext;
+  onClose: () => void;
+  onSaved: (ctx: BusinessContext) => void;
+}) {
+  const [ctx, setCtx] = useState<BusinessContext>(initial);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const handleChange = (patch: Partial<BusinessContext>) => {
+    const next = { ...ctx, ...patch };
+    setCtx(next);
+    onSaved(next);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        await apiPost(`/api/projects/${projectId}/business-context`, next);
+        toast.success("✓ Context saved", { duration: 1500 });
+      } catch {
+        // api() already shows error toast
+      }
+    }, 1000);
+  };
+
+  const selectClass = "w-full rounded-lg border border-white/[0.08] bg-[#0f0f16] px-3 py-2 text-xs text-white/80 focus:border-orange-500/40 focus:outline-none";
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed left-3 top-14 z-50 w-[300px] rounded-xl border border-white/[0.10] bg-[#0d0d14] p-4 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40">AI Project Context</p>
+          <button onClick={onClose} className="text-white/30 transition hover:text-white/70">
+            <X size={13} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {/* App description */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">What does your app do?</label>
+            <textarea
+              rows={2}
+              value={ctx.appDescription ?? ""}
+              onChange={e => handleChange({ appDescription: e.target.value || undefined })}
+              placeholder="e.g. A project management tool for remote teams"
+              className="w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-white/80 placeholder:text-white/25 focus:border-orange-500/40 focus:outline-none"
+            />
+          </div>
+
+          {/* User type */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">Who are your users?</label>
+            <select
+              value={ctx.userType ?? ""}
+              onChange={e => handleChange({ userType: e.target.value || undefined })}
+              className={selectClass}
+            >
+              <option value="">Select...</option>
+              <option value="Consumers">Consumers</option>
+              <option value="Businesses">Businesses</option>
+              <option value="Internal Team">Internal Team</option>
+              <option value="Marketplace">Marketplace</option>
+            </select>
+          </div>
+
+          {/* Industry */}
+          <div>
+            <label className="mb-1 block text-[11px] text-white/50">Industry?</label>
+            <select
+              value={ctx.industry ?? ""}
+              onChange={e => handleChange({ industry: e.target.value || undefined })}
+              className={selectClass}
+            >
+              <option value="">Select...</option>
+              <option value="SaaS">SaaS</option>
+              <option value="Ecommerce">Ecommerce</option>
+              <option value="Fintech">Fintech</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          {/* Toggles */}
+          <div className="flex gap-2">
+            <ContextToggle
+              label="Multi-tenant?"
+              value={ctx.isMultiTenant ?? false}
+              onChange={v => handleChange({ isMultiTenant: v })}
+            />
+            <ContextToggle
+              label="Paid features?"
+              value={ctx.hasPaidFeatures ?? false}
+              onChange={v => handleChange({ hasPaidFeatures: v })}
+            />
+          </div>
+        </div>
+
+        <p className="mt-3 text-[10px] text-white/25">
+          Saved automatically · helps AI build the right thing
+        </p>
+      </div>
+    </>
+  );
+}
+
+function McpActionPanel({
+  events, active, onClear,
+}: {
+  events: McpEvent[];
+  active: boolean;
+  onClear: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [events]);
+
+  return (
+    <div className="absolute bottom-4 right-4 z-30 flex w-80 flex-col rounded-xl border border-white/[0.10] bg-[#0d0d14]/95 shadow-2xl backdrop-blur">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-3 py-2">
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-white/80">
+          🔧 AI Actions
+          {active && (
+            <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-orange-400" />
+          )}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[10px] text-white/30 hover:text-white/60 transition"
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* Event list */}
+      <div ref={scrollRef} className="flex max-h-64 flex-col gap-1.5 overflow-y-auto p-2">
+        {events.map(ev => {
+          if (ev.kind === "thinking") {
+            return (
+              <div key={ev.id} className="rounded-md bg-white/[0.04] px-2.5 py-1.5 text-[11px] text-white/50">
+                💭 {ev.text}
+              </div>
+            );
+          }
+          if (ev.kind === "tool_call" || ev.kind === "tool_result") {
+            const isDone = ev.kind === "tool_result";
+            return (
+              <div
+                key={ev.id}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-[11px]",
+                  isDone
+                    ? ev.success
+                      ? "bg-emerald-500/10 text-emerald-300"
+                      : "bg-red-500/10 text-red-300"
+                    : "bg-orange-500/10 text-orange-300",
+                )}
+              >
+                {isDone ? (ev.success ? "✅" : "❌") : "⚡"}{" "}
+                <span className="font-medium">{ev.tool}</span>
+              </div>
+            );
+          }
+          if (ev.kind === "done") {
+            return (
+              <div key={ev.id} className="rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-300">
+                ✅ {ev.summary ? ev.summary.slice(0, 120) + (ev.summary.length > 120 ? "…" : "") : "Done"}
+              </div>
+            );
+          }
+          return null;
+        })}
+        {active && events.length === 0 && (
+          <div className="py-2 text-center text-[11px] text-white/30">Waiting for AI actions…</div>
+        )}
+      </div>
+    </div>
+  );
+}

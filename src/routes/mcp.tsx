@@ -122,37 +122,17 @@ const SERVERS: McpDef[] = [
 
   // ── Design ────────────────────────────────────────────────────────────────
   {
-    // mcp.figma.com only authorizes clients in Figma's MCP catalog, so the
-    // hosted MCP server cannot authorize Lampcode. The working path is the
-    // documented REST API with a personal access token (verified against
-    // /v1/me before storage).
-    name: "Figma", desc: "Read Figma files, components, and design tokens via the Figma REST API.",
-    category: "Design", emoji: "🎨", provider: "figma", providerType: "code", connectMode: "rest_form",
-    fields: [
-      { key: "figma_pat", label: "Figma Personal Access Token", type: "password", placeholder: "figd_...", help: "Figma → Settings → Account → Personal access tokens (needs File content read)" },
-    ],
-  },
-  {
-    // Framer's developer surface is its Server API (npm framer-api,
-    // project-bound keys), not a plain REST endpoint. A token lets the agent
-    // prepare Framer code and CMS sync scripts against the user's project,
-    // but there is no hosted MCP server — see framer.com/developers.
+    // Framer launched its official hosted MCP server (framer.com/mcp,
+    // announced Oct 2026) at mcp.framer.com/mcp — OAuth sign-in with the
+    // Framer account's permissions, same pattern as Linear/Cloudflare.
     name: "Framer",
-    desc: "Connect a Framer project API key so the agent can build Framer components, CMS sync scripts, and publish flows.",
+    desc: "Design, build, and update Framer sites, pages, and CMS via Framer's hosted MCP server. Connect with one-click OAuth.",
     category: "Design",
     emoji: "🧩",
     provider: "framer",
     providerType: "code",
-    connectMode: "rest_form",
-    fields: [
-      {
-        key: "framer_api_token",
-        label: "Framer API Key",
-        type: "password",
-        placeholder: "framer...",
-        help: "Site Settings → General → create an API key for the project (framer.com/developers/server-api-quick-start)",
-      },
-    ],
+    connectMode: "registry_form",
+    authMode: "oauth",
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
@@ -349,12 +329,6 @@ const FEATURES: Record<string, { title: string; desc: string }[]> = {
     { title: "Deploy Details", desc: "Inspect a specific deploy's state, URL, and commit." },
     { title: "Publish Gate", desc: "Anything that creates or publishes a deploy asks you first." },
   ],
-  figma: [
-    { title: "Read Design Files", desc: "Pull frames, components, and pages directly from Figma." },
-    { title: "Design Tokens", desc: "Extract colors, typography, and spacing into your code." },
-    { title: "Figma-to-React", desc: "Translate selected frames into React components." },
-    { title: "Stay in Sync", desc: "Keep code components aligned with the source of truth." },
-  ],
   "google-stitch": [
     { title: "Prompt → UI", desc: "Generate UI directions from a written description." },
     { title: "Production Code Export", desc: "Drop generated layouts into your app as real components." },
@@ -452,13 +426,6 @@ const META: Record<string, McpMeta> = {
       { name: "adminApiAccessToken", type: "secret", desc: "Optional — Admin API token, needed for orders and webhooks." },
     ],
     useCases: ["Show live products in a custom storefront", "Build a back-office dashboard for orders", "Trigger workflows from store events"],
-  },
-  figma: {
-    longDesc: "Figma integration reads files, components, and design tokens through the Figma REST API with a personal access token (Figma's hosted MCP server only authorizes catalog-approved clients, so REST is the working path). The token is verified against your account before it is stored.",
-    inputs: [
-      { name: "figma_pat", type: "secret", desc: "Personal access token from Figma → Settings → Account (needs File content read)." },
-    ],
-    useCases: ["Translate a Figma frame into React", "Extract color + typography tokens", "List a team's projects and components"],
   },
   netlify: {
     longDesc: "Netlify integration inspects your sites and deploys through the Netlify REST API with a personal access token. Reads are unrestricted; anything that creates or publishes a deploy goes through the approval gate.",

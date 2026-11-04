@@ -42,7 +42,7 @@ function DocsPage() {
           Click <strong>New App</strong> in the sidebar.
         </li>
         <li>Describe your idea in the prompt box.</li>
-        <li>Optionally attach a screenshot, paste a URL, or import from Figma.</li>
+        <li>Optionally attach a screenshot or paste a URL.</li>
         <li>
           Hit <strong>Send</strong> and watch the agent work in the workspace.
         </li>

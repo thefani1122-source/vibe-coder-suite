@@ -1794,7 +1794,7 @@ function ChatColumn({
 
       {/* Input bar */}
       <div className="shrink-0 p-3">
-        <div className={cn("group relative rounded-2xl border border-white/[0.08]", centered && "mx-auto w-full max-w-3xl")} bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50">
+        <div className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}>
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}

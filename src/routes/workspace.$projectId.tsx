@@ -1037,7 +1037,10 @@ function WorkspacePage() {
       }
     };
 
-    setPreviewLoading(true);
+    // The spinner is honest only while something is actually building. A
+    // finished session polled for a missed preview URL must not show
+    // "Starting preview…" — it would spin at nothing.
+    setPreviewLoading(stillBuilding);
     void pollPreview();
     const interval = window.setInterval(() => void pollPreview(), 3000);
     return () => {

@@ -479,6 +479,32 @@ function WorkspacePage() {
       setCurrentAgent(a => a ?? "planning");
     });
 
+    // The agent's own words between tool calls, streamed live the Lovable way.
+    // build:thinking carries the model's private reasoning in its muted row;
+    // build:message carries the sentences it writes FOR the user — what it
+    // found, what it changed, what failed. Each run is one growing paragraph
+    // that closes when a tool row, a file write or an explicit done event
+    // follows it.
+    socket.on("build:message", (data: { text?: string; done?: boolean }) => {
+      if (completedRef.current) return;
+      if (data.done) {
+        setMessages(prev => closeStreaming(prev));
+        return;
+      }
+      const chunk = data.text ?? "";
+      if (!chunk) return;
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "text" && last.role !== "user" && last.streaming === true) {
+          return [...prev.slice(0, -1), { ...last, text: last.text + chunk }];
+        }
+        return [
+          ...closeStreaming(prev),
+          newMsg({ type: "text", text: chunk, streaming: true, startedAt: Date.now() }),
+        ];
+      });
+    });
+
     socket.on(
       "build:tool_call",
       (data: { id?: string; tool?: string; name?: string; args?: string; label?: string; active?: string }) => {
@@ -606,11 +632,23 @@ function WorkspacePage() {
       setCurrentAgent(undefined);
       setNewFiles(new Set());
       setActiveTab("preview");
-      // Add summary as assistant message for history persistence
-      setMessages(prev => [
-        ...closeStreaming(prev),
-        newMsg({ type: "assistant", text: summaryText, hint: data?.hint }),
-      ]);
+      // Add summary as assistant message for history persistence. A query
+      // answer already streamed live through build:message; the same text
+      // arrives again as the completion summary, so replace the streamed copy
+      // instead of printing the answer twice.
+      setMessages(prev => {
+        const closed = closeStreaming(prev);
+        const last = closed[closed.length - 1];
+        const streamed =
+          last && last.type === "text" && last.role !== "user" ? last.text.trim() : "";
+        if (streamed && summaryText.trim().startsWith(streamed)) {
+          return [
+            ...closed.slice(0, -1),
+            newMsg({ type: "assistant", text: summaryText, hint: data?.hint }),
+          ];
+        }
+        return [...closed, newMsg({ type: "assistant", text: summaryText, hint: data?.hint })];
+      });
       const completePreviewUrl = extractPreviewUrl(data);
       if (completePreviewUrl) {
         setIsFullstack(true);
@@ -621,6 +659,11 @@ function WorkspacePage() {
         // Detect fullstack builds from file paths/content — fallback if build:backend_ready wasn't fired.
         setIsFullstack(true);
         setPreviewLoading(true);
+      }
+      // Chat-first: the preview panel opens HERE — when the build has
+      // something to show — not when the build starts.
+      if (completePreviewUrl || Object.keys(mergedFiles).length > 0) {
+        setSidePanelOpen(true);
       }
     });
 
@@ -718,6 +761,8 @@ function WorkspacePage() {
       setPreviewError(null);
       setPreviewUrl(url);
       setPreviewLoading(false);
+      // The preview exists now — this is the moment the panel is worth.
+      setSidePanelOpen(true);
     };
     ["build:preview_url", "build:preview_ready", "build:preview", "preview_url", "preview_ready", "preview:ready"].forEach(event => {
       socket.on(event, handlePreviewUrl);
@@ -949,6 +994,7 @@ function WorkspacePage() {
           setPreviewError(null);
           setPreviewUrl(url);
           setPreviewLoading(false);
+          setSidePanelOpen(true);
           return;
         }
 
@@ -1227,16 +1273,15 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  // Chat-first layout (Claude-style): chat owns the screen; the preview/code
-  // panel opens BY ITSELF when a build starts and closes again when the build
-  // finishes, handing the centre back to the conversation. The top-bar tabs
-  // reopen the panel on demand.
-  const [sidePanelOpen, setSidePanelOpen] = useState(isBuilding);
-  const wasBuildingRef = useRef(isBuilding);
+  // Chat-first layout (Claude-style): the chat owns the screen from the
+  // first prompt — build or plain question, it makes no difference. The
+  // preview/code panel does NOT open when a build starts; it opens when the
+  // build has something to show (preview URL received, or build:complete with
+  // files), and a new prompt hands the centre back to the conversation. The
+  // top-bar tabs reopen the panel on demand at any time.
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
   useEffect(() => {
-    if (isBuilding) setSidePanelOpen(true);
-    else if (wasBuildingRef.current) setSidePanelOpen(false);
-    wasBuildingRef.current = isBuilding;
+    if (isBuilding) setSidePanelOpen(false);
   }, [isBuilding]);
   const handleTabSelect = useCallback((tab: ActiveTab) => {
     setActiveTab(tab);

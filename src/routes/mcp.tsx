@@ -17,7 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { apiGet, apiPost, apiDelete, getConnectedMcps, connectMcp, disconnectMcp, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -56,6 +56,8 @@ interface McpDef {
   connectMode: ConnectMode;
   /** Hosted MCP providers that must use the MCP OAuth browser flow. */
   authMode?: "oauth";
+  /** OAuth is primary, but the legacy token form stays available as fallback. */
+  patFallback?: boolean;
   fields?: ProviderField[];
   features?: string[];
 }
@@ -73,16 +75,20 @@ const SERVERS: McpDef[] = [
     category: "Deploy", emoji: "🌥️", provider: "cloudflare", providerType: "deploy", connectMode: "registry_form", authMode: "oauth",
   },
   {
-    // Netlify's remote MCP server speaks OAuth 2.1; the REST path with a
-    // personal access token is verified before storage and covers the read
-    // surface (sites, deploys). Writes stay behind the approval gate.
+    // Netlify's remote MCP server speaks OAuth 2.1 (one-click connect).
+    // The personal access token path stays as a fallback and is verified
+    // against the real API before storage; it covers the read surface
+    // (sites, deploys) through netlify_query. Writes stay behind the
+    // approval gate either way.
     name: "Netlify",
-    desc: "Inspect Netlify sites, deploys, and deploy state via the Netlify REST API.",
+    desc: "Manage Netlify sites, deploys, and logs via Netlify's hosted MCP server.",
     category: "Deploy",
     emoji: "🌐",
     provider: "netlify",
     providerType: "deploy",
-    connectMode: "rest_form",
+    connectMode: "registry_form",
+    authMode: "oauth",
+    patFallback: true,
     fields: [
       { key: "api_token", label: "Netlify Personal Access Token", type: "password", placeholder: "nfp_...", help: "Netlify → User settings → Applications → Personal access tokens" },
     ],
@@ -99,7 +105,20 @@ const SERVERS: McpDef[] = [
   },
 
   // ── Database ──────────────────────────────────────────────────────────────
-  { name: "Supabase", desc: "Provision Postgres databases with auth, storage and RLS.", category: "Database", emoji: "⚡", provider: "supabase", providerType: "database", connectMode: "supabase_form" },
+  {
+    // One-click OAuth against Supabase's hosted MCP server. The personal
+    // access token form stays below the OAuth button for teams that connect
+    // through a service token; both paths produce the same connection row.
+    name: "Supabase",
+    desc: "Manage tables, run SQL, and read logs via Supabase's hosted MCP server — one-click sign-in.",
+    category: "Database",
+    emoji: "⚡",
+    provider: "supabase",
+    providerType: "database",
+    connectMode: "registry_form",
+    authMode: "oauth",
+    patFallback: true,
+  },
   {
     name: "MongoDB Atlas",
     desc: "Query and manage MongoDB Atlas clusters via MongoDB's hosted MCP server.",
@@ -534,7 +553,7 @@ function McpPage() {
   const [customOpen, setCustomOpen] = useState(false);
   const [customForm, setCustomForm] = useState({
     name: "", description: "", mcpServerUrl: "",
-    authType: "bearer_token" as "bearer_token" | "api_key" | "none",
+    authType: "oauth" as "oauth" | "bearer_token" | "api_key" | "none",
     token: "",
   });
   const [customShowToken, setCustomShowToken] = useState(false);
@@ -708,20 +727,44 @@ function McpPage() {
     if (!name.trim()) { toast.error("Name is required"); return; }
     if (!mcpServerUrl.trim()) { toast.error("MCP Server URL is required"); return; }
     if (!mcpServerUrl.trim().startsWith("https://")) { toast.error("URL must start with https://"); return; }
-    if (authType !== "none" && !token.trim()) { toast.error("Token / API Key is required"); return; }
+    if (authType !== "none" && authType !== "oauth" && !token.trim()) { toast.error("Token / API Key is required"); return; }
 
     const slug = "custom-" + name.toLowerCase()
       .replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 50);
 
     setCustomSaving(true);
     try {
+      // OAuth custom MCPs run the browser flow: the backend registers a
+      // client against the server (dynamic client registration), the user
+      // signs in on the provider's page, and the callback finishes the
+      // connection. Token-based custom MCPs take the direct route below.
+      if (authType === "oauth") {
+        const result = await apiPost<{ status: string; authorizationUrl?: string; toolCount?: number }>(
+          "/api/integrations/mcp/custom/oauth/start",
+          { name: name.trim(), slug, description: description.trim(), mcpServerUrl: mcpServerUrl.trim() },
+          { silent: true },
+        );
+        if (result.status === "authorization_required" && result.authorizationUrl) {
+          window.location.assign(result.authorizationUrl);
+          return;
+        }
+        if (result.status === "connected") {
+          toast.success(`${name} connected!`);
+          setCustomForm({ name: "", description: "", mcpServerUrl: "", authType: "oauth", token: "" });
+          setCustomShowToken(false);
+          setCustomOpen(false);
+          await fetchCustomMcps();
+          return;
+        }
+        throw new Error("The MCP server did not return an authorization URL. If it only supports tokens, use the Bearer or API key option.");
+      }
       await apiPost("/api/integrations/mcp/custom/connect", {
         name: name.trim(), slug, description: description.trim(),
         mcpServerUrl: mcpServerUrl.trim(), authType,
         creds: authType !== "none" ? { token: token.trim() } : {},
       });
       toast.success(`${name} connected!`);
-      setCustomForm({ name: "", description: "", mcpServerUrl: "", authType: "bearer_token", token: "" });
+      setCustomForm({ name: "", description: "", mcpServerUrl: "", authType: "oauth", token: "" });
       setCustomShowToken(false);
       setCustomOpen(false);
       await fetchCustomMcps();
@@ -750,7 +793,7 @@ function McpPage() {
   if (selected) {
     const selectedConnected =
       selected.connectMode === "registry_form"
-        ? connectedSlugs.has(selected.provider)
+        ? connectedSlugs.has(selected.provider) || !!backendConns[selected.provider]
         : !!backendConns[selected.provider];
     return (
       <RequireAuth>
@@ -764,9 +807,13 @@ function McpPage() {
               selected.connectMode === "registry_form"
                 ? async () => {
                     try {
-                      await disconnectMcp(selected.provider);
-                      setConnectedSlugs(prev => { const n = new Set(prev); n.delete(selected.provider); return n; });
-                      toast.success(`${selected.name} disconnected`);
+                      if (connectedSlugs.has(selected.provider)) {
+                        await disconnectMcp(selected.provider);
+                        setConnectedSlugs(prev => { const n = new Set(prev); n.delete(selected.provider); return n; });
+                        toast.success(`${selected.name} disconnected`);
+                      } else if (selected.patFallback && backendConns[selected.provider]) {
+                        await disconnectProvider(selected.provider);
+                      }
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "Failed to disconnect");
                     }
@@ -822,7 +869,7 @@ function McpPage() {
                       onChange={e => setCustomForm(f => ({ ...f, mcpServerUrl: e.target.value }))}
                       placeholder="https://mcp.example.com/sse"
                     />
-                    <p className="text-xs text-muted-foreground">Must support SSE or HTTP transport</p>
+                    <p className="text-xs text-muted-foreground">HTTPS MCP server (Streamable HTTP or SSE transport)</p>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Description</Label>
@@ -835,7 +882,7 @@ function McpPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Authentication</Label>
-                    {(["none", "bearer_token", "api_key"] as const).map(v => (
+                    {(["oauth", "none", "bearer_token", "api_key"] as const).map(v => (
                       <label key={v} className="flex items-center gap-2 cursor-pointer text-sm">
                         <input
                           type="radio"
@@ -845,11 +892,23 @@ function McpPage() {
                           onChange={() => setCustomForm(f => ({ ...f, authType: v }))}
                           className="accent-primary"
                         />
-                        {v === "none" ? "None (public server)" : v === "bearer_token" ? "Bearer Token" : "API Key header"}
+                        {v === "oauth"
+                          ? "OAuth — sign in with your account"
+                          : v === "none"
+                            ? "None (public server)"
+                            : v === "bearer_token"
+                              ? "Bearer Token"
+                              : "API Key header"}
                       </label>
                     ))}
                   </div>
-                  {customForm.authType !== "none" && (
+                  {customForm.authType === "oauth" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300/80">
+                      <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <span>After adding, the server's sign-in page opens in your browser. The server must support OAuth 2.1 with dynamic client registration (most hosted MCP servers do).</span>
+                    </div>
+                  )}
+                  {(customForm.authType === "bearer_token" || customForm.authType === "api_key") && (
                     <div className="space-y-1.5">
                       <Label>Token / Key *</Label>
                       <div className="relative">
@@ -910,7 +969,7 @@ function McpPage() {
                     {filtered(c).map(s => {
                       const isRegistry = s.connectMode === "registry_form";
                       const connected = isRegistry
-                        ? connectedSlugs.has(s.provider)
+                        ? connectedSlugs.has(s.provider) || !!backendConns[s.provider]
                         : !!backendConns[s.provider];
 
                         if (isRegistry) {
@@ -958,7 +1017,12 @@ function McpPage() {
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-accent/20 text-base">🔌</div>
                       <div>
-                        <div className="text-sm font-semibold leading-tight">{m.meta?.["name"] ?? m.slug}</div>
+                        <div className="flex items-center gap-1.5 text-sm font-semibold leading-tight">
+                          {m.meta?.["name"] ?? m.slug}
+                          {m.meta?.["auth"] === "OAuth" && (
+                            <span className="rounded bg-primary/15 px-1 py-0.5 text-[10px] font-medium text-primary">OAuth</span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{m.meta?.["url"] ?? "Custom"}</div>
                       </div>
                     </div>
@@ -1191,7 +1255,7 @@ function McpDetail({
     setTesting(true);
     setTestResult(null);
     try {
-      if (def.connectMode === "supabase_form") {
+      if (def.provider === "supabase") {
         const res = await apiPost<{ toolCount: number; anonKeyResolved: boolean }>(
           "/api/integrations/supabase/mcp",
           { accessToken: token.trim(), projectRef: projectRef.trim() || undefined },
@@ -1208,7 +1272,7 @@ function McpDetail({
           ok: true,
           detail: `Token verified — ${res.toolCount} MCP tools available${res.anonKeyResolved ? ", preview keys resolved" : ""}. Click "Verify & Connect" to save it.`,
         });
-      } else if (def.connectMode === "rest_form") {
+      } else if (def.connectMode === "rest_form" || def.provider === "netlify") {
         const creds: Record<string, string> = {};
         for (const f of fields) {
           const v = values[f.key]?.trim();
@@ -1395,10 +1459,73 @@ function McpDetail({
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link className="h-4 w-4" />}
               {saving ? "Opening authorization..." : "Connect with " + def.name}
             </Button>
+            {def.patFallback && (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-border/60" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">or use a token instead</span>
+                  <div className="h-px flex-1 bg-border/60" />
+                </div>
+                {def.provider === "supabase" ? (
+                  <SupabasePatForm
+                    token={token} setToken={setToken} projectRef={projectRef} setProjectRef={setProjectRef}
+                    saving={saving} testing={testing} testResult={testResult}
+                    onConnect={handleSupabase} onTest={handleTest}
+                  />
+                ) : (
+                  <TokenFieldsForm
+                    def={def} fields={fields} values={values} setValues={setValues}
+                    showPass={showPass} setShowPass={setShowPass} error={error}
+                    saving={saving} testing={testing} testResult={testResult}
+                    nameSuffix={nameSuffix} canSubmit={canSubmit}
+                    restNote={false}
+                    onConnect={handleRest} onTest={handleTest}
+                  />
+                )}
+              </>
+            )}
           </div>
         ) : def.connectMode === "supabase_form" ? (
+          <SupabasePatForm
+            token={token} setToken={setToken} projectRef={projectRef} setProjectRef={setProjectRef}
+            saving={saving} testing={testing} testResult={testResult}
+            onConnect={handleSupabase} onTest={handleTest}
+          />
+        ) : (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+        ) : (
+          <TokenFieldsForm
+            def={def} fields={fields} values={values} setValues={setValues}
+            showPass={showPass} setShowPass={setShowPass} error={error}
+            saving={saving} testing={testing} testResult={testResult}
+            nameSuffix={nameSuffix} canSubmit={canSubmit}
+            restNote={def.connectMode === "rest_form"}
+            onConnect={def.connectMode === "rest_form" ? handleRest : handleRegistry}
+            onTest={handleTest}
+          />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Credential forms (shared by direct forms and OAuth PAT fallbacks) ──── */
+
+function SupabasePatForm({ token, setToken, projectRef, setProjectRef, saving, testing, testResult, onConnect, onTest }: {
+  token: string;
+  setToken: Dispatch<SetStateAction<string>>;
+  projectRef: string;
+  setProjectRef: Dispatch<SetStateAction<string>>;
+  saving: boolean;
+  testing: boolean;
+  testResult: { ok: boolean; detail: string } | null;
+  onConnect: () => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect with a Personal Access Token</h2>
             <div className="space-y-2">
               <Label htmlFor="sb-pat">Personal Access Token</Label>
               <Input id="sb-pat" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="sbp_..." />
@@ -1416,11 +1543,11 @@ function McpDetail({
               <span>Encrypted and never sent to the browser, the AI, or the preview. Only the public anon key is used in previews.</span>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="outline" onClick={handleTest} disabled={testing || saving || !token.trim()} className="sm:w-auto">
+              <Button type="button" variant="outline" onClick={onTest} disabled={testing || saving || !token.trim()} className="sm:w-auto">
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 Test connection
               </Button>
-              <Button onClick={handleSupabase} disabled={saving || testing || !token.trim()} className="flex-1">
+              <Button onClick={onConnect} disabled={saving || testing || !token.trim()} className="flex-1">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
               </Button>
             </div>
@@ -1433,10 +1560,30 @@ function McpDetail({
                 {testResult.detail}
               </p>
             )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Connect {def.name}</h2>
+    </div>
+  );
+}
+
+function TokenFieldsForm({ def, fields, values, setValues, showPass, setShowPass, error, saving, testing, testResult, nameSuffix, canSubmit, restNote, onConnect, onTest }: {
+  def: McpDef;
+  fields: ProviderField[];
+  values: Record<string, string>;
+  setValues: Dispatch<SetStateAction<Record<string, string>>>;
+  showPass: Record<string, boolean>;
+  setShowPass: Dispatch<SetStateAction<Record<string, boolean>>>;
+  error: string | null;
+  saving: boolean;
+  testing: boolean;
+  testResult: { ok: boolean; detail: string } | null;
+  nameSuffix: string;
+  canSubmit: boolean;
+  restNote: boolean;
+  onConnect: () => void;
+  onTest: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Connect with a token</h2>
             {fields.map(f => {
               const isPass = f.type === "password";
               const shown  = showPass[f.key] ?? false;
@@ -1476,7 +1623,7 @@ function McpDetail({
               );
             })}
             {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-            {def.connectMode === "rest_form" && (
+            {restNote && (
               <p className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-300/80">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
@@ -1490,11 +1637,11 @@ function McpDetail({
               <span>Credentials are encrypted server-side. They never reach the browser, the AI reasoning context, or the preview sandbox.</span>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="outline" onClick={handleTest} disabled={!canSubmit || testing || saving} className="sm:w-auto">
+              <Button type="button" variant="outline" onClick={onTest} disabled={!canSubmit || testing || saving} className="sm:w-auto">
                 {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
                 Test connection
               </Button>
-              <Button onClick={def.connectMode === "rest_form" ? handleRest : handleRegistry} disabled={!canSubmit || saving || testing} className="flex-1">
+              <Button onClick={onConnect} disabled={!canSubmit || saving || testing} className="flex-1">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Verify & Connect"}
               </Button>
             </div>
@@ -1507,9 +1654,6 @@ function McpDetail({
                 {testResult.detail}
               </p>
             )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

@@ -209,7 +209,7 @@ const SERVERS: McpDef[] = [
     name: "Stripe", desc: "Manage payments, customers, subscriptions, and products via the Stripe MCP server. Connect with a Stripe Agent API key.",
     category: "Productivity", emoji: "💳", provider: "stripe", providerType: "payment", connectMode: "registry_form",
     fields: [
-      { key: "api_key", label: "Stripe Agent API Key", type: "password", placeholder: "sk_...", help: "Stripe Dashboard → Developer → API keys → create an Agent key (not a secret key)" },
+      { key: "api_key", label: "Stripe Agent API Key", type: "password", placeholder: "rk_...", help: "Stripe Dashboard → Developer → API keys → create a restricted key and select 'Authorizing agent access to your account' (the Agent badge). From Dec 2026 mcp.stripe.com rejects sk_ and untagged rk_ keys." },
     ],
   },
   {
@@ -489,9 +489,9 @@ const META: Record<string, McpMeta> = {
     useCases: ["Use a spec page as build context", "Append changelogs to a release page", "Mirror Notion data into the app"],
   },
   stripe: {
-    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API. Stripe's OAuth consent flow vets new clients against an allowlist, so connect with a Stripe Agent API key (Dashboard → Developer → API keys, 'Agent' tag) — the MCP server accepts it directly as a bearer token.",
+    longDesc: "Stripe MCP manages payments, customers, subscriptions, and products through the Stripe API. Stripe's OAuth consent flow vets new clients against an allowlist, so connect with a Stripe Agent API key (Dashboard → Developer → API keys → create a restricted key and select 'Authorizing agent access to your account'). The MCP server accepts the tagged rk_ key directly as a bearer token; from Dec 2026 it rejects sk_ and untagged rk_ keys.",
     inputs: [
-      { name: "api_key", type: "secret", desc: "Stripe Agent API key — a restricted key scoped to agent use, not a full-access secret key." },
+      { name: "api_key", type: "secret", desc: "Stripe Agent API key — a restricted rk_ key tagged for agent access ('Agent' badge in the Dashboard), not a full-access secret key." },
     ],
     useCases: ["Add checkout to a generated app", "Inspect a customer's subscription", "Refund a charge from chat"],
   },

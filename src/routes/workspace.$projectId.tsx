@@ -312,6 +312,11 @@ function WorkspacePage() {
 
   const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
   const [showContextPanel,  setShowContextPanel]  = useState(false);
+  /* Attachment store for the Context panel — the declarations were lost in
+   * the chat-first refactor, which made the whole workspace page throw on
+   * render and on submit (ReferenceError -> "This page didn't load"). */
+  const [attachments,        setAttachments]     = useState<WorkspaceAttachment[]>([]);
+  const [showAiContext,      setShowAiContext]   = useState(false);
 
   // ── Attachments ─────────────────────────────────────────────────────────────
   useEffect(() => {

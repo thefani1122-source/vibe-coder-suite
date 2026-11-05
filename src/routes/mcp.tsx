@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Link, Info, Zap, Lightbulb } from "lucide-react";
+import { Plus, Search, Sparkles, Loader2, ArrowLeft, Check, ShieldCheck, Link, Info, Zap, Lightbulb, Activity, X, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -605,6 +605,22 @@ function McpPage() {
   }, []);
   const [disconnectTarget, setDisconnectTarget] = useState<McpDef | null>(null);
   const [disconnectBusy,   setDisconnectBusy]   = useState(false);
+  const [diagBusy,         setDiagBusy]         = useState(false);
+  const [diagReport,       setDiagReport]       = useState<DiagnoseData | null>(null);
+
+  // One click, every connected server: what the agent can actually see
+  // (tools discovered, reads offered, writes gated) and what failed.
+  const runDiagnose = async () => {
+    setDiagBusy(true);
+    try {
+      const data = await apiGet<DiagnoseData>("/api/integrations/mcp/diagnose");
+      setDiagReport(data);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Diagnose failed: ${err.message}` : "Diagnose failed");
+    } finally {
+      setDiagBusy(false);
+    }
+  };
 
   const loadConnectedSlugs = async () => {
     try {
@@ -1669,6 +1685,112 @@ function TokenFieldsForm({ def, fields, values, setValues, showPass, setShowPass
                 {testResult.detail}
               </p>
             )}
+    </div>
+  );
+}
+
+
+/* ─── Connection diagnostics ────────────────────────────────────────────── */
+
+interface DiagnoseServer {
+  slug: string;
+  url?: string;
+  hasOAuthSession?: boolean;
+  authHeaderCount?: number;
+  toolsDiscovered?: number;
+  readOffered?: number;
+  writeGated?: number;
+  readToolNames?: string[];
+}
+
+interface DiagnoseData {
+  storedRows?: Array<{ slug: string; isCustom?: boolean; connectedAt?: string }>;
+  resolvedServers?: DiagnoseServer[];
+  discoveryFailures?: unknown;
+  connectedServicesSummary?: Array<{
+    slug: string;
+    name?: string;
+    source?: string;
+    authType?: string;
+    connectedAt?: string;
+  }>;
+}
+
+function DiagnoseReport({ report, onClose }: { report: DiagnoseData; onClose: () => void }) {
+  const servers = report.resolvedServers ?? [];
+  const names = new Map((report.connectedServicesSummary ?? []).map(s => [s.slug, s.name ?? s.slug]));
+  const totalRead = servers.reduce((n, s) => n + (s.readOffered ?? 0), 0);
+  const totalGated = servers.reduce((n, s) => n + (s.writeGated ?? 0), 0);
+  const failures = report.discoveryFailures;
+  const failureList: Array<{ slug?: string; error?: string }> = Array.isArray(failures)
+    ? (failures as Array<{ slug?: string; error?: string }>)
+    : failures && typeof failures === "object"
+      ? Object.entries(failures as Record<string, unknown>).map(([slug, error]) => ({ slug, error: String(error) }))
+      : [];
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Activity className="h-4 w-4 text-primary" /> Connection diagnostics
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {servers.length} server{servers.length === 1 ? "" : "s"} resolved — {totalRead} read tool{totalRead === 1 ? "" : "s"} offered to the agent, {totalGated} write{totalGated === 1 ? "" : "s"} behind approval.
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="grid h-7 w-7 place-content-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          title="Close report"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {servers.length === 0 && (
+          <p className="text-xs text-muted-foreground">No connected MCP servers were resolved for this user.</p>
+        )}
+        {servers.map(s => (
+          <div key={s.slug} className="rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{names.get(s.slug) ?? s.slug}</span>
+              <Badge variant="outline" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {s.hasOAuthSession ? "oauth" : s.authHeaderCount ? "auth" : "no auth"}
+              </Badge>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {s.toolsDiscovered ?? 0} tools · {s.readOffered ?? 0} read · {s.writeGated ?? 0} gated
+              </span>
+            </div>
+            {(s.readToolNames?.length ?? 0) > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {s.readToolNames!.slice(0, 12).map(t => (
+                  <span key={t} className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">{t}</span>
+                ))}
+                {s.readToolNames!.length > 12 && (
+                  <span className="px-1 text-[10px] text-muted-foreground">+{s.readToolNames!.length - 12} more</span>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {failureList.length > 0 && (
+        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+            <TriangleAlert className="h-3.5 w-3.5" /> {failureList.length} discovery failure{failureList.length === 1 ? "" : "s"}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {failureList.slice(0, 8).map((f, i) => (
+              <li key={i} className="truncate text-xs text-muted-foreground">
+                {f.slug ? `${f.slug}: ` : ""}{f.error ?? "unknown error"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

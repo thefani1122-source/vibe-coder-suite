@@ -1191,7 +1191,12 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const attachmentContext = attachments.length > 0
+      ? "\n\n---\nFiles the user attached (visible in the Context panel):\n" +
+        attachments.map(a => `- ${a.name} (${a.type || "file"}, ${Math.max(1, Math.round(a.size / 1024))} KB)`).join("\n")
+      : "";
+
+    const enrichedPrompt = prompt + answerContext + attachmentContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
     // Everything on screen belongs to a build that has finished. Mark it so
     // the new session's replay cannot clear it (see build:replay_start), and
@@ -1239,7 +1244,7 @@ function WorkspacePage() {
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers, sessionId]);
+  }, [projectId, registerHandlers, sessionId, attachments]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -1318,6 +1323,21 @@ function WorkspacePage() {
     });
   }, [clarifyQuestions, currentQuestionIndex]);
 
+  const isBuilding = buildStatus === "running";
+
+  // Chat-first layout (Claude-style): the chat owns the screen from the
+  // first prompt — build or plain question, it makes no difference. The
+  // preview/code panel does NOT open when a build starts; it opens when the
+  // build has something to show (preview URL received, or build:complete with
+  // files), and a new prompt hands the centre back to the conversation. The
+  // top-bar tabs reopen the panel on demand at any time.
+  // NOTE: declared before toggleChat below — the callback reads it, so it
+  // must exist by then.
+  const [sidePanelOpen, setSidePanelOpen] = useState(false);
+  useEffect(() => {
+    if (isBuilding) setSidePanelOpen(false);
+  }, [isBuilding]);
+
   // Collapsing now hides the chat column outright — there is no resizable
   // panel underneath any more, so nothing can peek open on hover. With no
   // preview open, collapsing opens the preview instead: the screen must never
@@ -1329,19 +1349,6 @@ function WorkspacePage() {
     }
     setChatCollapsed(prev => !prev);
   }, [chatCollapsed, sidePanelOpen]);
-
-  const isBuilding = buildStatus === "running";
-
-  // Chat-first layout (Claude-style): the chat owns the screen from the
-  // first prompt — build or plain question, it makes no difference. The
-  // preview/code panel does NOT open when a build starts; it opens when the
-  // build has something to show (preview URL received, or build:complete with
-  // files), and a new prompt hands the centre back to the conversation. The
-  // top-bar tabs reopen the panel on demand at any time.
-  const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  useEffect(() => {
-    if (isBuilding) setSidePanelOpen(false);
-  }, [isBuilding]);
   const handleTabSelect = useCallback((tab: ActiveTab) => {
     setActiveTab(tab);
     setSidePanelOpen(true);
@@ -1804,6 +1811,7 @@ function ChatColumn({
   receipt, receiptSessionId, checks, activity,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   centered = false,
+  attachments = [], onAttach, onRemoveAttachment, onToggleContext,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
@@ -1820,6 +1828,11 @@ function ChatColumn({
   /** Chat-first mode: the conversation is centred like ChatGPT instead of
    *  hugging the edge of a split view. */
   centered?: boolean;
+  /** Uploaded context files for this project (names + local thumbnails). */
+  attachments?: WorkspaceAttachment[];
+  onAttach?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
+  onToggleContext?: () => void;
   isClarifying?: boolean;
   /** Destructive tool calls the build is currently blocked on. */
   pendingWrites?: PendingWriteAction[];
@@ -1900,6 +1913,28 @@ function ChatColumn({
           />
         </div>
       ))}
+
+      {/* Attachment chips — what will ride along with the next prompt. */}
+      {attachments.length > 0 && (
+        <div className={cn("flex flex-wrap gap-1.5 px-3 pb-1", centered && "mx-auto w-full max-w-3xl")}>
+          {attachments.map(a => (
+            <span
+              key={a.id}
+              className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] py-1 pl-2 pr-1 text-[11px] text-white/70"
+            >
+              <Files className="h-3 w-3 shrink-0 text-orange-400/80" />
+              <span className="truncate">{a.name}</span>
+              <button
+                onClick={() => onRemoveAttachment?.(a.id)}
+                className="grid h-4 w-4 shrink-0 place-content-center rounded-full text-white/45 transition hover:bg-white/10 hover:text-white/90"
+                title="Remove"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Input bar */}
       <div className="shrink-0 p-3">

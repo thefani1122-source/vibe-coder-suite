@@ -100,7 +100,10 @@ export function ChatPanel({
         {messages.length === 0 && !isBuilding && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
             <span className="text-3xl">⚡</span>
-            <p className="text-sm text-muted-foreground">Start a build to see agent output</p>
+            <p className="text-sm text-muted-foreground">
+              Ask Lampcode anything — research a topic, review code, or describe
+              the app you want built.
+            </p>
           </div>
         )}
 

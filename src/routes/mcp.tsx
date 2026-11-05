@@ -840,12 +840,22 @@ function McpPage() {
                 {connectedCount > 0 && ` — ${connectedCount} connected`}
               </p>
             </div>
-            <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground">
-                  <Plus className="h-4 w-4" /> Custom MCP
-                </Button>
-              </DialogTrigger>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={runDiagnose}
+                disabled={diagBusy}
+              >
+                {diagBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+                Test connections
+              </Button>
+              <Dialog open={customOpen} onOpenChange={setCustomOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-gradient-to-r from-primary to-[oklch(0.72_0.20_35)] text-primary-foreground">
+                    <Plus className="h-4 w-4" /> Custom MCP
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
@@ -940,8 +950,13 @@ function McpPage() {
                   </Button>
                 </DialogFooter>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </div>
+
+          {diagReport && (
+            <DiagnoseReport report={diagReport} onClose={() => setDiagReport(null)} />
+          )}
 
           <div className="relative max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

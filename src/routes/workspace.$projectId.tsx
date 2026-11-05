@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
-import { Group, Panel, Separator, usePanelRef, type PanelImperativeHandle } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -25,6 +24,7 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
+import { ContextSidePanel, type WorkspaceAttachment } from "@/components/ContextSidePanel";
 import { createBuildSocket } from "@/lib/websocket";
 import {
   apiGet, apiPost,
@@ -36,7 +36,7 @@ import {
   ArrowUp, ChevronDown, Plus,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
-  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download, Files,
   Square, ExternalLink, Link2, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -313,6 +313,49 @@ function WorkspacePage() {
   const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
   const [showContextPanel,  setShowContextPanel]  = useState(false);
 
+  // ── Attachments ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(`attachments:${projectId}`);
+      setAttachments(raw ? (JSON.parse(raw) as WorkspaceAttachment[]) : []);
+    } catch { /* ignore */ }
+  }, [projectId]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`attachments:${projectId}`, JSON.stringify(attachments));
+    } catch { /* ignore */ }
+  }, [attachments, projectId]);
+
+  const handleAttach = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    const stamp = Date.now();
+    const added: WorkspaceAttachment[] = files.map((f, i) => ({
+      id: `${stamp}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      addedAt: stamp,
+    }));
+    setAttachments(prev => [...prev, ...added]);
+    // Thumbnails for images small enough to keep inline — presentation only.
+    files.forEach((file, i) => {
+      if (file.type.startsWith("image/") && file.size <= 3 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const url = typeof reader.result === "string" ? reader.result : undefined;
+          setAttachments(prev => prev.map(a => (a.id === added[i].id ? { ...a, dataUrl: url } : a)));
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+    toast.success(`${files.length} file${files.length > 1 ? "s" : ""} added to context`);
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  }, []);
+
   const socketRef               = useRef<Socket | null>(null);
   const completedRef            = useRef(false);
   const filesRef                = useRef<Record<string, string>>({});
@@ -320,7 +363,6 @@ function WorkspacePage() {
   // filesRef with historical files, which must never auto-open the panel.
   const wroteThisRunRef          = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
-  const chatPanelRef            = usePanelRef();
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
 
@@ -1276,15 +1318,17 @@ function WorkspacePage() {
     });
   }, [clarifyQuestions, currentQuestionIndex]);
 
+  // Collapsing now hides the chat column outright — there is no resizable
+  // panel underneath any more, so nothing can peek open on hover. With no
+  // preview open, collapsing opens the preview instead: the screen must never
+  // go blank just because the chat was hidden.
   const toggleChat = useCallback(() => {
-    if (chatPanelRef.current?.isCollapsed()) {
-      chatPanelRef.current.expand();
-      setChatCollapsed(false);
-    } else {
-      chatPanelRef.current?.collapse();
-      setChatCollapsed(true);
+    if (!chatCollapsed && !sidePanelOpen) {
+      setSidePanelOpen(true);
+      return;
     }
-  }, [chatPanelRef]);
+    setChatCollapsed(prev => !prev);
+  }, [chatCollapsed, sidePanelOpen]);
 
   const isBuilding = buildStatus === "running";
 
@@ -1349,21 +1393,18 @@ function WorkspacePage() {
           />
         )}
 
-        <Group
-          orientation="horizontal"
-          className="flex-1 min-h-0"
-          style={{ overflow: "hidden" }}
-        >
-          {/* Left: Chat panel — resizable, collapsible */}
-          <Panel
-            panelRef={chatPanelRef}
-            defaultSize={sidePanelOpen ? 25 : 100}
-            minSize={15}
-            collapsible={true}
-            collapsedSize={0}
-            onResize={(size) => setChatCollapsed(size.asPercentage < 1)}
-          >
-            <div className="relative h-full border-r border-white/[0.06] bg-[#0d0d12]">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left: Chat column — a fixed Lovable-style width once the preview
+              is open, full-width centred before it. No resizable panel and no
+              collapse-to-zero: hiding the chat hides the whole column, which
+              removes the hover-peek bug at its root. */}
+          {!chatCollapsed && (
+            <div
+              className={cn(
+                "relative flex h-full min-w-0 flex-col bg-[#0d0d12]",
+                sidePanelOpen ? "w-[420px] shrink-0 border-r border-white/[0.06]" : "flex-1",
+              )}
+            >
               <ChatColumn
                 receipt={receipt}
                 receiptSessionId={receiptSessionId}
@@ -1377,6 +1418,10 @@ function WorkspacePage() {
                 projectName={projectName}
                 centered={!sidePanelOpen}
                 isClarifying={isClarifying}
+                attachments={attachments}
+                onAttach={handleAttach}
+                onRemoveAttachment={removeAttachment}
+                onToggleContext={() => setShowContextPanel(v => !v)}
                 pendingWrites={pendingWrites}
                 onWriteDecision={(toolCallId, approved) => {
                   // Answering is what unblocks the build — the backend is
@@ -1443,15 +1488,10 @@ function WorkspacePage() {
                 </div>
               )}
             </div>
-          </Panel>
+          )}
 
           {sidePanelOpen && (
-            <>
-          <Separator className="w-[3px] bg-white/[0.08] hover:bg-white/[0.25] active:bg-blue-500/50 cursor-col-resize transition-colors" />
-
-          {/* Right: preview / code — takes remaining space */}
-          <Panel defaultSize={75} minSize={30}>
-            <div className="relative flex min-h-0 h-full bg-[#080808]">
+            <div className="relative flex min-w-0 flex-1 bg-[#080808]">
               {/* Floating reopen button when chat is collapsed */}
               {chatCollapsed && (
                 <button
@@ -1528,16 +1568,26 @@ function WorkspacePage() {
                 </div>
               )}
             </div>
-          </Panel>
-            </>
           )}
-        </Group>
 
-      {showContextPanel && (
+          {/* Right edge: the user's uploads — screenshots and files kept for
+              this project, Lovable-style. A real column, not an overlay, so
+              it can never float over or peek behind the chat. */}
+          {showContextPanel && (
+            <ContextSidePanel
+              attachments={attachments}
+              onAdd={handleAttach}
+              onRemove={removeAttachment}
+              onClose={() => setShowContextPanel(false)}
+            />
+          )}
+        </div>
+
+      {showAiContext && (
         <BusinessContextPanel
           projectId={projectId}
           initial={businessContext}
-          onClose={() => setShowContextPanel(false)}
+          onClose={() => setShowAiContext(false)}
           onSaved={setBusinessContext}
         />
       )}
@@ -1615,9 +1665,6 @@ function WorkspaceTopBar({
             vibe coder · ui-2026-11-04b
           </span>
         </div>
-        <button className="ml-0.5 flex h-7 w-5 items-center justify-center rounded-md text-white/40 transition hover:bg-white/[0.06] hover:text-white/80" title="Switch project">
-          <ChevronDown className="h-3.5 w-3.5" />
-        </button>
         {hasFilledContext(businessContext) && !showContextPanel && (
           <span className="hidden lg:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             🧠 AI context
@@ -1886,12 +1933,25 @@ function ChatColumn({
                 multiple
                 accept="image/*,.pdf,.txt,.md,.json,.csv"
                 onChange={e => {
-                  const f = e.target.files?.[0];
-                  if (f) toast.success(`Attached ${f.name}`);
+                  const files = Array.from(e.target.files ?? []);
+                  if (files.length > 0) onAttach?.(files);
+                  e.target.value = "";
                 }}
               />
               <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => onToggleContext?.()}
+                className="relative grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
+                title="Context — screenshots and files"
+              >
+                <Files className="h-4 w-4" />
+                {attachments.length > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-content-center rounded-full bg-orange-500 px-0.5 text-[8px] font-semibold text-white">
+                    {attachments.length}
+                  </span>
+                )}
               </button>
             </div>
             <div className="flex items-center gap-1.5">

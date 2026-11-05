@@ -367,6 +367,14 @@ function WorkspacePage() {
   // Files written during the CURRENT run only — restore/hydration fill
   // filesRef with historical files, which must never auto-open the panel.
   const wroteThisRunRef          = useRef(false);
+  /* Files the project already had when the current run started — the baseline
+   * build:complete's data.files is compared against so echoed (restored) files
+   * are never mistaken for work this run did. */
+  const knownFilesRef            = useRef<Record<string, string>>({});
+  /* True only while a run started from THIS tab is in flight. A replayed
+   * build:complete (page reload, history restore) must not pop the preview
+   * panel for work nobody asked for in this view. */
+  const runActiveRef             = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
@@ -664,6 +672,18 @@ function WorkspacePage() {
       completedRef.current = true;
       setActivity(null);
 
+      // Compute this run's genuinely-new files BEFORE merging: filesRef here
+      // still holds only what build:file_write streamed this run, and
+      // knownFilesRef holds the pre-run baseline. build:complete for a query
+      // run echoes the session's existing files back in data.files — those
+      // are known files, not new work.
+      const newFromComplete = data?.files
+        ? Object.keys(data.files).filter(
+            p => knownFilesRef.current[p] === undefined && filesRef.current[p] === undefined)
+        : [];
+      const runJustCompleted = runActiveRef.current;
+      runActiveRef.current = false;
+
       // Merge build:complete files into what file_write events already accumulated.
       const mergedFiles = { ...filesRef.current };
       if (data?.files) {
@@ -713,9 +733,13 @@ function WorkspacePage() {
       }
       // Chat-first: the preview panel opens HERE — when THIS RUN produced
       // something to show. Historical files restored into filesRef (a query
-      // run in an existing session, a page reload) must never pop the panel.
-      const filesWrittenThisRun = wroteThisRunRef.current || Object.keys(data?.files ?? {}).length > 0;
-      if (completePreviewUrl || filesWrittenThisRun) {
+      // run in an existing session, a page reload) must never pop the panel,
+      // so the decision uses the pre-run baseline, not the file count alone.
+      // A plain preview URL from a run that wrote nothing belongs to a
+      // previous build — it updates the preview state but keeps the panel
+      // closed so a query answer stays in the chat.
+      const filesWrittenThisRun = wroteThisRunRef.current || newFromComplete.length > 0;
+      if (runJustCompleted && filesWrittenThisRun) {
         setSidePanelOpen(true);
       }
     });
@@ -784,6 +808,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:error", (data?: { message?: string; error?: string }) => {
+      runActiveRef.current = false;
       setPendingWrites([]);
       setPendingQuestions([]);
       setActivity(null);
@@ -850,6 +875,7 @@ function WorkspacePage() {
     });
 
     socket.on("build:cancelled", () => {
+      runActiveRef.current = false;
       setPendingWrites([]);
       setPendingQuestions([]);
       setActivity(null);
@@ -1216,8 +1242,10 @@ function WorkspacePage() {
     setFollowUpReceipt({ routeSessionId: sessionId, active: undefined });
     setCurrentAgent(undefined);
     completedRef.current = false;
+    knownFilesRef.current = { ...filesRef.current };
     filesRef.current = {};
     wroteThisRunRef.current = false;
+    runActiveRef.current = true;
     setIsFullstack(false);
     setPreviewUrl(null);
     setPreviewLoading(false);
@@ -1355,9 +1383,16 @@ function WorkspacePage() {
     setChatCollapsed(prev => !prev);
   }, [chatCollapsed, sidePanelOpen]);
   const handleTabSelect = useCallback((tab: ActiveTab) => {
+    // Clicking the tab already on screen flips the panel closed and
+    // re-centres the chat — Lovable's toggle behaviour. A tab that is not
+    // showing still opens the panel.
+    if (sidePanelOpen && tab === activeTab) {
+      setSidePanelOpen(false);
+      return;
+    }
     setActiveTab(tab);
     setSidePanelOpen(true);
-  }, []);
+  }, [sidePanelOpen, activeTab]);
 
   return (
     <RequireAuth>

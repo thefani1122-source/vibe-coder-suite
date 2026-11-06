@@ -155,9 +155,7 @@ const SERVERS: McpDef[] = [
   },
   {
     name: "Google Stitch", desc: "Generate UI designs from prompts and extract production-ready code.",
-    // Stitch's MCP server offers OAuth but no dynamic client registration — it
-    // Stitch's MCP server takes a Stitch API key from Google Cloud, not a
-    // browser OAuth flow — see stitch.withgoogle.com/docs/mcp/setup.
+    // Stitch's MCP server takes a Stitch API key from Google Cloud (stitch.withgoogle.com/docs/mcp/setup)
     category: "Design",
     emoji: "🧵",
     provider: "google-stitch",
@@ -169,7 +167,7 @@ const SERVERS: McpDef[] = [
         label: "Stitch API Key",
         type: "password",
         placeholder: "AIza...",
-        help: "Create a Stitch API key in Google Cloud (stitch.withgoogle.com/docs/mcp/setup)",
+        help: "Generate your Stitch API key at stitch.withgoogle.com/settings -> API Keys",
       },
     ],
   },

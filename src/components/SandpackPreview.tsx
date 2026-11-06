@@ -6,6 +6,78 @@ import {
 } from "@codesandbox/sandpack-react"
 import { cn } from "@/lib/utils"
 
+// Dependencies expected by Lampcode-generated React apps. Sandpack previously
+// discarded the generated package.json and installed only React, so ordinary
+// generated imports (lucide-react, TanStack Query, etc.) crashed at preview time.
+const PREVIEW_DEPENDENCIES: Record<string, string> = {
+  "lucide-react": "^0.575.0",
+  "clsx": "^2.1.1",
+  "tailwind-merge": "^3.5.0",
+  "class-variance-authority": "^0.7.1",
+  "@tanstack/react-query": "^5.100.1",
+  "framer-motion": "^12.38.0",
+  "recharts": "^2.15.4",
+  "date-fns": "^4.1.0",
+  "zod": "^3.25.76",
+  "react-hook-form": "^7.73.1",
+  "@hookform/resolvers": "^5.2.2",
+  "sonner": "^2.0.7",
+  "cmdk": "^1.1.1",
+  "vaul": "^1.1.2",
+  "embla-carousel-react": "^8.6.0",
+  "react-day-picker": "^9.14.0",
+  "input-otp": "^1.4.2",
+  "@radix-ui/react-accordion": "^1.2.12",
+  "@radix-ui/react-alert-dialog": "^1.1.15",
+  "@radix-ui/react-avatar": "^1.1.11",
+  "@radix-ui/react-checkbox": "^1.3.3",
+  "@radix-ui/react-dialog": "^1.1.15",
+  "@radix-ui/react-dropdown-menu": "^2.2.1",
+  "@radix-ui/react-label": "^2.1.8",
+  "@radix-ui/react-popover": "^1.1.12",
+  "@radix-ui/react-progress": "^1.1.8",
+  "@radix-ui/react-radio-group": "^1.2.3",
+  "@radix-ui/react-scroll-area": "^1.2.10",
+  "@radix-ui/react-select": "^2.2.6",
+  "@radix-ui/react-separator": "^1.1.8",
+  "@radix-ui/react-slider": "^1.3.6",
+  "@radix-ui/react-slot": "^1.2.4",
+  "@radix-ui/react-switch": "^1.2.6",
+  "@radix-ui/react-tabs": "^1.1.13",
+  "@radix-ui/react-toast": "^1.2.15",
+  "@radix-ui/react-tooltip": "^1.2.8",
+};
+
+function resolvePreviewDependencies(packageJson?: string) {
+  let declared: Record<string, string> = {};
+  try {
+    const parsed = packageJson ? JSON.parse(packageJson) as { dependencies?: Record<string, string> } : null;
+    declared = parsed?.dependencies ?? {};
+  } catch {
+    // Ignore an incomplete package.json while the build is streaming.
+  }
+  const dependencies: Record<string, string> = {};
+  for (const [name, fallback] of Object.entries(PREVIEW_DEPENDENCIES)) {
+    if (name in declared) dependencies[name] = declared[name]!;
+    else if (name !== "react" && name !== "react-dom") dependencies[name] = fallback;
+  }
+  dependencies.react = "^18.2.0";
+  dependencies["react-dom"] = "^18.2.0";
+  return dependencies;
+}
+
+function rewriteSourceAliases(filePath: string, code: string): string {
+  const fileDir = filePath.slice(0, filePath.lastIndexOf("/"));
+  return code.replace(/(["'`])@\/([^"'`]+)\1/g, (_match, quote: string, aliasPath: string) => {
+    const target = `/src/${aliasPath}`;
+    const from = fileDir.split("/").filter(Boolean);
+    const to = target.split("/").filter(Boolean);
+    while (from.length && to.length && from[0] === to[0]) { from.shift(); to.shift(); }
+    const relative = [...from.map(() => ".."), ...to].join("/");
+    return `${quote}./${relative}${quote}`.replace("./../", "../");
+  });
+}
+
 // ─── Entry-file priority list (most specific first) ──────────────────────────
 const ENTRY_PRIORITY = [
   "/src/index.tsx",
@@ -185,11 +257,13 @@ function PreviewWithFrame({
   entryFile,
   className,
   externalDevice,
+  dependencies,
 }: {
   files: Record<string, { code: string }>
   entryFile: string
   className?: string
   externalDevice?: "desktop" | "mobile" | "tablet"
+  dependencies: Record<string, string>
 }) {
   const [retryKey, setRetryKey] = useState(0)
   const device = externalDevice ?? "desktop"
@@ -228,10 +302,7 @@ function PreviewWithFrame({
               theme="dark"
               customSetup={{
                 entry: entryFile,
-                dependencies: {
-                  react: "^18.2.0",
-                  "react-dom": "^18.2.0",
-                },
+                dependencies,
               }}
               style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}
             >
@@ -276,6 +347,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
     for (const [rawPath, content] of Object.entries(files)) {
       const basename = rawPath.split("/").pop() ?? ""
       if (SKIP.has(basename)) continue
+      if (basename === "package.json") continue
 
       const normalized = "/" + rawPath.replace(/^\/+/, "")
       const cleanPath =
@@ -289,7 +361,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
         ? content.replace(/^@(tailwind|layer|apply)\b.*$/gm, "").trim()
         : content
 
-      result[cleanPath] = { code }
+      result[cleanPath] = { code: rewriteSourceAliases(cleanPath, code) }
     }
 
     // Auto-inject a bootstrap entry if the backend only sent App.tsx
@@ -377,6 +449,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       entryFile={entryFile}
       className={className}
       externalDevice={externalDevice}
+      dependencies={resolvePreviewDependencies(files["package.json"])}
     />
   )
 }

@@ -66,6 +66,36 @@ function resolvePreviewDependencies(packageJson?: string) {
   return dependencies;
 }
 
+function preparePreviewCss(css: string): string {
+  // The preview injects Tailwind from its CDN, not PostCSS. Remove build-only
+  // directives while retaining declarations inside @layer blocks; deleting the
+  // whole opening @layer line used to leave unmatched braces and blank the page.
+  let output = css
+    .replace(/^\s*@tailwind\b[^;]*;\s*$/gm, "")
+    .replace(/^\s*@import\s+["']tailwindcss["']\s*;\s*$/gm, "")
+    .replace(/@apply\s+[^;]+;/g, "")
+
+  const layerStart = /@layer\s+[^;{]+\{/g
+  let match: RegExpExecArray | null
+  while ((match = layerStart.exec(output))) {
+    const open = match.index + match[0].lastIndexOf("{")
+    let depth = 1
+    let close = open + 1
+    while (close < output.length && depth > 0) {
+      if (output[close] === "{") depth++
+      else if (output[close] === "}") depth--
+      close++
+    }
+    if (depth !== 0) {
+      output = output.slice(0, match.index) + output.slice(open + 1)
+      break
+    }
+    output = output.slice(0, match.index) + output.slice(open + 1, close - 1) + output.slice(close)
+    layerStart.lastIndex = 0
+  }
+  return output.trim()
+}
+
 function rewriteSourceAliases(filePath: string, code: string): string {
   const fileDir = filePath.slice(0, filePath.lastIndexOf("/"));
   return code.replace(/(["'`])@\/([^"'`]+)\1/g, (_match, quote: string, aliasPath: string) => {
@@ -357,9 +387,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
           ? "/src" + normalized
           : normalized
 
-      const code = cleanPath.endsWith(".css")
-        ? content.replace(/^@(tailwind|layer|apply)\b.*$/gm, "").trim()
-        : content
+      const code = cleanPath.endsWith(".css") ? preparePreviewCss(content) : content
 
       result[cleanPath] = { code: rewriteSourceAliases(cleanPath, code) }
     }

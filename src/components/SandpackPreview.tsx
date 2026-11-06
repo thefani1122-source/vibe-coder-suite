@@ -15,6 +15,7 @@ const PREVIEW_DEPENDENCIES: Record<string, string> = {
   "tailwind-merge": "^3.5.0",
   "class-variance-authority": "^0.7.1",
   "@tanstack/react-query": "^5.100.1",
+  "react-router-dom": "^6.28.0",
   "framer-motion": "^12.38.0",
   "recharts": "^2.15.4",
   "date-fns": "^4.1.0",
@@ -60,6 +61,18 @@ function resolvePreviewDependencies(packageJson?: string) {
   for (const [name, fallback] of Object.entries(PREVIEW_DEPENDENCIES)) {
     if (name in declared) dependencies[name] = declared[name]!;
     else if (name !== "react" && name !== "react-dom") dependencies[name] = fallback;
+  }
+  // Also pass through any additional browser-compatible dependencies declared in package.json
+  for (const [name, version] of Object.entries(declared)) {
+    if (
+      !dependencies[name] &&
+      !name.startsWith("@types/") &&
+      name !== "tailwindcss" &&
+      name !== "postcss" &&
+      name !== "autoprefixer"
+    ) {
+      dependencies[name] = version;
+    }
   }
   dependencies.react = "^18.2.0";
   dependencies["react-dom"] = "^18.2.0";
@@ -392,6 +405,19 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       result[cleanPath] = { code: rewriteSourceAliases(cleanPath, code) }
     }
 
+    // Auto-inject a minimal src/lib/utils.ts if missing so cn() imports never crash
+    if (!result["/src/lib/utils.ts"] && !result["/src/lib/utils.tsx"]) {
+      result["/src/lib/utils.ts"] = {
+        code: `import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+`,
+      };
+    }
+
     // Auto-inject a bootstrap entry if the backend only sent App.tsx
     const hasEntry =
       result["/src/index.tsx"] ||
@@ -477,7 +503,7 @@ export function SandpackPreview({ files, isBuilding, className, externalDevice }
       entryFile={entryFile}
       className={className}
       externalDevice={externalDevice}
-      dependencies={resolvePreviewDependencies(files["package.json"])}
+      dependencies={resolvePreviewDependencies(files["package.json"] ?? files["/package.json"])}
     />
   )
 }

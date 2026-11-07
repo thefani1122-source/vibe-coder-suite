@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, useRouterState } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
@@ -37,7 +37,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download, Files,
-  Square, ExternalLink, Link2, X,
+  Square, ExternalLink, Link2, X, Menu, LayoutDashboard, FolderGit2, Plug, Settings, CreditCard, BarChart3, Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -317,6 +317,7 @@ function WorkspacePage() {
    * render and on submit (ReferenceError -> "This page didn't load"). */
   const [attachments,        setAttachments]     = useState<WorkspaceAttachment[]>([]);
   const [showAiContext,      setShowAiContext]   = useState(false);
+  const [showNavSidebar,    setShowNavSidebar]  = useState(false);
 
   // ── Attachments ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -345,7 +346,7 @@ function WorkspacePage() {
     setAttachments(prev => [...prev, ...added]);
     // Thumbnails for images small enough to keep inline — presentation only.
     files.forEach((file, i) => {
-      if (file.type.startsWith("image/") && file.size <= 3 * 1024 * 1024) {
+      if (file.type.startsWith("image/") && file.size <= 8 * 1024 * 1024) {
         const reader = new FileReader();
         reader.onload = () => {
           const url = typeof reader.result === "string" ? reader.result : undefined;
@@ -1234,7 +1235,12 @@ function WorkspacePage() {
     // so the chat can fold it instead of dropping it.
     setMessages(prev => [
       ...closeStreaming(prev).map(m => (m.archived ? m : { ...m, archived: true })),
-      newMsg({ type: "text", text: prompt, role: "user" }),
+      newMsg({
+        type: "text",
+        text: prompt,
+        role: "user",
+        attachments: attachments.map(a => ({ id: a.id, name: a.name, dataUrl: a.dataUrl, type: a.type })),
+      }),
     ]);
     setActivity("Thinking...");
     setBuildStatus("running");
@@ -1246,14 +1252,18 @@ function WorkspacePage() {
     filesRef.current = {};
     wroteThisRunRef.current = false;
     runActiveRef.current = true;
-    setIsFullstack(false);
-    setPreviewUrl(null);
+    // Keep existing previewUrl so edit builds do not blank out the live iframe!
     setPreviewLoading(false);
     setPreviewError(null);
+
+    const imageAndDocAttachments = attachments
+      .map(a => a.dataUrl || a.name)
+      .filter(Boolean);
 
     const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
       project_id: projectId,
       prompt: enrichedPrompt,
+      attachments: imageAndDocAttachments.length > 0 ? imageAndDocAttachments : undefined,
     });
 
     const newSessionId = (
@@ -1367,9 +1377,7 @@ function WorkspacePage() {
   // NOTE: declared before toggleChat below — the callback reads it, so it
   // must exist by then.
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
-  useEffect(() => {
-    if (isBuilding) setSidePanelOpen(false);
-  }, [isBuilding]);
+  // Keep sidePanelOpen intact during isBuilding so edit prompts do not collapse the preview!
 
   // Collapsing now hides the chat column outright — there is no resizable
   // panel underneath any more, so nothing can peek open on hover. With no
@@ -1399,6 +1407,8 @@ function WorkspacePage() {
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
 
         <WorkspaceTopBar
+          showNavSidebar={showNavSidebar}
+          onToggleNav={() => setShowNavSidebar((v) => !v)}
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
@@ -1441,6 +1451,10 @@ function WorkspacePage() {
         )}
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
+          {showNavSidebar && (
+            <WorkspaceNavSidebar onClose={() => setShowNavSidebar(false)} />
+          )}
+
           {/* Left: Chat column — a fixed Lovable-style width once the preview
               is open, full-width centred before it. No resizable panel and no
               collapse-to-zero: hiding the chat hides the whole column, which
@@ -1622,6 +1636,7 @@ function WorkspacePage() {
               it can never float over or peek behind the chat. */}
           {showContextPanel && (
             <ContextSidePanel
+              projectName={displayName}
               attachments={attachments}
               onAdd={handleAttach}
               onRemove={removeAttachment}
@@ -1643,17 +1658,101 @@ function WorkspacePage() {
   );
 }
 
+
+function WorkspaceNavSidebar({ onClose }: { onClose: () => void }) {
+  const currentPath = useRouterState({ select: (s) => s.location.pathname });
+  const isActive = (path: string) => currentPath === path;
+
+  return (
+    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-white/[0.08] bg-[#0c0c10] text-white">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
+        <div className="flex items-center gap-2">
+          <BrandMark />
+          <span className="text-sm font-bold tracking-tight text-white">Lampcode</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="grid h-7 w-7 place-content-center rounded-lg text-white/40 hover:bg-white/[0.06] hover:text-white"
+          title="Close sidebar"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10">
+        <div>
+          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+            Workspace
+          </div>
+          <div className="space-y-1">
+            {[
+              { title: "Dashboard", url: "/", icon: LayoutDashboard },
+              { title: "My Projects", url: "/projects", icon: FolderGit2 },
+              { title: "MCP Connectors", url: "/mcp", icon: Plug },
+            ].map((item) => (
+              <Link
+                key={item.title}
+                to={item.url}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
+                  isActive(item.url)
+                    ? "bg-white/[0.08] text-white"
+                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
+                )}
+              >
+                <item.icon className="h-4 w-4 text-orange-400/80" />
+                <span>{item.title}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+            Account & Settings
+          </div>
+          <div className="space-y-1">
+            {[
+              { title: "Settings", url: "/settings", icon: Settings },
+              { title: "Billing", url: "/billing", icon: CreditCard },
+              { title: "Usage", url: "/usage", icon: BarChart3 },
+              { title: "Pricing", url: "/pricing", icon: Tag },
+            ].map((item) => (
+              <Link
+                key={item.title}
+                to={item.url}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
+                  isActive(item.url)
+                    ? "bg-white/[0.08] text-white"
+                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
+                )}
+              >
+                <item.icon className="h-4 w-4 text-white/50" />
+                <span>{item.title}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Top Bar                                                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
+  showNavSidebar = false, onToggleNav,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
   businessContext, showContextPanel,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
+  showNavSidebar?: boolean;
+  onToggleNav?: () => void;
   projectId: string;
   projectName: string;
   activeTab: ActiveTab;
@@ -1701,10 +1800,14 @@ function WorkspaceTopBar({
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#0a0a0a] px-4">
 
       {/* ── Left: brand + project ─────────────────────────────────── */}
-      <div className="flex shrink-0 items-center gap-2.5">
-        {/* Matches the sidebar mark exactly (AppSidebar.tsx) — this used to be a
-            primary→accent gradient, which read as a different brand colour on
-            the one screen where both are never seen side by side. */}
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          onClick={onToggleNav}
+          className={cn("ws-iconbtn mr-0.5", showNavSidebar && "text-orange-400 bg-white/[0.08]")}
+          title={showNavSidebar ? "Hide sidebar" : "Workspace navigation (Projects, MCP, Account)"}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
         <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
@@ -1962,7 +2065,11 @@ function ChatColumn({
               key={a.id}
               className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] py-1 pl-2 pr-1 text-[11px] text-white/70"
             >
-              <Files className="h-3 w-3 shrink-0 text-orange-400/80" />
+              {a.dataUrl ? (
+                <img src={a.dataUrl} alt={a.name} className="h-4 w-4 shrink-0 rounded object-cover border border-white/20" />
+              ) : (
+                <Files className="h-3 w-3 shrink-0 text-orange-400/80" />
+              )}
               <span className="truncate">{a.name}</span>
               <button
                 onClick={() => onRemoveAttachment?.(a.id)}
@@ -1978,7 +2085,15 @@ function ChatColumn({
 
       {/* Input bar */}
       <div className="shrink-0 p-3">
-        <div className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}>
+        <div
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const dropped = Array.from(e.dataTransfer.files ?? []);
+            if (dropped.length > 0) onAttach?.(dropped);
+          }}
+          className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}
+        >
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -1988,7 +2103,28 @@ function ChatColumn({
                 handleSend();
               }
             }}
-            placeholder="Ask Lampcode…"
+            onPaste={(e) => {
+              const clipboardItems = e.clipboardData?.items;
+              if (!clipboardItems) return;
+              const filesToAttach: File[] = [];
+              for (let i = 0; i < clipboardItems.length; i++) {
+                const item = clipboardItems[i];
+                if (item.type.startsWith("image/")) {
+                  const blob = item.getAsFile();
+                  if (blob) {
+                    const ext = blob.type.split("/")[1]?.replace("+xml", "") || "png";
+                    const file = new File([blob], `screenshot-${Date.now()}.${ext}`, { type: blob.type });
+                    filesToAttach.push(file);
+                  }
+                }
+              }
+              if (filesToAttach.length > 0) {
+                e.preventDefault();
+                onAttach?.(filesToAttach);
+                toast.success(`${filesToAttach.length} screenshot${filesToAttach.length > 1 ? "s" : ""} pasted to context`);
+              }
+            }}
+            placeholder="Ask Lampcode… (Paste screenshots or type prompt)"
             rows={3}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />

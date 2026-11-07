@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Loader2, Check, AlertCircle, XCircle, ChevronRight, Sparkles } from "lucide-react";
+import { Loader2, Check, AlertCircle, XCircle, ChevronRight, Sparkles, FileText } from "lucide-react";
 import { DiffView, type FileDiff } from "./DiffView";
 import { activityFromReasoning, latestThoughtLine } from "@/lib/build-timeline";
 import { splitReasoningParagraphs } from "@/lib/build-activity";
@@ -41,6 +41,7 @@ export interface BuildMessage {
   startedAt?: number;
   /** Total elapsed time in ms once step/thinking finishes. */
   durationMs?: number;
+  attachments?: Array<{ id: string; name: string; dataUrl?: string; type?: string }>;
 }
 
 interface ChatPanelProps {
@@ -228,7 +229,29 @@ function MessageRow({ msg, isLast }: { msg: BuildMessage; isLast: boolean }) {
     case "text": {
       if (msg.role === "user") {
         return (
-          <div className="flex justify-end my-1">
+          <div className="flex flex-col items-end my-1">
+            {msg.attachments && msg.attachments.length > 0 && (
+              <div className="flex flex-wrap justify-end gap-2 mb-1.5 max-w-[85%]">
+                {msg.attachments.map((att) =>
+                  att.dataUrl ? (
+                    <img
+                      key={att.id}
+                      src={att.dataUrl}
+                      alt={att.name}
+                      className="h-20 w-auto max-w-[160px] rounded-lg border border-white/10 object-cover shadow-sm transition hover:scale-105"
+                    />
+                  ) : (
+                    <div
+                      key={att.id}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs text-white/70"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-orange-400" />
+                      <span className="truncate max-w-[120px]">{att.name}</span>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
             <div className="max-w-[85%] rounded-2xl bg-white/[0.08] px-4 py-2.5">
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-white/90">
                 {msg.text}

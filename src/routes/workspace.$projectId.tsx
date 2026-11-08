@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute, useNavigate, Link, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
 import { AppSidebar } from "@/components/AppSidebar";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
@@ -312,9 +312,6 @@ function WorkspacePage() {
   const [customText,           setCustomText]           = useState("");
 
   const [businessContext, setBusinessContext] = useState<BusinessContext>({});
-  // Chat is the default workspace. The original Lampcode navigation is shown
-  // here and intentionally hidden only while the preview/code side panel is open.
-  const [showNavSidebar, setShowNavSidebar] = useState(true);
 
   const socketRef               = useRef<Socket | null>(null);
   const completedRef            = useRef(false);
@@ -1355,11 +1352,11 @@ function WorkspacePage() {
   return (
     <RequireAuth>
       <SidebarProvider defaultOpen={true}>
-      <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
-
+      <div className="dark flex h-screen w-full overflow-hidden bg-[#0a0a0a]">
+        {!sidePanelOpen && <AppSidebar />}
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTopBar
-          showNavSidebar={showNavSidebar}
-          onToggleNav={() => setShowNavSidebar((v) => !v)}
+          showSidebar={!sidePanelOpen}
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
@@ -1401,8 +1398,6 @@ function WorkspacePage() {
         )}
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {showNavSidebar && !sidePanelOpen && <AppSidebar />}
-
           {/* Left: Chat column — a fixed Lovable-style width once the preview
               is open, full-width centred before it. No resizable panel and no
               collapse-to-zero: hiding the chat hides the whole column, which
@@ -1576,7 +1571,7 @@ function WorkspacePage() {
           )}
 
         </div>
-
+        </div>
       </div>
       </SidebarProvider>
     </RequireAuth>
@@ -1589,15 +1584,14 @@ function WorkspacePage() {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  showNavSidebar = false, onToggleNav,
+  showSidebar,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
   businessContext,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
-  showNavSidebar?: boolean;
-  onToggleNav?: () => void;
+  showSidebar: boolean;
   projectId: string;
   projectName: string;
   activeTab: ActiveTab;
@@ -1645,13 +1639,12 @@ function WorkspaceTopBar({
 
       {/* ── Left: brand + project ─────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-2">
-        <button
-          onClick={onToggleNav}
-          className={cn("ws-iconbtn mr-0.5", showNavSidebar && "text-orange-400 bg-white/[0.08]")}
-          title={showNavSidebar ? "Hide sidebar" : "Workspace navigation (Projects, MCP, Account)"}
-        >
-          <Menu className="h-4 w-4" />
-        </button>
+        {showSidebar && (
+          <SidebarTrigger
+            className="mr-0.5 h-8 w-8 rounded-lg text-white/65 hover:bg-white/[0.08] hover:text-white"
+            title="Toggle Lampcode navigation"
+          />
+        )}
         <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>

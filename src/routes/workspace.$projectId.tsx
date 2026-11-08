@@ -297,8 +297,13 @@ function WorkspacePage() {
   // public preview URL via Socket.IO. The iframe loads it directly: no Service
   // Workers, no COEP headers, no cross-origin isolation required.
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError,   setPreviewError]   = useState<string | null>(null);
+
+  useEffect(() => {
+    previewUrlRef.current = previewUrl;
+  }, [previewUrl]);
 
   const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
   const [isMcpActive, setIsMcpActive] = useState(false);
@@ -423,6 +428,11 @@ function WorkspacePage() {
     // Reported 2026-10-23.
     socket.on("build:replay_start", () => {
       completedRef.current = false;
+      // Joining a session that is already in progress (e.g. the first build
+      // launched from the landing composer) is still this tab's active run.
+      // Later file writes can therefore trigger its preview, while a
+      // question-only session remains chat-only because it writes no files.
+      runActiveRef.current = true;
       setMessages(prev => prev.filter(m => m.archived || m.role === "user"));
     });
 
@@ -812,7 +822,7 @@ function WorkspacePage() {
       setPreviewError(null);
       // Do not tear down or cover a working preview during a follow-up edit.
       // The new URL will replace it once the updated app is actually ready.
-      if (!previewUrl) setPreviewLoading(true);
+      if (!previewUrlRef.current) setPreviewLoading(true);
     };
     ["build:preview_loading", "build:preview_starting", "preview_loading", "preview:loading"].forEach(event => {
       socket.on(event, handlePreviewLoading);
@@ -1315,12 +1325,10 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  // Chat-first layout (Claude-style): the chat owns the screen from the
-  // first prompt — build or plain question, it makes no difference. The
-  // preview/code panel does NOT open when a build starts; it opens when the
-  // build has something to show (preview URL received, or build:complete with
-  // files), and a new prompt hands the centre back to the conversation. The
-  // top-bar tabs reopen the panel on demand at any time.
+  // Chat-first layout (Claude-style): chat is always part of the workspace.
+  // A real file-producing build opens the preview beside the conversation;
+  // follow-up questions and edits keep both mounted. A question-only response
+  // never steals focus or replaces an existing preview.
   // NOTE: declared before toggleChat below — the callback reads it, so it
   // must exist by then.
   const [sidePanelOpen, setSidePanelOpen] = useState(false);

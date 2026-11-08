@@ -625,6 +625,7 @@ function WorkspacePage() {
         : [];
       const runJustCompleted = runActiveRef.current;
       runActiveRef.current = false;
+      const filesWrittenThisRun = wroteThisRunRef.current || newFromComplete.length > 0;
 
       // Merge build:complete files into what file_write events already accumulated.
       const mergedFiles = { ...filesRef.current };
@@ -665,12 +666,17 @@ function WorkspacePage() {
       if (completePreviewUrl) {
         setIsFullstack(true);
         setPreviewError(null);
-        setPreviewUrl(completePreviewUrl);
+        // Query responses can echo an old URL. Preserve the already-running
+        // iframe unless this run actually changed app files.
+        if (filesWrittenThisRun || !previewUrlRef.current) {
+          previewUrlRef.current = completePreviewUrl;
+          setPreviewUrl(completePreviewUrl);
+        }
         setPreviewLoading(false);
       } else if (hasBackendFiles(mergedFiles)) {
         // Detect fullstack builds from file paths/content — fallback if build:backend_ready wasn't fired.
         setIsFullstack(true);
-        setPreviewLoading(true);
+        if (!previewUrlRef.current) setPreviewLoading(true);
       }
       // Chat-first: the preview panel opens HERE — when THIS RUN produced
       // something to show. Historical files restored into filesRef (a query
@@ -679,7 +685,6 @@ function WorkspacePage() {
       // A plain preview URL from a run that wrote nothing belongs to a
       // previous build — it updates the preview state but keeps the panel
       // closed so a query answer stays in the chat.
-      const filesWrittenThisRun = wroteThisRunRef.current || newFromComplete.length > 0;
       if (runJustCompleted && filesWrittenThisRun) {
         setActiveTab("preview");
         setSidePanelOpen(true);
@@ -780,13 +785,16 @@ function WorkspacePage() {
       console.log("[Preview] E2B URL received:", url);
       setIsFullstack(true);
       setPreviewError(null);
-      setPreviewUrl(url);
-      setPreviewLoading(false);
-      // A query/research response can replay or return an existing preview URL.
-      // Only a run that actually wrote app files may auto-open the preview;
-      // otherwise keep the user's conversation view exactly where it is.
+      // A query may replay the previous preview URL. Keep an already-mounted
+      // iframe untouched unless this run actually produced updated files.
       const producedFilesThisRun =
         runActiveRef.current && wroteThisRunRef.current;
+      if (producedFilesThisRun || !previewUrlRef.current) {
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+      }
+      setPreviewLoading(false);
+      // Only a file-producing run may bring the preview into view.
       if (producedFilesThisRun) {
         setActiveTab("preview");
         setSidePanelOpen(true);
@@ -817,6 +825,11 @@ function WorkspacePage() {
       console.error("[Preview] E2B sandbox error:", message);
       setIsFullstack(true);
       setPreviewLoading(false);
+      if (previewUrlRef.current) {
+        // A failed refresh must not replace the last known-good live preview.
+        toast.warning("The updated preview could not start. Keeping the last working preview.");
+        return;
+      }
       setPreviewError(message);
     };
     ["build:preview_error", "preview_error", "preview:error"].forEach(event => {

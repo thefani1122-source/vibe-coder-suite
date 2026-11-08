@@ -606,7 +606,12 @@ function WorkspacePage() {
         if (latePreviewUrl) {
           setIsFullstack(true);
           setPreviewError(null);
-          setPreviewUrl(latePreviewUrl);
+          // A delayed duplicate completion may only replace the iframe when
+          // that run wrote files, or when there is no working preview yet.
+          if (wroteThisRunRef.current || !previewUrlRef.current) {
+            previewUrlRef.current = latePreviewUrl;
+            setPreviewUrl(latePreviewUrl);
+          }
           setPreviewLoading(false);
         }
         return;

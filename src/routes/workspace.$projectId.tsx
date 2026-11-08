@@ -315,6 +315,10 @@ function WorkspacePage() {
    * build:complete (page reload, history restore) must not pop the preview
    * panel for work nobody asked for in this view. */
   const runActiveRef             = useRef(false);
+  // True only for a build started in this tab (landing-page start or a
+  // follow-up submitted from this chat). A replayed query session may echo
+  // the project's existing files, which is not evidence of a new preview.
+  const runStartedInViewRef      = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
@@ -630,7 +634,9 @@ function WorkspacePage() {
         : [];
       const runJustCompleted = runActiveRef.current;
       runActiveRef.current = false;
-      const filesWrittenThisRun = wroteThisRunRef.current || newFromComplete.length > 0;
+      const filesWrittenThisRun =
+        wroteThisRunRef.current ||
+        (runStartedInViewRef.current && newFromComplete.length > 0);
 
       // Merge build:complete files into what file_write events already accumulated.
       const mergedFiles = { ...filesRef.current };
@@ -932,10 +938,13 @@ function WorkspacePage() {
     // mounts. Its prompt marker identifies that current run even when the
     // socket joins before Redis has buffered its first event (no replay_start).
     try {
-      if (window.sessionStorage.getItem(`prompt:${sessionId}`)?.trim()) {
-        runActiveRef.current = true;
-      }
-    } catch { /* session storage may be unavailable in privacy mode */ }
+      const initialPrompt = window.sessionStorage.getItem(`prompt:${sessionId}`);
+      runStartedInViewRef.current = Boolean(initialPrompt?.trim());
+      runActiveRef.current = runStartedInViewRef.current;
+    } catch {
+      runStartedInViewRef.current = false;
+      runActiveRef.current = false;
+    }
 
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
@@ -1221,6 +1230,7 @@ function WorkspacePage() {
     filesRef.current = {};
     wroteThisRunRef.current = false;
     runActiveRef.current = true;
+    runStartedInViewRef.current = true;
     // Keep existing previewUrl so edit builds do not blank out the live iframe!
     setPreviewLoading(false);
     setPreviewError(null);

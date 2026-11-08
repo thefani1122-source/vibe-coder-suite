@@ -1371,7 +1371,6 @@ function WorkspacePage() {
           onReload={() => setReloadKey(k => k + 1)}
           files={files}
           businessContext={businessContext}
-          showContextPanel={showContextPanel}
           previewUrl={previewUrl}
           codeQuery={codeQuery}
           onCodeQueryChange={setCodeQuery}
@@ -1917,18 +1916,6 @@ function ChatColumn({
             <div className="flex items-center gap-0.5">
               <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onToggleContext?.()}
-                className="relative grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
-                title="Context — screenshots and files"
-              >
-                <Files className="h-4 w-4" />
-                {attachments.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-content-center rounded-full bg-orange-500 px-0.5 text-[8px] font-semibold text-white">
-                    {attachments.length}
-                  </span>
-                )}
               </button>
             </div>
             <div className="flex items-center gap-1.5">

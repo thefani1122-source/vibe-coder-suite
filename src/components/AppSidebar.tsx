@@ -52,7 +52,9 @@ const legalNav = [
 
 export function AppSidebar() {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
-  const isActive = (path: string) => currentPath === path;
+  const isActive = (path: string) =>
+    currentPath === path ||
+    (path === "/projects" && currentPath.startsWith("/workspace/"));
   const { isAuthenticated } = useAuth();
   // Real shape from GET /api/users/me/billing (Lampcode's billing.ts) — usage
   // is billed in real USD, not an integer credit count.

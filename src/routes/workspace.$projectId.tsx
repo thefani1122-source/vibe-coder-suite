@@ -928,6 +928,15 @@ function WorkspacePage() {
       } catch { /* ignore */ }
     }
 
+    // The first build starts on the landing page before this workspace
+    // mounts. Its prompt marker identifies that current run even when the
+    // socket joins before Redis has buffered its first event (no replay_start).
+    try {
+      if (window.sessionStorage.getItem(`prompt:${sessionId}`)?.trim()) {
+        runActiveRef.current = true;
+      }
+    } catch { /* session storage may be unavailable in privacy mode */ }
+
     const socket = createBuildSocket(sessionId);
     socketRef.current = socket;
 

@@ -3,6 +3,8 @@ import { createFileRoute, useNavigate, Link, useRouterState } from "@tanstack/re
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
+import { AppSidebar } from "@/components/AppSidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
@@ -24,7 +26,6 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
-import { ContextSidePanel, type WorkspaceAttachment } from "@/components/ContextSidePanel";
 import { createBuildSocket } from "@/lib/websocket";
 import {
   apiGet, apiPost,
@@ -33,11 +34,11 @@ import {
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Plus,
+  ArrowUp, ChevronDown,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
-  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download, Files,
-  Square, ExternalLink, Link2, X, Menu, LayoutDashboard, FolderGit2, Plug, Settings, CreditCard, BarChart3, Tag,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
+  Square, ExternalLink, Link2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -310,57 +311,10 @@ function WorkspacePage() {
   const [selectedOptions,      setSelectedOptions]      = useState<Set<string>>(new Set());
   const [customText,           setCustomText]           = useState("");
 
-  const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
-  const [showContextPanel,  setShowContextPanel]  = useState(false);
-  /* Attachment store for the Context panel — the declarations were lost in
-   * the chat-first refactor, which made the whole workspace page throw on
-   * render and on submit (ReferenceError -> "This page didn't load"). */
-  const [attachments,        setAttachments]     = useState<WorkspaceAttachment[]>([]);
-  const [showAiContext,      setShowAiContext]   = useState(false);
-  const [showNavSidebar,    setShowNavSidebar]  = useState(false);
-
-  // ── Attachments ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(`attachments:${projectId}`);
-      setAttachments(raw ? (JSON.parse(raw) as WorkspaceAttachment[]) : []);
-    } catch { /* ignore */ }
-  }, [projectId]);
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(`attachments:${projectId}`, JSON.stringify(attachments));
-    } catch { /* ignore */ }
-  }, [attachments, projectId]);
-
-  const handleAttach = useCallback((files: File[]) => {
-    if (files.length === 0) return;
-    const stamp = Date.now();
-    const added: WorkspaceAttachment[] = files.map((f, i) => ({
-      id: `${stamp}-${i}-${Math.random().toString(36).slice(2, 8)}`,
-      name: f.name,
-      size: f.size,
-      type: f.type,
-      addedAt: stamp,
-    }));
-    setAttachments(prev => [...prev, ...added]);
-    // Thumbnails for images small enough to keep inline — presentation only.
-    files.forEach((file, i) => {
-      if (file.type.startsWith("image/") && file.size <= 8 * 1024 * 1024) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const url = typeof reader.result === "string" ? reader.result : undefined;
-          setAttachments(prev => prev.map(a => (a.id === added[i].id ? { ...a, dataUrl: url } : a)));
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-    toast.success(`${files.length} file${files.length > 1 ? "s" : ""} added to context`);
-  }, []);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
+  const [businessContext, setBusinessContext] = useState<BusinessContext>({});
+  // Chat is the default workspace. The original Lampcode navigation is shown
+  // here and intentionally hidden only while the preview/code side panel is open.
+  const [showNavSidebar, setShowNavSidebar] = useState(true);
 
   const socketRef               = useRef<Socket | null>(null);
   const completedRef            = useRef(false);
@@ -822,11 +776,13 @@ function WorkspacePage() {
     });
 
     socket.on("build:backend_ready", () => {
-      console.log("[FRONTEND] build:backend_ready received — switching to E2B preview");
+      console.log("[FRONTEND] build:backend_ready received");
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
-      setPreviewLoading(true);
+      // Keep an existing preview visible throughout follow-up work. A first
+      // preview shows its loading state, but the chat remains the active view
+      // until the sandbox URL for a file-producing build is ready.
+      if (!previewUrl) setPreviewLoading(true);
     });
 
     // E2B sandbox preview — the backend emits the public URL once the sandbox
@@ -836,12 +792,18 @@ function WorkspacePage() {
       if (!url) return;
       console.log("[Preview] E2B URL received:", url);
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
       setPreviewUrl(url);
       setPreviewLoading(false);
-      // The preview exists now — this is the moment the panel is worth.
-      setSidePanelOpen(true);
+      // A query/research response can replay or return an existing preview URL.
+      // Only a run that actually wrote app files may auto-open the preview;
+      // otherwise keep the user's conversation view exactly where it is.
+      const producedFilesThisRun =
+        runActiveRef.current && wroteThisRunRef.current;
+      if (producedFilesThisRun) {
+        setActiveTab("preview");
+        setSidePanelOpen(true);
+      }
     };
     ["build:preview_url", "build:preview_ready", "build:preview", "preview_url", "preview_ready", "preview:ready"].forEach(event => {
       socket.on(event, handlePreviewUrl);
@@ -850,10 +812,10 @@ function WorkspacePage() {
     const handlePreviewLoading = () => {
       console.log("[Preview] E2B sandbox starting…");
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
-      setPreviewLoading(true);
-      setPreviewUrl(null);
+      // Do not tear down or cover a working preview during a follow-up edit.
+      // The new URL will replace it once the updated app is actually ready.
+      if (!previewUrl) setPreviewLoading(true);
     };
     ["build:preview_loading", "build:preview_starting", "preview_loading", "preview:loading"].forEach(event => {
       socket.on(event, handlePreviewLoading);
@@ -867,7 +829,6 @@ function WorkspacePage() {
         : "Preview failed";
       console.error("[Preview] E2B sandbox error:", message);
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewLoading(false);
       setPreviewError(message);
     };
@@ -1223,12 +1184,7 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const attachmentContext = attachments.length > 0
-      ? "\n\n---\nFiles the user attached (visible in the Context panel):\n" +
-        attachments.map(a => `- ${a.name} (${a.type || "file"}, ${Math.max(1, Math.round(a.size / 1024))} KB)`).join("\n")
-      : "";
-
-    const enrichedPrompt = prompt + answerContext + attachmentContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
     // Everything on screen belongs to a build that has finished. Mark it so
     // the new session's replay cannot clear it (see build:replay_start), and
@@ -1239,7 +1195,6 @@ function WorkspacePage() {
         type: "text",
         text: prompt,
         role: "user",
-        attachments: attachments.map(a => ({ id: a.id, name: a.name, dataUrl: a.dataUrl, type: a.type })),
       }),
     ]);
     setActivity("Thinking...");
@@ -1256,14 +1211,9 @@ function WorkspacePage() {
     setPreviewLoading(false);
     setPreviewError(null);
 
-    const imageAndDocAttachments = attachments
-      .map(a => a.dataUrl || a.name)
-      .filter(Boolean);
-
     const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
       project_id: projectId,
       prompt: enrichedPrompt,
-      attachments: imageAndDocAttachments.length > 0 ? imageAndDocAttachments : undefined,
     });
 
     const newSessionId = (
@@ -1287,7 +1237,7 @@ function WorkspacePage() {
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers, sessionId, attachments]);
+  }, [projectId, registerHandlers, sessionId]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -1404,6 +1354,7 @@ function WorkspacePage() {
 
   return (
     <RequireAuth>
+      <SidebarProvider defaultOpen={true}>
       <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
 
         <WorkspaceTopBar
@@ -1451,9 +1402,7 @@ function WorkspacePage() {
         )}
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {showNavSidebar && (
-            <WorkspaceNavSidebar onClose={() => setShowNavSidebar(false)} />
-          )}
+          {showNavSidebar && !sidePanelOpen && <AppSidebar />}
 
           {/* Left: Chat column — a fixed Lovable-style width once the preview
               is open, full-width centred before it. No resizable panel and no
@@ -1479,10 +1428,6 @@ function WorkspacePage() {
                 projectName={projectName}
                 centered={!sidePanelOpen}
                 isClarifying={isClarifying}
-                attachments={attachments}
-                onAttach={handleAttach}
-                onRemoveAttachment={removeAttachment}
-                onToggleContext={() => setShowContextPanel(v => !v)}
                 pendingWrites={pendingWrites}
                 onWriteDecision={(toolCallId, approved) => {
                   // Answering is what unblocks the build — the backend is
@@ -1631,113 +1576,14 @@ function WorkspacePage() {
             </div>
           )}
 
-          {/* Right edge: the user's uploads — screenshots and files kept for
-              this project, Lovable-style. A real column, not an overlay, so
-              it can never float over or peek behind the chat. */}
-          {showContextPanel && (
-            <ContextSidePanel
-              projectName={displayName}
-              attachments={attachments}
-              onAdd={handleAttach}
-              onRemove={removeAttachment}
-              onClose={() => setShowContextPanel(false)}
-            />
-          )}
         </div>
 
-      {showAiContext && (
-        <BusinessContextPanel
-          projectId={projectId}
-          initial={businessContext}
-          onClose={() => setShowAiContext(false)}
-          onSaved={setBusinessContext}
-        />
-      )}
       </div>
+      </SidebarProvider>
     </RequireAuth>
   );
 }
 
-
-function WorkspaceNavSidebar({ onClose }: { onClose: () => void }) {
-  const currentPath = useRouterState({ select: (s) => s.location.pathname });
-  const isActive = (path: string) => currentPath === path;
-
-  return (
-    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-white/[0.08] bg-[#0c0c10] text-white">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-        <div className="flex items-center gap-2">
-          <BrandMark />
-          <span className="text-sm font-bold tracking-tight text-white">Lampcode</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="grid h-7 w-7 place-content-center rounded-lg text-white/40 hover:bg-white/[0.06] hover:text-white"
-          title="Close sidebar"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10">
-        <div>
-          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Workspace
-          </div>
-          <div className="space-y-1">
-            {[
-              { title: "Dashboard", url: "/", icon: LayoutDashboard },
-              { title: "My Projects", url: "/projects", icon: FolderGit2 },
-              { title: "MCP Connectors", url: "/mcp", icon: Plug },
-            ].map((item) => (
-              <Link
-                key={item.title}
-                to={item.url}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
-                  isActive(item.url)
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
-                )}
-              >
-                <item.icon className="h-4 w-4 text-orange-400/80" />
-                <span>{item.title}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Account & Settings
-          </div>
-          <div className="space-y-1">
-            {[
-              { title: "Settings", url: "/settings", icon: Settings },
-              { title: "Billing", url: "/billing", icon: CreditCard },
-              { title: "Usage", url: "/usage", icon: BarChart3 },
-              { title: "Pricing", url: "/pricing", icon: Tag },
-            ].map((item) => (
-              <Link
-                key={item.title}
-                to={item.url}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
-                  isActive(item.url)
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
-                )}
-              >
-                <item.icon className="h-4 w-4 text-white/50" />
-                <span>{item.title}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Top Bar                                                                     */
@@ -1747,7 +1593,7 @@ function WorkspaceTopBar({
   showNavSidebar = false, onToggleNav,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
-  businessContext, showContextPanel,
+  businessContext,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
@@ -1764,7 +1610,6 @@ function WorkspaceTopBar({
   onReload: () => void;
   files: Record<string, string>;
   businessContext: BusinessContext;
-  showContextPanel: boolean;
   previewUrl: string | null;
   codeQuery: string;
   onCodeQueryChange: (v: string) => void;
@@ -1815,7 +1660,7 @@ function WorkspaceTopBar({
             vibe coder · ui-2026-11-04b
           </span>
         </div>
-        {hasFilledContext(businessContext) && !showContextPanel && (
+        {hasFilledContext(businessContext) && (
           <span className="hidden lg:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
             🧠 AI context
           </span>
@@ -1954,7 +1799,6 @@ function ChatColumn({
   receipt, receiptSessionId, checks, activity,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   centered = false,
-  attachments = [], onAttach, onRemoveAttachment, onToggleContext,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
@@ -1971,11 +1815,6 @@ function ChatColumn({
   /** Chat-first mode: the conversation is centred like ChatGPT instead of
    *  hugging the edge of a split view. */
   centered?: boolean;
-  /** Uploaded context files for this project (names + local thumbnails). */
-  attachments?: WorkspaceAttachment[];
-  onAttach?: (files: File[]) => void;
-  onRemoveAttachment?: (id: string) => void;
-  onToggleContext?: () => void;
   isClarifying?: boolean;
   /** Destructive tool calls the build is currently blocked on. */
   pendingWrites?: PendingWriteAction[];
@@ -1992,7 +1831,6 @@ function ChatColumn({
     () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
     [receipt, receiptSessionId, checks],
   );
-  const fileRef = useRef<HTMLInputElement>(null);
   void currentAgent;
 
   const handleSend = () => {
@@ -2057,41 +1895,9 @@ function ChatColumn({
         </div>
       ))}
 
-      {/* Attachment chips — what will ride along with the next prompt. */}
-      {attachments.length > 0 && (
-        <div className={cn("flex flex-wrap gap-1.5 px-3 pb-1", centered && "mx-auto w-full max-w-3xl")}>
-          {attachments.map(a => (
-            <span
-              key={a.id}
-              className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] py-1 pl-2 pr-1 text-[11px] text-white/70"
-            >
-              {a.dataUrl ? (
-                <img src={a.dataUrl} alt={a.name} className="h-4 w-4 shrink-0 rounded object-cover border border-white/20" />
-              ) : (
-                <Files className="h-3 w-3 shrink-0 text-orange-400/80" />
-              )}
-              <span className="truncate">{a.name}</span>
-              <button
-                onClick={() => onRemoveAttachment?.(a.id)}
-                className="grid h-4 w-4 shrink-0 place-content-center rounded-full text-white/45 transition hover:bg-white/10 hover:text-white/90"
-                title="Remove"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Input bar */}
       <div className="shrink-0 p-3">
         <div
-          onDragOver={(e) => { e.preventDefault(); }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const dropped = Array.from(e.dataTransfer.files ?? []);
-            if (dropped.length > 0) onAttach?.(dropped);
-          }}
           className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}
         >
           <textarea
@@ -2103,52 +1909,12 @@ function ChatColumn({
                 handleSend();
               }
             }}
-            onPaste={(e) => {
-              const clipboardItems = e.clipboardData?.items;
-              if (!clipboardItems) return;
-              const filesToAttach: File[] = [];
-              for (let i = 0; i < clipboardItems.length; i++) {
-                const item = clipboardItems[i];
-                if (item.type.startsWith("image/")) {
-                  const blob = item.getAsFile();
-                  if (blob) {
-                    const ext = blob.type.split("/")[1]?.replace("+xml", "") || "png";
-                    const file = new File([blob], `screenshot-${Date.now()}.${ext}`, { type: blob.type });
-                    filesToAttach.push(file);
-                  }
-                }
-              }
-              if (filesToAttach.length > 0) {
-                e.preventDefault();
-                onAttach?.(filesToAttach);
-                toast.success(`${filesToAttach.length} screenshot${filesToAttach.length > 1 ? "s" : ""} pasted to context`);
-              }
-            }}
-            placeholder="Ask Lampcode… (Paste screenshots or type prompt)"
+            placeholder="Ask Lampcode anything or describe what you want to build…"
             rows={3}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
-                title="Attach image or file"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                hidden
-                multiple
-                accept="image/*,.pdf,.txt,.md,.json,.csv"
-                onChange={e => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (files.length > 0) onAttach?.(files);
-                  e.target.value = "";
-                }}
-              />
               <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
               </button>

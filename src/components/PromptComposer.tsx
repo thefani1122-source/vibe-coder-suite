@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";
 import { apiPost, ApiError } from "@/lib/api";
@@ -12,8 +12,6 @@ import {
   Sparkles,
   Link2,
   X,
-  Plus,
-  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,10 +29,8 @@ export function PromptComposer() {
   const [urlOpen, setUrlOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [attachments, setAttachments] = useState<{ id: string; file: File; url?: string }[]>([]);
   const [animatedIdea, setAnimatedIdea] = useState("");
   const [ideaIndex, setIdeaIndex] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -79,25 +75,6 @@ export function PromptComposer() {
       clearTimeout(next);
     };
   }, [ideaIndex, value]);
-
-  const onFiles = (files: FileList | null) => {
-    if (!files) return;
-    const next = Array.from(files).slice(0, 5).map((file) => ({
-      id: `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 7)}`,
-      file,
-      url: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
-    }));
-    setAttachments((prev) => [...prev, ...next].slice(0, 5));
-    if (next.length) toast.success(`${next.length} file${next.length > 1 ? "s" : ""} attached`);
-  };
-
-  const removeAttachment = (id: string) => {
-    setAttachments((prev) => {
-      const target = prev.find((a) => a.id === id);
-      if (target?.url) URL.revokeObjectURL(target.url);
-      return prev.filter((a) => a.id !== id);
-    });
-  };
 
   const submit = async () => {
     if (!value.trim() || submitting) return;
@@ -169,37 +146,11 @@ export function PromptComposer() {
           What should we build today
         </h1>
         <p className="mt-3 text-sm text-muted-foreground">
-          Describe an app, paste a screenshot, or drop a file — we&apos;ll vibe it into existence.
+          Ask a question, explore an idea, review code, or describe what you want to build.
         </p>
       </div>
 
       <div className="group relative w-full rounded-2xl border border-border bg-card/60 shadow-2xl shadow-black/40 backdrop-blur-xl transition focus-within:border-primary/60 focus-within:shadow-[var(--shadow-glow)]">
-        {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 pt-4">
-            {attachments.map((a) => (
-              <div key={a.id} className="group/att relative flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 p-1.5 pr-2">
-                {a.url ? (
-                  <img src={a.url} alt={a.file.name} className="h-10 w-10 rounded object-cover" />
-                ) : (
-                  <div className="grid h-10 w-10 place-content-center rounded bg-muted text-muted-foreground">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                )}
-                <div className="flex max-w-[140px] flex-col text-xs">
-                  <span className="truncate font-medium">{a.file.name}</span>
-                  <span className="text-[10px] text-muted-foreground">{(a.file.size / 1024).toFixed(1)} KB</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(a.id)}
-                  className="ml-1 grid h-5 w-5 place-content-center rounded-full bg-background/80 text-muted-foreground opacity-0 transition group-hover/att:opacity-100 hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
         <Textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -212,17 +163,7 @@ export function PromptComposer() {
           placeholder={value ? "" : `Build me ${animatedIdea}${animatedIdea ? "|" : "a..."}`}
           className="min-h-[120px] resize-none border-0 bg-transparent px-5 pt-5 pb-2 text-base shadow-none focus-visible:ring-0"
         />
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/*,.pdf,.txt,.md,.json,.csv"
-          hidden
-          onChange={(e) => {
-            onFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
+
 
         {urlOpen && (
           <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2">
@@ -243,18 +184,6 @@ export function PromptComposer() {
 
         <div className="flex items-center justify-between gap-2 px-3 pb-3">
           <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="grid h-8 w-8 place-content-center rounded-md text-muted-foreground transition hover:bg-card hover:text-foreground"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Attach images or files</TooltipContent>
-            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button

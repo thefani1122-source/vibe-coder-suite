@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createFileRoute, useNavigate, Link, useRouterState } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/BrandMark";
+import { AppSidebar } from "@/components/AppSidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
@@ -24,7 +26,6 @@ import { FileTree } from "@/components/FileTree";
 import { SandpackPreview } from "@/components/SandpackPreview";
 import { E2BPreview } from "@/components/E2BPreview";
 import { HistoryPanel } from "@/components/HistoryPanel";
-import { ContextSidePanel, type WorkspaceAttachment } from "@/components/ContextSidePanel";
 import { createBuildSocket } from "@/lib/websocket";
 import {
   apiGet, apiPost,
@@ -33,11 +34,11 @@ import {
 } from "@/lib/api";
 import { useAuthStore } from "@/lib/auth";
 import {
-  ArrowUp, ChevronDown, Plus,
+  ArrowUp, ChevronDown,
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
-  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download, Files,
-  Square, ExternalLink, Link2, X, Menu, LayoutDashboard, FolderGit2, Plug, Settings, CreditCard, BarChart3, Tag,
+  History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
+  Square, ExternalLink, Link2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -223,21 +224,6 @@ function looksTruncated(path: string, content: string): boolean {
 }
 
 
-// ── Business context ─────────────────────────────────────────────────────────
-
-type BusinessContext = {
-  appDescription?: string;
-  userType?: string;
-  isMultiTenant?: boolean;
-  hasPaidFeatures?: boolean;
-  industry?: string;
-};
-
-function hasFilledContext(bc: BusinessContext): boolean {
-  return !!(bc.appDescription || bc.userType || bc.industry ||
-    bc.isMultiTenant !== undefined || bc.hasPaidFeatures !== undefined);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Page                                                                       */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -296,8 +282,13 @@ function WorkspacePage() {
   // public preview URL via Socket.IO. The iframe loads it directly: no Service
   // Workers, no COEP headers, no cross-origin isolation required.
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError,   setPreviewError]   = useState<string | null>(null);
+
+  useEffect(() => {
+    previewUrlRef.current = previewUrl;
+  }, [previewUrl]);
 
   const [mcpEvents,   setMcpEvents]   = useState<McpEvent[]>([]);
   const [isMcpActive, setIsMcpActive] = useState(false);
@@ -309,58 +300,6 @@ function WorkspacePage() {
   const [isClarifying,         setIsClarifying]         = useState(false);
   const [selectedOptions,      setSelectedOptions]      = useState<Set<string>>(new Set());
   const [customText,           setCustomText]           = useState("");
-
-  const [businessContext,   setBusinessContext]   = useState<BusinessContext>({});
-  const [showContextPanel,  setShowContextPanel]  = useState(false);
-  /* Attachment store for the Context panel — the declarations were lost in
-   * the chat-first refactor, which made the whole workspace page throw on
-   * render and on submit (ReferenceError -> "This page didn't load"). */
-  const [attachments,        setAttachments]     = useState<WorkspaceAttachment[]>([]);
-  const [showAiContext,      setShowAiContext]   = useState(false);
-  const [showNavSidebar,    setShowNavSidebar]  = useState(false);
-
-  // ── Attachments ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(`attachments:${projectId}`);
-      setAttachments(raw ? (JSON.parse(raw) as WorkspaceAttachment[]) : []);
-    } catch { /* ignore */ }
-  }, [projectId]);
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(`attachments:${projectId}`, JSON.stringify(attachments));
-    } catch { /* ignore */ }
-  }, [attachments, projectId]);
-
-  const handleAttach = useCallback((files: File[]) => {
-    if (files.length === 0) return;
-    const stamp = Date.now();
-    const added: WorkspaceAttachment[] = files.map((f, i) => ({
-      id: `${stamp}-${i}-${Math.random().toString(36).slice(2, 8)}`,
-      name: f.name,
-      size: f.size,
-      type: f.type,
-      addedAt: stamp,
-    }));
-    setAttachments(prev => [...prev, ...added]);
-    // Thumbnails for images small enough to keep inline — presentation only.
-    files.forEach((file, i) => {
-      if (file.type.startsWith("image/") && file.size <= 8 * 1024 * 1024) {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const url = typeof reader.result === "string" ? reader.result : undefined;
-          setAttachments(prev => prev.map(a => (a.id === added[i].id ? { ...a, dataUrl: url } : a)));
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-    toast.success(`${files.length} file${files.length > 1 ? "s" : ""} added to context`);
-  }, []);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
 
   const socketRef               = useRef<Socket | null>(null);
   const completedRef            = useRef(false);
@@ -376,22 +315,24 @@ function WorkspacePage() {
    * build:complete (page reload, history restore) must not pop the preview
    * panel for work nobody asked for in this view. */
   const runActiveRef             = useRef(false);
+  // True only for a build started in this tab (landing-page start or a
+  // follow-up submitted from this chat). A replayed query session may echo
+  // the project's existing files, which is not evidence of a new preview.
+  const runStartedInViewRef      = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const pendingPromptRef        = useRef<string>("");
   const rebuildFnRef            = useRef<(() => void) | null>(null);
 
   // Fetch project name with auth via apiGet (handles token automatically).
-  // API returns { project: { name, description } }; fall back to flat shapes.
+  // Fetch the project title for the chat and preview header.
   useEffect(() => {
-    apiGet<{ project?: { name?: string; description?: string; businessContext?: BusinessContext }; name?: string; title?: string }>(
+    apiGet<{ project?: { name?: string; description?: string }; name?: string; title?: string }>(
       `/api/projects/${projectId}`,
       { silent: true },
     )
       .then(d => {
         const name = d?.project?.name ?? d?.name ?? d?.title;
         if (name) setProjectName(name);
-        const bc = d?.project?.businessContext;
-        if (bc && typeof bc === "object") setBusinessContext(bc);
       })
       .catch(() => {});
   }, [projectId]);
@@ -472,6 +413,11 @@ function WorkspacePage() {
     // Reported 2026-10-23.
     socket.on("build:replay_start", () => {
       completedRef.current = false;
+      // Joining a session that is already in progress (e.g. the first build
+      // launched from the landing composer) is still this tab's active run.
+      // Later file writes can therefore trigger its preview, while a
+      // question-only session remains chat-only because it writes no files.
+      runActiveRef.current = true;
       setMessages(prev => prev.filter(m => m.archived || m.role === "user"));
     });
 
@@ -663,9 +609,13 @@ function WorkspacePage() {
         const latePreviewUrl = extractPreviewUrl(data);
         if (latePreviewUrl) {
           setIsFullstack(true);
-          setActiveTab("preview");
           setPreviewError(null);
-          setPreviewUrl(latePreviewUrl);
+          // A delayed duplicate completion may only replace the iframe when
+          // that run wrote files, or when there is no working preview yet.
+          if (wroteThisRunRef.current || !previewUrlRef.current) {
+            previewUrlRef.current = latePreviewUrl;
+            setPreviewUrl(latePreviewUrl);
+          }
           setPreviewLoading(false);
         }
         return;
@@ -684,6 +634,9 @@ function WorkspacePage() {
         : [];
       const runJustCompleted = runActiveRef.current;
       runActiveRef.current = false;
+      const filesWrittenThisRun =
+        wroteThisRunRef.current ||
+        (runStartedInViewRef.current && newFromComplete.length > 0);
 
       // Merge build:complete files into what file_write events already accumulated.
       const mergedFiles = { ...filesRef.current };
@@ -703,7 +656,6 @@ function WorkspacePage() {
       setBuildStatus("complete");
       setCurrentAgent(undefined);
       setNewFiles(new Set());
-      setActiveTab("preview");
       // Add summary as assistant message for history persistence. A query
       // answer already streamed live through build:message; the same text
       // arrives again as the completion summary, so replace the streamed copy
@@ -725,12 +677,17 @@ function WorkspacePage() {
       if (completePreviewUrl) {
         setIsFullstack(true);
         setPreviewError(null);
-        setPreviewUrl(completePreviewUrl);
+        // Query responses can echo an old URL. Preserve the already-running
+        // iframe unless this run actually changed app files.
+        if (filesWrittenThisRun || !previewUrlRef.current) {
+          previewUrlRef.current = completePreviewUrl;
+          setPreviewUrl(completePreviewUrl);
+        }
         setPreviewLoading(false);
       } else if (hasBackendFiles(mergedFiles)) {
         // Detect fullstack builds from file paths/content — fallback if build:backend_ready wasn't fired.
         setIsFullstack(true);
-        setPreviewLoading(true);
+        if (!previewUrlRef.current) setPreviewLoading(true);
       }
       // Chat-first: the preview panel opens HERE — when THIS RUN produced
       // something to show. Historical files restored into filesRef (a query
@@ -739,8 +696,8 @@ function WorkspacePage() {
       // A plain preview URL from a run that wrote nothing belongs to a
       // previous build — it updates the preview state but keeps the panel
       // closed so a query answer stays in the chat.
-      const filesWrittenThisRun = wroteThisRunRef.current || newFromComplete.length > 0;
       if (runJustCompleted && filesWrittenThisRun) {
+        setActiveTab("preview");
         setSidePanelOpen(true);
       }
     });
@@ -822,11 +779,13 @@ function WorkspacePage() {
     });
 
     socket.on("build:backend_ready", () => {
-      console.log("[FRONTEND] build:backend_ready received — switching to E2B preview");
+      console.log("[FRONTEND] build:backend_ready received");
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
-      setPreviewLoading(true);
+      // Keep an existing preview visible throughout follow-up work. A first
+      // preview shows its loading state, but the chat remains the active view
+      // until the sandbox URL for a file-producing build is ready.
+      if (!previewUrlRef.current) setPreviewLoading(true);
     });
 
     // E2B sandbox preview — the backend emits the public URL once the sandbox
@@ -836,12 +795,21 @@ function WorkspacePage() {
       if (!url) return;
       console.log("[Preview] E2B URL received:", url);
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
-      setPreviewUrl(url);
+      // A query may replay the previous preview URL. Keep an already-mounted
+      // iframe untouched unless this run actually produced updated files.
+      const producedFilesThisRun =
+        runActiveRef.current && wroteThisRunRef.current;
+      if (producedFilesThisRun || !previewUrlRef.current) {
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+      }
       setPreviewLoading(false);
-      // The preview exists now — this is the moment the panel is worth.
-      setSidePanelOpen(true);
+      // Only a file-producing run may bring the preview into view.
+      if (producedFilesThisRun) {
+        setActiveTab("preview");
+        setSidePanelOpen(true);
+      }
     };
     ["build:preview_url", "build:preview_ready", "build:preview", "preview_url", "preview_ready", "preview:ready"].forEach(event => {
       socket.on(event, handlePreviewUrl);
@@ -850,10 +818,10 @@ function WorkspacePage() {
     const handlePreviewLoading = () => {
       console.log("[Preview] E2B sandbox starting…");
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewError(null);
-      setPreviewLoading(true);
-      setPreviewUrl(null);
+      // Do not tear down or cover a working preview during a follow-up edit.
+      // The new URL will replace it once the updated app is actually ready.
+      if (!previewUrlRef.current) setPreviewLoading(true);
     };
     ["build:preview_loading", "build:preview_starting", "preview_loading", "preview:loading"].forEach(event => {
       socket.on(event, handlePreviewLoading);
@@ -867,8 +835,12 @@ function WorkspacePage() {
         : "Preview failed";
       console.error("[Preview] E2B sandbox error:", message);
       setIsFullstack(true);
-      setActiveTab("preview");
       setPreviewLoading(false);
+      if (previewUrlRef.current) {
+        // A failed refresh must not replace the last known-good live preview.
+        toast.warning("The updated preview could not start. Keeping the last working preview.");
+        return;
+      }
       setPreviewError(message);
     };
     ["build:preview_error", "preview_error", "preview:error"].forEach(event => {
@@ -960,6 +932,18 @@ function WorkspacePage() {
           }
         }
       } catch { /* ignore */ }
+    }
+
+    // The first build starts on the landing page before this workspace
+    // mounts. Its prompt marker identifies that current run even when the
+    // socket joins before Redis has buffered its first event (no replay_start).
+    try {
+      const initialPrompt = window.sessionStorage.getItem(`prompt:${sessionId}`);
+      runStartedInViewRef.current = Boolean(initialPrompt?.trim());
+      runActiveRef.current = runStartedInViewRef.current;
+    } catch {
+      runStartedInViewRef.current = false;
+      runActiveRef.current = false;
     }
 
     const socket = createBuildSocket(sessionId);
@@ -1223,12 +1207,7 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const attachmentContext = attachments.length > 0
-      ? "\n\n---\nFiles the user attached (visible in the Context panel):\n" +
-        attachments.map(a => `- ${a.name} (${a.type || "file"}, ${Math.max(1, Math.round(a.size / 1024))} KB)`).join("\n")
-      : "";
-
-    const enrichedPrompt = prompt + answerContext + attachmentContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
 
     // Everything on screen belongs to a build that has finished. Mark it so
     // the new session's replay cannot clear it (see build:replay_start), and
@@ -1239,7 +1218,6 @@ function WorkspacePage() {
         type: "text",
         text: prompt,
         role: "user",
-        attachments: attachments.map(a => ({ id: a.id, name: a.name, dataUrl: a.dataUrl, type: a.type })),
       }),
     ]);
     setActivity("Thinking...");
@@ -1252,18 +1230,14 @@ function WorkspacePage() {
     filesRef.current = {};
     wroteThisRunRef.current = false;
     runActiveRef.current = true;
+    runStartedInViewRef.current = true;
     // Keep existing previewUrl so edit builds do not blank out the live iframe!
     setPreviewLoading(false);
     setPreviewError(null);
 
-    const imageAndDocAttachments = attachments
-      .map(a => a.dataUrl || a.name)
-      .filter(Boolean);
-
     const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
       project_id: projectId,
       prompt: enrichedPrompt,
-      attachments: imageAndDocAttachments.length > 0 ? imageAndDocAttachments : undefined,
     });
 
     const newSessionId = (
@@ -1287,7 +1261,7 @@ function WorkspacePage() {
     const newSocket = createBuildSocket(newSessionId);
     socketRef.current = newSocket;
     registerHandlers(newSocket);
-  }, [projectId, registerHandlers, sessionId, attachments]);
+  }, [projectId, registerHandlers, sessionId]);
 
   // Entry point from ChatColumn — runs clarification check first.
   const handleFollowUp = useCallback(async (prompt: string) => {
@@ -1368,12 +1342,10 @@ function WorkspacePage() {
 
   const isBuilding = buildStatus === "running";
 
-  // Chat-first layout (Claude-style): the chat owns the screen from the
-  // first prompt — build or plain question, it makes no difference. The
-  // preview/code panel does NOT open when a build starts; it opens when the
-  // build has something to show (preview URL received, or build:complete with
-  // files), and a new prompt hands the centre back to the conversation. The
-  // top-bar tabs reopen the panel on demand at any time.
+  // Chat-first layout (Claude-style): chat is always part of the workspace.
+  // A real file-producing build opens the preview beside the conversation;
+  // follow-up questions and edits keep both mounted. A question-only response
+  // never steals focus or replaces an existing preview.
   // NOTE: declared before toggleChat below — the callback reads it, so it
   // must exist by then.
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
@@ -1404,11 +1376,12 @@ function WorkspacePage() {
 
   return (
     <RequireAuth>
-      <div className="dark flex h-screen w-full flex-col overflow-hidden bg-[#0a0a0a]">
-
+      <SidebarProvider defaultOpen={true}>
+      <div className="dark flex h-screen w-full overflow-hidden bg-[#0a0a0a]">
+        {!sidePanelOpen && <AppSidebar />}
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTopBar
-          showNavSidebar={showNavSidebar}
-          onToggleNav={() => setShowNavSidebar((v) => !v)}
+          showSidebar={!sidePanelOpen}
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
@@ -1419,8 +1392,6 @@ function WorkspacePage() {
           buildStatus={buildStatus}
           onReload={() => setReloadKey(k => k + 1)}
           files={files}
-          businessContext={businessContext}
-          showContextPanel={showContextPanel}
           previewUrl={previewUrl}
           codeQuery={codeQuery}
           onCodeQueryChange={setCodeQuery}
@@ -1451,10 +1422,6 @@ function WorkspacePage() {
         )}
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {showNavSidebar && (
-            <WorkspaceNavSidebar onClose={() => setShowNavSidebar(false)} />
-          )}
-
           {/* Left: Chat column — a fixed Lovable-style width once the preview
               is open, full-width centred before it. No resizable panel and no
               collapse-to-zero: hiding the chat hides the whole column, which
@@ -1479,10 +1446,6 @@ function WorkspacePage() {
                 projectName={projectName}
                 centered={!sidePanelOpen}
                 isClarifying={isClarifying}
-                attachments={attachments}
-                onAttach={handleAttach}
-                onRemoveAttachment={removeAttachment}
-                onToggleContext={() => setShowContextPanel(v => !v)}
                 pendingWrites={pendingWrites}
                 onWriteDecision={(toolCallId, approved) => {
                   // Answering is what unblocks the build — the backend is
@@ -1631,128 +1594,27 @@ function WorkspacePage() {
             </div>
           )}
 
-          {/* Right edge: the user's uploads — screenshots and files kept for
-              this project, Lovable-style. A real column, not an overlay, so
-              it can never float over or peek behind the chat. */}
-          {showContextPanel && (
-            <ContextSidePanel
-              projectName={displayName}
-              attachments={attachments}
-              onAdd={handleAttach}
-              onRemove={removeAttachment}
-              onClose={() => setShowContextPanel(false)}
-            />
-          )}
         </div>
-
-      {showAiContext && (
-        <BusinessContextPanel
-          projectId={projectId}
-          initial={businessContext}
-          onClose={() => setShowAiContext(false)}
-          onSaved={setBusinessContext}
-        />
-      )}
+        </div>
       </div>
+      </SidebarProvider>
     </RequireAuth>
   );
 }
 
-
-function WorkspaceNavSidebar({ onClose }: { onClose: () => void }) {
-  const currentPath = useRouterState({ select: (s) => s.location.pathname });
-  const isActive = (path: string) => currentPath === path;
-
-  return (
-    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-white/[0.08] bg-[#0c0c10] text-white">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-        <div className="flex items-center gap-2">
-          <BrandMark />
-          <span className="text-sm font-bold tracking-tight text-white">Lampcode</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="grid h-7 w-7 place-content-center rounded-lg text-white/40 hover:bg-white/[0.06] hover:text-white"
-          title="Close sidebar"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin scrollbar-thumb-white/10">
-        <div>
-          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Workspace
-          </div>
-          <div className="space-y-1">
-            {[
-              { title: "Dashboard", url: "/", icon: LayoutDashboard },
-              { title: "My Projects", url: "/projects", icon: FolderGit2 },
-              { title: "MCP Connectors", url: "/mcp", icon: Plug },
-            ].map((item) => (
-              <Link
-                key={item.title}
-                to={item.url}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
-                  isActive(item.url)
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
-                )}
-              >
-                <item.icon className="h-4 w-4 text-orange-400/80" />
-                <span>{item.title}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Account & Settings
-          </div>
-          <div className="space-y-1">
-            {[
-              { title: "Settings", url: "/settings", icon: Settings },
-              { title: "Billing", url: "/billing", icon: CreditCard },
-              { title: "Usage", url: "/usage", icon: BarChart3 },
-              { title: "Pricing", url: "/pricing", icon: Tag },
-            ].map((item) => (
-              <Link
-                key={item.title}
-                to={item.url}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition",
-                  isActive(item.url)
-                    ? "bg-white/[0.08] text-white"
-                    : "text-white/65 hover:bg-white/[0.04] hover:text-white",
-                )}
-              >
-                <item.icon className="h-4 w-4 text-white/50" />
-                <span>{item.title}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Top Bar                                                                     */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  showNavSidebar = false, onToggleNav,
+  showSidebar,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
-  businessContext, showContextPanel,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
-  showNavSidebar?: boolean;
-  onToggleNav?: () => void;
+  showSidebar: boolean;
   projectId: string;
   projectName: string;
   activeTab: ActiveTab;
@@ -1763,8 +1625,6 @@ function WorkspaceTopBar({
   buildStatus: BuildStatus;
   onReload: () => void;
   files: Record<string, string>;
-  businessContext: BusinessContext;
-  showContextPanel: boolean;
   previewUrl: string | null;
   codeQuery: string;
   onCodeQueryChange: (v: string) => void;
@@ -1773,8 +1633,6 @@ function WorkspaceTopBar({
   showHistory: boolean;
   onToggleHistory: () => void;
 }) {
-  const navigate = useNavigate();
-  void navigate;
   const isBuilding = buildStatus === "running";
   const rawName = projectName || projectId.slice(0, 8);
   const words = rawName.split(/\s+/).filter(Boolean);
@@ -1801,13 +1659,12 @@ function WorkspaceTopBar({
 
       {/* ── Left: brand + project ─────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-2">
-        <button
-          onClick={onToggleNav}
-          className={cn("ws-iconbtn mr-0.5", showNavSidebar && "text-orange-400 bg-white/[0.08]")}
-          title={showNavSidebar ? "Hide sidebar" : "Workspace navigation (Projects, MCP, Account)"}
-        >
-          <Menu className="h-4 w-4" />
-        </button>
+        {showSidebar && (
+          <SidebarTrigger
+            className="mr-0.5 h-8 w-8 rounded-lg text-white/65 hover:bg-white/[0.08] hover:text-white"
+            title="Toggle Lampcode navigation"
+          />
+        )}
         <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
@@ -1815,11 +1672,6 @@ function WorkspaceTopBar({
             vibe coder · ui-2026-11-04b
           </span>
         </div>
-        {hasFilledContext(businessContext) && !showContextPanel && (
-          <span className="hidden lg:flex items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-            🧠 AI context
-          </span>
-        )}
         {/* Chat controls sit with the chat side of the header, above the panel
             they actually act on, rather than across the header with the
             preview actions. */}
@@ -1954,7 +1806,6 @@ function ChatColumn({
   receipt, receiptSessionId, checks, activity,
   messages, isBuilding, currentAgent, onSend, onStop, projectName, isClarifying,
   centered = false,
-  attachments = [], onAttach, onRemoveAttachment, onToggleContext,
   pendingWrites = [], onWriteDecision, pendingQuestions = [], onAnswer,
   onQuestionAction, questionActionPending,
 }: {
@@ -1971,11 +1822,6 @@ function ChatColumn({
   /** Chat-first mode: the conversation is centred like ChatGPT instead of
    *  hugging the edge of a split view. */
   centered?: boolean;
-  /** Uploaded context files for this project (names + local thumbnails). */
-  attachments?: WorkspaceAttachment[];
-  onAttach?: (files: File[]) => void;
-  onRemoveAttachment?: (id: string) => void;
-  onToggleContext?: () => void;
   isClarifying?: boolean;
   /** Destructive tool calls the build is currently blocked on. */
   pendingWrites?: PendingWriteAction[];
@@ -1992,7 +1838,6 @@ function ChatColumn({
     () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
     [receipt, receiptSessionId, checks],
   );
-  const fileRef = useRef<HTMLInputElement>(null);
   void currentAgent;
 
   const handleSend = () => {
@@ -2057,41 +1902,9 @@ function ChatColumn({
         </div>
       ))}
 
-      {/* Attachment chips — what will ride along with the next prompt. */}
-      {attachments.length > 0 && (
-        <div className={cn("flex flex-wrap gap-1.5 px-3 pb-1", centered && "mx-auto w-full max-w-3xl")}>
-          {attachments.map(a => (
-            <span
-              key={a.id}
-              className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] py-1 pl-2 pr-1 text-[11px] text-white/70"
-            >
-              {a.dataUrl ? (
-                <img src={a.dataUrl} alt={a.name} className="h-4 w-4 shrink-0 rounded object-cover border border-white/20" />
-              ) : (
-                <Files className="h-3 w-3 shrink-0 text-orange-400/80" />
-              )}
-              <span className="truncate">{a.name}</span>
-              <button
-                onClick={() => onRemoveAttachment?.(a.id)}
-                className="grid h-4 w-4 shrink-0 place-content-center rounded-full text-white/45 transition hover:bg-white/10 hover:text-white/90"
-                title="Remove"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Input bar */}
       <div className="shrink-0 p-3">
         <div
-          onDragOver={(e) => { e.preventDefault(); }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const dropped = Array.from(e.dataTransfer.files ?? []);
-            if (dropped.length > 0) onAttach?.(dropped);
-          }}
           className={cn("group relative rounded-2xl border border-white/[0.08] bg-white/[0.025] shadow-xl shadow-black/40 backdrop-blur-xl transition focus-within:border-orange-500/50", centered && "mx-auto w-full max-w-3xl")}
         >
           <textarea
@@ -2103,66 +1916,14 @@ function ChatColumn({
                 handleSend();
               }
             }}
-            onPaste={(e) => {
-              const clipboardItems = e.clipboardData?.items;
-              if (!clipboardItems) return;
-              const filesToAttach: File[] = [];
-              for (let i = 0; i < clipboardItems.length; i++) {
-                const item = clipboardItems[i];
-                if (item.type.startsWith("image/")) {
-                  const blob = item.getAsFile();
-                  if (blob) {
-                    const ext = blob.type.split("/")[1]?.replace("+xml", "") || "png";
-                    const file = new File([blob], `screenshot-${Date.now()}.${ext}`, { type: blob.type });
-                    filesToAttach.push(file);
-                  }
-                }
-              }
-              if (filesToAttach.length > 0) {
-                e.preventDefault();
-                onAttach?.(filesToAttach);
-                toast.success(`${filesToAttach.length} screenshot${filesToAttach.length > 1 ? "s" : ""} pasted to context`);
-              }
-            }}
-            placeholder="Ask Lampcode… (Paste screenshots or type prompt)"
+            placeholder="Ask Lampcode anything or describe what you want to build…"
             rows={3}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
-                title="Attach image or file"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                hidden
-                multiple
-                accept="image/*,.pdf,.txt,.md,.json,.csv"
-                onChange={e => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (files.length > 0) onAttach?.(files);
-                  e.target.value = "";
-                }}
-              />
               <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
                 <Link2 className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => onToggleContext?.()}
-                className="relative grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85"
-                title="Context — screenshots and files"
-              >
-                <Files className="h-4 w-4" />
-                {attachments.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-content-center rounded-full bg-orange-500 px-0.5 text-[8px] font-semibold text-white">
-                    {attachments.length}
-                  </span>
-                )}
               </button>
             </div>
             <div className="flex items-center gap-1.5">
@@ -2556,141 +2317,6 @@ function ClarifyModal({
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Business Context Panel                                                      */
 /* ═══════════════════════════════════════════════════════════════════════════ */
-
-function ContextToggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className="flex flex-1 items-center justify-between rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-white/60 transition hover:bg-white/[0.06]"
-    >
-      <span>{label}</span>
-      <span className={cn(
-        "relative ml-2 h-4 w-7 shrink-0 rounded-full transition-colors",
-        value ? "bg-orange-500" : "bg-white/20",
-      )}>
-        <span className={cn(
-          "absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform",
-          value ? "translate-x-3.5" : "translate-x-0.5",
-        )} />
-      </span>
-    </button>
-  );
-}
-
-function BusinessContextPanel({
-  projectId, initial, onClose, onSaved,
-}: {
-  projectId: string;
-  initial: BusinessContext;
-  onClose: () => void;
-  onSaved: (ctx: BusinessContext) => void;
-}) {
-  const [ctx, setCtx] = useState<BusinessContext>(initial);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
-
-  const handleChange = (patch: Partial<BusinessContext>) => {
-    const next = { ...ctx, ...patch };
-    setCtx(next);
-    onSaved(next);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        await apiPost(`/api/projects/${projectId}/business-context`, next);
-        toast.success("✓ Context saved", { duration: 1500 });
-      } catch {
-        // api() already shows error toast
-      }
-    }, 1000);
-  };
-
-  const selectClass = "w-full rounded-lg border border-white/[0.08] bg-[#0f0f16] px-3 py-2 text-xs text-white/80 focus:border-orange-500/40 focus:outline-none";
-
-  return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="fixed left-3 top-14 z-50 w-[300px] rounded-xl border border-white/[0.10] bg-[#0d0d14] p-4 shadow-2xl">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-white/40">AI Project Context</p>
-          <button onClick={onClose} className="text-white/30 transition hover:text-white/70">
-            <X size={13} />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {/* App description */}
-          <div>
-            <label className="mb-1 block text-[11px] text-white/50">What does your app do?</label>
-            <textarea
-              rows={2}
-              value={ctx.appDescription ?? ""}
-              onChange={e => handleChange({ appDescription: e.target.value || undefined })}
-              placeholder="e.g. A project management tool for remote teams"
-              className="w-full resize-none rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs text-white/80 placeholder:text-white/25 focus:border-orange-500/40 focus:outline-none"
-            />
-          </div>
-
-          {/* User type */}
-          <div>
-            <label className="mb-1 block text-[11px] text-white/50">Who are your users?</label>
-            <select
-              value={ctx.userType ?? ""}
-              onChange={e => handleChange({ userType: e.target.value || undefined })}
-              className={selectClass}
-            >
-              <option value="">Select...</option>
-              <option value="Consumers">Consumers</option>
-              <option value="Businesses">Businesses</option>
-              <option value="Internal Team">Internal Team</option>
-              <option value="Marketplace">Marketplace</option>
-            </select>
-          </div>
-
-          {/* Industry */}
-          <div>
-            <label className="mb-1 block text-[11px] text-white/50">Industry?</label>
-            <select
-              value={ctx.industry ?? ""}
-              onChange={e => handleChange({ industry: e.target.value || undefined })}
-              className={selectClass}
-            >
-              <option value="">Select...</option>
-              <option value="SaaS">SaaS</option>
-              <option value="Ecommerce">Ecommerce</option>
-              <option value="Fintech">Fintech</option>
-              <option value="Healthcare">Healthcare</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-
-          {/* Toggles */}
-          <div className="flex gap-2">
-            <ContextToggle
-              label="Multi-tenant?"
-              value={ctx.isMultiTenant ?? false}
-              onChange={v => handleChange({ isMultiTenant: v })}
-            />
-            <ContextToggle
-              label="Paid features?"
-              value={ctx.hasPaidFeatures ?? false}
-              onChange={v => handleChange({ hasPaidFeatures: v })}
-            />
-          </div>
-        </div>
-
-        <p className="mt-3 text-[10px] text-white/25">
-          Saved automatically · helps AI build the right thing
-        </p>
-      </div>
-    </>
-  );
-}
 
 function McpActionPanel({
   events, active, onClear,

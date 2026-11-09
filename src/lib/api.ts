@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { useAuthStore, getAccessToken } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 const API_URL =
   (import.meta.env.VITE_BACKEND_URL as string | undefined) ??
@@ -67,11 +68,15 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   // So: ask Supabase to settle the session and retry once. Only a 401 on a
   // request that DID carry a token means the session is genuinely dead.
   if (res.status === 401) {
-    const hadToken = h.has("Authorization");
-    if (!hadToken) {
-      const refreshed = await getAccessToken({ waitForRestore: true });
-      if (refreshed) {
-        h.set("Authorization", `Bearer ${refreshed}`);
+    // 401 can happen for two reasons:
+    // 1. We sent no token (still restoring from storage on fresh tab)
+    // 2. We sent an expired token (1-hour JWT lifetime elapsed)
+    // In both cases, ask Supabase to refresh/restore the session and retry once.
+    try {
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      const freshToken = refreshed?.session?.access_token;
+      if (!refreshErr && freshToken) {
+        h.set("Authorization", `Bearer ${freshToken}`);
         try {
           res = await fetch(url, { ...rest, headers: h });
         } catch (err) {
@@ -79,12 +84,18 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
           throw err;
         }
       }
+    } catch {
+      // refresh attempt failed
     }
 
     if (res.status === 401) {
-      useAuthStore.getState().signOut();
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+      // Check if Supabase still has an active session before clobbering state
+      const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      if (!sessionData?.session) {
+        useAuthStore.getState().signOut();
+        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+          window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        }
       }
       throw new ApiError("Unauthorized", 401);
     }

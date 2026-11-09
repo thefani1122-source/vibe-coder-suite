@@ -119,7 +119,12 @@ export function useAuth() {
       typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo },
+      options: {
+        redirectTo,
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
     });
     if (error) throw new Error(error.message);
     return data;

@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { TopBar } from "@/components/TopBar";
 import { PromptComposer } from "@/components/PromptComposer";
 import { WaitlistDialog } from "@/components/WaitlistDialog";
+import { RequireAuth } from "@/components/RequireAuth";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -11,21 +12,23 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   return (
-    <SidebarProvider>
-      <WaitlistDialog />
-      <div className="relative flex min-h-screen w-full bg-background text-foreground">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]" />
-          <div className="absolute bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-accent/20 blur-[120px]" />
+    <RequireAuth>
+      <SidebarProvider>
+        <WaitlistDialog />
+        <div className="relative flex min-h-screen w-full bg-background text-foreground">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <div className="absolute -top-40 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]" />
+            <div className="absolute bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-accent/20 blur-[120px]" />
+          </div>
+          <AppSidebar />
+          <div className="relative flex min-h-screen flex-1 flex-col">
+            <TopBar />
+            <main className="flex flex-1 items-center justify-center px-6 py-16">
+              <PromptComposer />
+            </main>
+          </div>
         </div>
-        <AppSidebar />
-        <div className="relative flex min-h-screen flex-1 flex-col">
-          <TopBar />
-          <main className="flex flex-1 items-center justify-center px-6 py-16">
-            <PromptComposer />
-          </main>
-        </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </RequireAuth>
   );
 }

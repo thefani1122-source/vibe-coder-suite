@@ -1946,7 +1946,7 @@ function ChatColumn({
       {/* Write-action approval — pinned above the input so it cannot be
           scrolled past while the build waits on it. */}
       {pendingWrites.map(action => (
-        <div key={action.toolCallId} className="shrink-0 px-3">
+        <div key={action.toolCallId} className={cn("shrink-0 px-3", centered && "mx-auto w-full max-w-3xl")}>
           <WriteApprovalPrompt
             action={action}
             onDecision={(toolCallId, approved) => onWriteDecision?.(toolCallId, approved)}
@@ -1955,7 +1955,7 @@ function ChatColumn({
       ))}
 
       {pendingQuestions.map(q => (
-        <div key={q.toolCallId} className="shrink-0 px-3">
+        <div key={q.toolCallId} className={cn("shrink-0 px-3", centered && "mx-auto w-full max-w-3xl")}>
           <QuestionPrompt
             question={q}
             onAnswer={(toolCallId, answer) => onAnswer?.(toolCallId, answer)}

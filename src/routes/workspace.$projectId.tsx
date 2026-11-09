@@ -320,6 +320,7 @@ function WorkspacePage() {
   const runStartedInViewRef      = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const pendingPromptRef        = useRef<string>("");
+  const pendingAttachmentsRef   = useRef<string[]>([]);
   const rebuildFnRef            = useRef<(() => void) | null>(null);
 
   // Fetch project name with auth via apiGet (handles token automatically).
@@ -1193,6 +1194,7 @@ function WorkspacePage() {
     prompt: string,
     answers: QuestionAnswer[],
     questions: ClarifyQuestion[],
+    imageAttachments: string[] = [],
   ) => {
     const answerContext = answers.length > 0
       ? "\n\n---\nUser Clarifications:\n" +
@@ -1207,6 +1209,9 @@ function WorkspacePage() {
       : "";
 
     const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const attachmentsForBuild = imageAttachments.length > 0
+      ? imageAttachments
+      : pendingAttachmentsRef.current;
 
     // Everything on screen belongs to a build that has finished. Mark it so
     // the new session's replay cannot clear it (see build:replay_start), and
@@ -1237,7 +1242,9 @@ function WorkspacePage() {
     const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
       project_id: projectId,
       prompt: enrichedPrompt,
+      ...(attachmentsForBuild.length > 0 ? { attachments: attachmentsForBuild } : {}),
     });
+    pendingAttachmentsRef.current = [];
 
     const newSessionId = (
       (buildRes?.session as Record<string, unknown>)?.sessionId
@@ -1263,9 +1270,13 @@ function WorkspacePage() {
   }, [projectId, registerHandlers, sessionId]);
 
   // Entry point from ChatColumn — runs clarification check first.
-  const handleFollowUp = useCallback(async (prompt: string) => {
+  const handleFollowUp = useCallback(async (
+    prompt: string,
+    imageAttachments: string[] = [],
+  ) => {
     if (!prompt.trim()) return;
     pendingPromptRef.current = prompt;
+    pendingAttachmentsRef.current = imageAttachments;
 
     setIsClarifying(true);
     let result: ClarifyResponse = { needsClarification: false, questions: [] };
@@ -1285,7 +1296,7 @@ function WorkspacePage() {
       setCustomText("");
       setShowClarifyModal(true);
     } else {
-      await executeBuild(prompt, [], []);
+      await executeBuild(prompt, [], [], imageAttachments);
     }
   }, [projectId, executeBuild]);
 
@@ -1293,7 +1304,7 @@ function WorkspacePage() {
   // re-sends the last prompt through the normal follow-up flow.
   rebuildFnRef.current = () => {
     const prompt = pendingPromptRef.current;
-    if (prompt) void handleFollowUp(prompt);
+    if (prompt) void handleFollowUp(prompt, pendingAttachmentsRef.current);
   };
 
   // Advance through clarify questions; on last → close modal and start build.
@@ -1315,13 +1326,13 @@ function WorkspacePage() {
       setCustomText("");
     } else {
       setShowClarifyModal(false);
-      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions);
+      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions, pendingAttachmentsRef.current);
     }
   }, [clarifyQuestions, currentQuestionIndex, selectedOptions, customText, questionAnswers, executeBuild]);
 
   const handleSkipAllQuestions = useCallback(() => {
     setShowClarifyModal(false);
-    void executeBuild(pendingPromptRef.current, [], []);
+    void executeBuild(pendingPromptRef.current, [], [], pendingAttachmentsRef.current);
   }, [executeBuild]);
 
   const handleToggleOption = useCallback((option: string) => {

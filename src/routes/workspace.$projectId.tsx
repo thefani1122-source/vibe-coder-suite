@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
-import { BrandMark } from "@/components/BrandMark";
 import { AppSidebar } from "@/components/AppSidebar";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
@@ -38,7 +37,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
-  Square, ExternalLink, Link2, X,
+  Square, ExternalLink, Plus, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1381,7 +1380,7 @@ function WorkspacePage() {
         {!sidePanelOpen && <AppSidebar />}
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTopBar
-          showSidebar={!sidePanelOpen}
+          showWorkspaceTools={sidePanelOpen}
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
@@ -1608,13 +1607,13 @@ function WorkspacePage() {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  showSidebar,
+  showWorkspaceTools,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
-  showSidebar: boolean;
+  showWorkspaceTools: boolean;
   projectId: string;
   projectName: string;
   activeTab: ActiveTab;
@@ -1638,6 +1637,18 @@ function WorkspaceTopBar({
   const words = rawName.split(/\s+/).filter(Boolean);
   const displayName = words.length > 4 ? words.slice(0, 4).join(" ") + "…" : rawName;
 
+  // In chat mode the conversation is the workspace: show only its project
+  // title. Preview/code controls return when the side panel is opened.
+  if (!showWorkspaceTools) {
+    return (
+      <header className="flex h-14 shrink-0 items-center border-b border-white/[0.07] bg-[#0a0a0a] px-6">
+        <h1 className="truncate text-sm font-semibold tracking-tight text-white">
+          {displayName}
+        </h1>
+      </header>
+    );
+  }
+
   const handleDownload = () => {
     const entries = Object.entries(files);
     if (entries.length === 0) { toast("No files to download yet"); return; }
@@ -1657,15 +1668,8 @@ function WorkspaceTopBar({
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#0a0a0a] px-4">
 
-      {/* ── Left: brand + project ─────────────────────────────────── */}
+      {/* ── Project identity ───────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-2">
-        {showSidebar && (
-          <SidebarTrigger
-            className="mr-0.5 h-8 w-8 rounded-lg text-white/65 hover:bg-white/[0.08] hover:text-white"
-            title="Toggle Lampcode navigation"
-          />
-        )}
-        <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
           <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">

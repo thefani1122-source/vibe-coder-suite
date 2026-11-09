@@ -1831,7 +1831,7 @@ function ChatColumn({
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
-  onSend?: (prompt: string) => void;
+  onSend?: (prompt: string, imageAttachments?: string[]) => void;
   onStop?: () => void;
   projectName?: string;
   /** Chat-first mode: the conversation is centred like ChatGPT instead of
@@ -1849,34 +1849,82 @@ function ChatColumn({
   questionActionPending?: boolean;
 }) {
   const [draft, setDraft] = useState("");
+  const [selectedImages, setSelectedImages] = useState<Array<{
+    id: string;
+    name: string;
+    dataUrl: string;
+    size: number;
+  }>>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const receiptFooter = useMemo(
     () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
     [receipt, receiptSessionId, checks],
   );
   void currentAgent;
 
-  const handleSend = () => {
-    const text = draft.trim();
-    if (!text || !onSend) return;
-    onSend(text);
-    setDraft("");
+  const handleImageFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const maxFiles = 10;
+    const maxFileBytes = 4 * 1024 * 1024;
+    const maxTotalBytes = 8 * 1024 * 1024;
+    const existingBytes = selectedImages.reduce((total, image) => total + image.size, 0);
+    const remainingSlots = maxFiles - selectedImages.length;
+    let totalBytes = existingBytes;
+    const accepted: File[] = [];
+
+    for (const file of Array.from(fileList)) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`"${file.name}" is not an image. The current build upload supports images only.`);
+        continue;
+      }
+      if (file.size > maxFileBytes) {
+        toast.error(`"${file.name}" is larger than 4 MB.`);
+        continue;
+      }
+      if (accepted.length >= remainingSlots) {
+        toast.error("You can attach up to 10 images per message.");
+        break;
+      }
+      if (totalBytes + file.size > maxTotalBytes) {
+        toast.error("Total image attachments must stay under 8 MB.");
+        break;
+      }
+      totalBytes += file.size;
+      accepted.push(file);
+    }
+
+    if (accepted.length === 0) return;
+    try {
+      const loaded = await Promise.all(accepted.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string"
+          ? resolve(reader.result)
+          : reject(new Error(`Could not read ${file.name}`));
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+        reader.readAsDataURL(file);
+      })));
+      setSelectedImages(prev => [
+        ...prev,
+        ...accepted.map((file, index) => ({
+          id: `${file.name}-${file.lastModified}-${index}-${crypto.randomUUID()}`,
+          name: file.name,
+          size: file.size,
+          dataUrl: loaded[index],
+        })),
+      ]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not read selected image.");
+    }
   };
 
-  // Same idea as the landing composer: put the link in the prompt, because the
-  // builder reads the prompt. Web links resolve through the always-on Firecrawl
-  // tool.
-  const addReference = () => {
-    const entered = window.prompt("Paste a link to use as a reference");
-    if (entered === null) return;
-    const trimmed = entered.trim();
-    if (!trimmed) return;
-    if (!/^https?:\/\/\S+$/i.test(trimmed)) {
-      toast.error("That doesn't look like a valid link — it should start with https://");
-      return;
-    }
-    const line = `Use this page as a reference: ${trimmed}`;
-    setDraft((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
-    toast.success("Link added to your message");
+  const handleSend = () => {
+    const text = draft.trim();
+    if ((!text && selectedImages.length === 0) || !onSend) return;
+    const prompt = text || "Please inspect the attached image(s) and use them as context for my request.";
+    onSend(prompt, selectedImages.map(image => image.dataUrl));
+    setDraft("");
+    setSelectedImages([]);
+    if (imageInputRef.current) imageInputRef.current.value = "";
   };
 
   return (
@@ -1926,7 +1974,7 @@ function ChatColumn({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => {
-              if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+              if (e.key === "Enter" && !e.shiftKey && (draft.trim() || selectedImages.length > 0)) {
                 e.preventDefault();
                 handleSend();
               }
@@ -1935,10 +1983,52 @@ function ChatColumn({
             rows={3}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
+          {selectedImages.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pb-2">
+              {selectedImages.map(image => (
+                <div
+                  key={image.id}
+                  className="flex max-w-[190px] items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.04] py-1 pl-1 pr-2"
+                >
+                  <img
+                    src={image.dataUrl}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-md object-cover"
+                  />
+                  <span className="min-w-0 truncate text-[11px] text-white/65">{image.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${image.name}`}
+                    onClick={() => setSelectedImages(prev => prev.filter(item => item.id !== image.id))}
+                    className="grid h-5 w-5 shrink-0 place-content-center rounded text-white/40 hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
-              <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
-                <Link2 className="h-4 w-4" />
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={event => {
+                  void handleImageFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                className="grid h-8 w-8 place-content-center rounded-md text-white/55 transition hover:bg-white/[0.07] hover:text-white"
+                title="Attach images"
+                aria-label="Attach images"
+              >
+                <Plus className="h-4 w-4" />
               </button>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1961,7 +2051,7 @@ function ChatColumn({
               ) : (
                 <>
                   <button
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && selectedImages.length === 0}
                     onClick={handleSend}
                     className="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-white/90 transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -1970,7 +2060,7 @@ function ChatColumn({
                   </button>
                   <button
                     aria-label="Send message"
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && selectedImages.length === 0}
                     onClick={handleSend}
                     className="grid h-8 w-8 place-content-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >

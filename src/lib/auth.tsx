@@ -66,20 +66,41 @@ let authSubscribed = false;
 function initAuthListener() {
   if (authSubscribed || typeof window === "undefined") return;
   authSubscribed = true;
-  // onAuthStateChange fires INITIAL_SESSION with the localStorage-persisted session
-  // as soon as the Supabase client finishes initialization — no separate getSession()
-  // call needed. A parallel getSession() Promise can resolve at an arbitrary time and
-  // clobber a valid session that SIGNED_IN already wrote to the store.
+
   try {
-    supabase.auth.onAuthStateChange((_event, session) => {
-      useAuthStore.getState().setSession(session);
+    // Immediately rehydrate session from storage
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!error && data?.session) {
+          useAuthStore.getState().setSession(data.session);
+        } else {
+          useAuthStore.getState().setLoading(false);
+        }
+      })
+      .catch(() => {
+        useAuthStore.getState().setLoading(false);
+      });
+
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        useAuthStore.getState().signOut();
+      } else if (session) {
+        useAuthStore.getState().setSession(session);
+      } else if (event === "INITIAL_SESSION") {
+        if (!useAuthStore.getState().session) {
+          useAuthStore.getState().setSession(null);
+        }
+      }
     });
   } catch (err) {
-    // Supabase env vars are missing (e.g. a preview without Vercel env config):
-    // stay signed out instead of crashing the whole app. The console already
-    // carries the detailed "Missing required environment variable" error.
     console.warn("[Lampcode] Auth unavailable — Supabase client is not configured.", err);
+    useAuthStore.getState().setLoading(false);
   }
+}
+
+if (typeof window !== "undefined") {
+  initAuthListener();
 }
 
 /** Hook exposing Supabase Auth state + actions. */

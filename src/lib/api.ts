@@ -93,7 +93,11 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
       const { data: sessionData } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
       if (!sessionData?.session) {
         useAuthStore.getState().signOut();
-        if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/" &&
+          !window.location.pathname.startsWith("/login")
+        ) {
           window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
         }
       }

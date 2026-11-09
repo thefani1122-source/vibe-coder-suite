@@ -81,7 +81,10 @@ export function AppSidebar() {
   const availableUsd = (billing?.monthlyLimitUsd ?? 3) + (billing?.rolloverUsd ?? 0);
   const remainingUsd = billing?.remainingUsd ?? availableUsd;
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar
+      collapsible="icon"
+      className="!bg-[#0a0a0a] [&_[data-sidebar=sidebar]]:!bg-[#0a0a0a]"
+    >
       <SidebarHeader className="border-b border-sidebar-border">
         <Link to="/" className="flex items-center gap-2 px-2 py-3">
           <BrandMark />

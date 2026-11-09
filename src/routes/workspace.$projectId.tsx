@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import type { Socket } from "socket.io-client";
 import { cn } from "@/lib/utils";
-import { BrandMark } from "@/components/BrandMark";
 import { AppSidebar } from "@/components/AppSidebar";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ChatPanel, type BuildMessage } from "@/components/ChatPanel";
 import type { CheckRow } from "@/components/BuildReceipt";
@@ -38,7 +37,7 @@ import {
   RotateCw, Monitor, Smartphone, Tablet,
   Search, Copy, Check, Globe, Code2, FileDiff as FileDiffIcon,
   History, PanelLeft, PanelLeftClose, PanelLeftOpen, Github, Download,
-  Square, ExternalLink, Link2, X,
+  Square, ExternalLink, Plus, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -321,6 +320,7 @@ function WorkspacePage() {
   const runStartedInViewRef      = useRef(false);
   const currentSessionIdRef     = useRef<string | undefined>(sessionId);
   const pendingPromptRef        = useRef<string>("");
+  const pendingAttachmentsRef   = useRef<string[]>([]);
   const rebuildFnRef            = useRef<(() => void) | null>(null);
 
   // Fetch project name with auth via apiGet (handles token automatically).
@@ -1194,6 +1194,7 @@ function WorkspacePage() {
     prompt: string,
     answers: QuestionAnswer[],
     questions: ClarifyQuestion[],
+    imageAttachments: string[] = [],
   ) => {
     const answerContext = answers.length > 0
       ? "\n\n---\nUser Clarifications:\n" +
@@ -1208,6 +1209,9 @@ function WorkspacePage() {
       : "";
 
     const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const attachmentsForBuild = imageAttachments.length > 0
+      ? imageAttachments
+      : pendingAttachmentsRef.current;
 
     // Everything on screen belongs to a build that has finished. Mark it so
     // the new session's replay cannot clear it (see build:replay_start), and
@@ -1238,7 +1242,9 @@ function WorkspacePage() {
     const buildRes = await apiPost<Record<string, unknown>>("/api/build/fast", {
       project_id: projectId,
       prompt: enrichedPrompt,
+      ...(attachmentsForBuild.length > 0 ? { attachments: attachmentsForBuild } : {}),
     });
+    pendingAttachmentsRef.current = [];
 
     const newSessionId = (
       (buildRes?.session as Record<string, unknown>)?.sessionId
@@ -1264,9 +1270,13 @@ function WorkspacePage() {
   }, [projectId, registerHandlers, sessionId]);
 
   // Entry point from ChatColumn — runs clarification check first.
-  const handleFollowUp = useCallback(async (prompt: string) => {
+  const handleFollowUp = useCallback(async (
+    prompt: string,
+    imageAttachments: string[] = [],
+  ) => {
     if (!prompt.trim()) return;
     pendingPromptRef.current = prompt;
+    pendingAttachmentsRef.current = imageAttachments;
 
     setIsClarifying(true);
     let result: ClarifyResponse = { needsClarification: false, questions: [] };
@@ -1286,7 +1296,7 @@ function WorkspacePage() {
       setCustomText("");
       setShowClarifyModal(true);
     } else {
-      await executeBuild(prompt, [], []);
+      await executeBuild(prompt, [], [], imageAttachments);
     }
   }, [projectId, executeBuild]);
 
@@ -1294,7 +1304,7 @@ function WorkspacePage() {
   // re-sends the last prompt through the normal follow-up flow.
   rebuildFnRef.current = () => {
     const prompt = pendingPromptRef.current;
-    if (prompt) void handleFollowUp(prompt);
+    if (prompt) void handleFollowUp(prompt, pendingAttachmentsRef.current);
   };
 
   // Advance through clarify questions; on last → close modal and start build.
@@ -1316,13 +1326,13 @@ function WorkspacePage() {
       setCustomText("");
     } else {
       setShowClarifyModal(false);
-      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions);
+      void executeBuild(pendingPromptRef.current, newAnswers, clarifyQuestions, pendingAttachmentsRef.current);
     }
   }, [clarifyQuestions, currentQuestionIndex, selectedOptions, customText, questionAnswers, executeBuild]);
 
   const handleSkipAllQuestions = useCallback(() => {
     setShowClarifyModal(false);
-    void executeBuild(pendingPromptRef.current, [], []);
+    void executeBuild(pendingPromptRef.current, [], [], pendingAttachmentsRef.current);
   }, [executeBuild]);
 
   const handleToggleOption = useCallback((option: string) => {
@@ -1381,7 +1391,7 @@ function WorkspacePage() {
         {!sidePanelOpen && <AppSidebar />}
         <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTopBar
-          showSidebar={!sidePanelOpen}
+          showWorkspaceTools={sidePanelOpen}
           projectId={projectId}
           projectName={projectName}
           activeTab={activeTab}
@@ -1608,13 +1618,13 @@ function WorkspacePage() {
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 function WorkspaceTopBar({
-  showSidebar,
+  showWorkspaceTools,
   projectId, projectName, activeTab, setActiveTab, changeCount, device, setDevice,
   buildStatus, onReload, files,
   previewUrl, codeQuery, onCodeQueryChange,
   chatCollapsed, onCollapse, showHistory, onToggleHistory,
 }: {
-  showSidebar: boolean;
+  showWorkspaceTools: boolean;
   projectId: string;
   projectName: string;
   activeTab: ActiveTab;
@@ -1638,6 +1648,18 @@ function WorkspaceTopBar({
   const words = rawName.split(/\s+/).filter(Boolean);
   const displayName = words.length > 4 ? words.slice(0, 4).join(" ") + "…" : rawName;
 
+  // In chat mode the conversation is the workspace: show only its project
+  // title. Preview/code controls return when the side panel is opened.
+  if (!showWorkspaceTools) {
+    return (
+      <header className="flex h-14 shrink-0 items-center border-b border-white/[0.07] bg-[#0a0a0a] px-6">
+        <h1 className="truncate text-sm font-semibold tracking-tight text-white">
+          {displayName}
+        </h1>
+      </header>
+    );
+  }
+
   const handleDownload = () => {
     const entries = Object.entries(files);
     if (entries.length === 0) { toast("No files to download yet"); return; }
@@ -1657,15 +1679,8 @@ function WorkspaceTopBar({
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.07] bg-[#0a0a0a] px-4">
 
-      {/* ── Left: brand + project ─────────────────────────────────── */}
+      {/* ── Project identity ───────────────────────────────────────── */}
       <div className="flex shrink-0 items-center gap-2">
-        {showSidebar && (
-          <SidebarTrigger
-            className="mr-0.5 h-8 w-8 rounded-lg text-white/65 hover:bg-white/[0.08] hover:text-white"
-            title="Toggle Lampcode navigation"
-          />
-        )}
-        <BrandMark />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold tracking-tight text-white">{displayName}</span>
           <span className="text-[10px] uppercase tracking-[0.16em] text-white/40">
@@ -1816,7 +1831,7 @@ function ChatColumn({
   messages: BuildMessage[];
   isBuilding: boolean;
   currentAgent?: string;
-  onSend?: (prompt: string) => void;
+  onSend?: (prompt: string, imageAttachments?: string[]) => void;
   onStop?: () => void;
   projectName?: string;
   /** Chat-first mode: the conversation is centred like ChatGPT instead of
@@ -1834,34 +1849,82 @@ function ChatColumn({
   questionActionPending?: boolean;
 }) {
   const [draft, setDraft] = useState("");
+  const [selectedImages, setSelectedImages] = useState<Array<{
+    id: string;
+    name: string;
+    dataUrl: string;
+    size: number;
+  }>>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const receiptFooter = useMemo(
     () => <BuildReceipt key={receiptSessionId} outcome={receipt} checks={checks} />,
     [receipt, receiptSessionId, checks],
   );
   void currentAgent;
 
-  const handleSend = () => {
-    const text = draft.trim();
-    if (!text || !onSend) return;
-    onSend(text);
-    setDraft("");
+  const handleImageFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length) return;
+    const maxFiles = 10;
+    const maxFileBytes = 4 * 1024 * 1024;
+    const maxTotalBytes = 8 * 1024 * 1024;
+    const existingBytes = selectedImages.reduce((total, image) => total + image.size, 0);
+    const remainingSlots = maxFiles - selectedImages.length;
+    let totalBytes = existingBytes;
+    const accepted: File[] = [];
+
+    for (const file of Array.from(fileList)) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`"${file.name}" is not an image. The current build upload supports images only.`);
+        continue;
+      }
+      if (file.size > maxFileBytes) {
+        toast.error(`"${file.name}" is larger than 4 MB.`);
+        continue;
+      }
+      if (accepted.length >= remainingSlots) {
+        toast.error("You can attach up to 10 images per message.");
+        break;
+      }
+      if (totalBytes + file.size > maxTotalBytes) {
+        toast.error("Total image attachments must stay under 8 MB.");
+        break;
+      }
+      totalBytes += file.size;
+      accepted.push(file);
+    }
+
+    if (accepted.length === 0) return;
+    try {
+      const loaded = await Promise.all(accepted.map(file => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string"
+          ? resolve(reader.result)
+          : reject(new Error(`Could not read ${file.name}`));
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+        reader.readAsDataURL(file);
+      })));
+      setSelectedImages(prev => [
+        ...prev,
+        ...accepted.map((file, index) => ({
+          id: `${file.name}-${file.lastModified}-${index}-${crypto.randomUUID()}`,
+          name: file.name,
+          size: file.size,
+          dataUrl: loaded[index],
+        })),
+      ]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not read selected image.");
+    }
   };
 
-  // Same idea as the landing composer: put the link in the prompt, because the
-  // builder reads the prompt. Web links resolve through the always-on Firecrawl
-  // tool.
-  const addReference = () => {
-    const entered = window.prompt("Paste a link to use as a reference");
-    if (entered === null) return;
-    const trimmed = entered.trim();
-    if (!trimmed) return;
-    if (!/^https?:\/\/\S+$/i.test(trimmed)) {
-      toast.error("That doesn't look like a valid link — it should start with https://");
-      return;
-    }
-    const line = `Use this page as a reference: ${trimmed}`;
-    setDraft((v) => (v.trim() ? `${v.trimEnd()}\n\n${line}` : line));
-    toast.success("Link added to your message");
+  const handleSend = () => {
+    const text = draft.trim();
+    if ((!text && selectedImages.length === 0) || !onSend) return;
+    const prompt = text || "Please inspect the attached image(s) and use them as context for my request.";
+    onSend(prompt, selectedImages.map(image => image.dataUrl));
+    setDraft("");
+    setSelectedImages([]);
+    if (imageInputRef.current) imageInputRef.current.value = "";
   };
 
   return (
@@ -1911,7 +1974,7 @@ function ChatColumn({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => {
-              if (e.key === "Enter" && !e.shiftKey && draft.trim()) {
+              if (e.key === "Enter" && !e.shiftKey && (draft.trim() || selectedImages.length > 0)) {
                 e.preventDefault();
                 handleSend();
               }
@@ -1920,10 +1983,52 @@ function ChatColumn({
             rows={3}
             className="block w-full resize-none rounded-2xl border-0 bg-transparent px-4 pt-3.5 pb-2 text-sm text-white/90 placeholder:text-white/35 outline-none"
           />
+          {selectedImages.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pb-2">
+              {selectedImages.map(image => (
+                <div
+                  key={image.id}
+                  className="flex max-w-[190px] items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.04] py-1 pl-1 pr-2"
+                >
+                  <img
+                    src={image.dataUrl}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded-md object-cover"
+                  />
+                  <span className="min-w-0 truncate text-[11px] text-white/65">{image.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${image.name}`}
+                    onClick={() => setSelectedImages(prev => prev.filter(item => item.id !== image.id))}
+                    className="grid h-5 w-5 shrink-0 place-content-center rounded text-white/40 hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-0.5">
-              <button onClick={() => addReference()} className="grid h-8 w-8 place-content-center rounded-md text-white/45 transition hover:bg-white/[0.05] hover:text-white/85" title="Import from URL">
-                <Link2 className="h-4 w-4" />
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={event => {
+                  void handleImageFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                className="grid h-8 w-8 place-content-center rounded-md text-white/55 transition hover:bg-white/[0.07] hover:text-white"
+                title="Attach images"
+                aria-label="Attach images"
+              >
+                <Plus className="h-4 w-4" />
               </button>
             </div>
             <div className="flex items-center gap-1.5">
@@ -1946,7 +2051,7 @@ function ChatColumn({
               ) : (
                 <>
                   <button
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && selectedImages.length === 0}
                     onClick={handleSend}
                     className="inline-flex h-8 items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-white/90 transition hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -1955,7 +2060,7 @@ function ChatColumn({
                   </button>
                   <button
                     aria-label="Send message"
-                    disabled={!draft.trim()}
+                    disabled={!draft.trim() && selectedImages.length === 0}
                     onClick={handleSend}
                     className="grid h-8 w-8 place-content-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-md transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >

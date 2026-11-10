@@ -5,6 +5,7 @@ import {
   useSandpack,
 } from "@codesandbox/sandpack-react"
 import { cn } from "@/lib/utils"
+import { PREVIEW_UI_PRIMITIVES } from "@/lib/preview-ui-primitives"
 
 // Dependencies expected by Lampcode-generated React apps. Sandpack previously
 // discarded the generated package.json and installed only React, so ordinary
@@ -418,6 +419,16 @@ export function cn(...inputs: ClassValue[]) {
       };
     }
 
+    // The server-side E2B scaffold bakes these components into its image, but
+    // Sandpack receives only generated files. Mirror the scaffold here so both
+    // preview modes can safely resolve the same shadcn-style imports.
+    for (const [relativePath, code] of Object.entries(PREVIEW_UI_PRIMITIVES)) {
+      const path = "/src/" + relativePath
+      if (!result[path]) {
+        result[path] = { code: rewriteSourceAliases(path, code) }
+      }
+    }
+
     // Auto-inject a bootstrap entry if the backend only sent App.tsx
     const hasEntry =
       result["/src/index.tsx"] ||
@@ -444,6 +455,48 @@ export function cn(...inputs: ClassValue[]) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            background: "var(--background)", foreground: "var(--foreground)",
+            card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
+            popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
+            primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
+            secondary: { DEFAULT: "var(--secondary)", foreground: "var(--secondary-foreground)" },
+            muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
+            accent: { DEFAULT: "var(--accent)", foreground: "var(--accent-foreground)" },
+            destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
+            border: "var(--border)", input: "var(--input)", ring: "var(--ring)"
+          },
+          borderRadius: {
+            lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)"
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --background: #f8f9fc; --foreground: #202432; --card: #fff; --card-foreground: #202432;
+      --popover: #fff; --popover-foreground: #202432; --primary: #5b5bd6; --primary-foreground: #fff;
+      --secondary: #eff0f5; --secondary-foreground: #303548; --muted: #eff0f5; --muted-foreground: #70778b;
+      --accent: #ececff; --accent-foreground: #4343b2; --destructive: #dc3545; --destructive-foreground: #fff;
+      --border: #e2e4ec; --input: #e2e4ec; --ring: #5b5bd6; --radius: .625rem;
+    }
+    .dark {
+      --background: #1c202b; --foreground: #f5f6fa; --card: #252a38; --card-foreground: #f5f6fa;
+      --popover: #252a38; --popover-foreground: #f5f6fa; --primary: #8888f0; --primary-foreground: #171923;
+      --secondary: #303647; --secondary-foreground: #f5f6fa; --muted: #303647; --muted-foreground: #a6adc0;
+      --accent: #353653; --accent-foreground: #e0e0ff; --destructive: #e35d6a; --destructive-foreground: #fff;
+      --border: #3b4151; --input: #3b4151; --ring: #8888f0;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: var(--background); color: var(--foreground); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    button, input, textarea, select { font: inherit; }
+  </style>
   <title>App</title>
 </head>
 <body style="margin:0;padding:0">

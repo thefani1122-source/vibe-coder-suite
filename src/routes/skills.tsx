@@ -36,6 +36,7 @@ interface UserSkill {
   enabled: boolean;
   source: string;
   contentHash: string;
+  resourcePaths: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -367,7 +368,7 @@ function SkillsPage() {
                         </div>
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground">
-                        <span>Revision {skill.revision}</span>
+                        <span>Revision {skill.revision} · {skill.resourcePaths?.length ?? 0} references</span>
                         <span>Updated {new Date(skill.updatedAt).toLocaleDateString()}</span>
                       </div>
                     </CardContent>

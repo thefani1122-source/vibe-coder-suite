@@ -128,7 +128,7 @@ function SkillsPage() {
     input.value = "";
     if (files.length === 0) return;
 
-    const entryPoints = files.filter((file) => file.webkitRelativePath.split("/").at(-1) === "SKILL.md");
+    const entryPoints = files.filter((file) => file.webkitRelativePath.split("/").pop() === "SKILL.md");
     if (entryPoints.length !== 1) {
       toast.error("Choose one skill folder containing exactly one SKILL.md file.");
       return;
@@ -175,7 +175,7 @@ function SkillsPage() {
 
       setSkillMd(await entryPoint.text());
       setSkillResources(references);
-      const folderName = rootPath.split("/").at(-1) ?? "skill folder";
+      const folderName = rootPath.split("/").pop() ?? "skill folder";
       setSelectedFile(
         `${folderName} · ${Object.keys(references).length} references${skippedFiles ? ` · ${skippedFiles} other files skipped` : ""}`,
       );

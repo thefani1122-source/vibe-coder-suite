@@ -61,11 +61,6 @@ function SkillsPage() {
   const [selectedFile, setSelectedFile] = useState("");
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    folderInputRef.current?.setAttribute("webkitdirectory", "");
-    folderInputRef.current?.setAttribute("directory", "");
-  }, []);
-
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     setLoadError(false);
@@ -404,7 +399,11 @@ function SkillsPage() {
                 <Input id="skill-file" type="file" accept=".md,text/markdown,text/plain" onChange={(event) => void importFile(event)} disabled={saving} />
                 <Label htmlFor="skill-folder">Or import a skill folder</Label>
                 <Input
-                  ref={folderInputRef}
+                  ref={(node) => {
+                    folderInputRef.current = node;
+                    node?.setAttribute("webkitdirectory", "");
+                    node?.setAttribute("directory", "");
+                  }}
                   id="skill-folder"
                   type="file"
                   multiple

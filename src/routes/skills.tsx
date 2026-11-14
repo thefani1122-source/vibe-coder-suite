@@ -28,7 +28,7 @@ export const Route = createFileRoute("/skills")({ component: SkillsPage });
 
 const MAX_SKILL_FOLDER_ENTRIES = 250;
 const SKILL_REFERENCE_PATH_RE =
-  /^references\\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\\/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$/;
+  /^references\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\/)*[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 
 interface UserSkill {
   id: string;

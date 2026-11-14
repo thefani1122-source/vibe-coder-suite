@@ -118,6 +118,7 @@ function SkillsPage() {
     try {
       const text = await file.text();
       setSkillMd(text);
+      if (!editingSkill) setSkillResources({});
       setSelectedFile(file.name);
     } catch {
       toast.error("Could not read that Markdown file.");
@@ -441,11 +442,10 @@ function SkillsPage() {
                   Skill instructions are treated as untrusted reference material. LampCode does not execute scripts or hooks from imported skills, and a skill cannot grant itself tool permissions.
                 </span>
               </div>
-              {!editingSkill && (
-                <p className="text-xs text-muted-foreground">
-                  Folder import supports SKILL.md plus up to 20 Markdown files under references/ (256 KiB combined). Other files, scripts and binary assets are ignored; scripts/hooks are never executed.
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Folder import supports SKILL.md plus up to 20 Markdown files under references/ (256 KiB combined). Other files, scripts and binary assets are ignored; scripts/hooks are never executed.
+                {editingSkill ? " A single-file update preserves current references; importing a folder replaces them." : ""}
+              </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>

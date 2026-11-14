@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ interface UserSkill {
 
 interface UserSkillDocument extends UserSkill {
   content: string;
+  resources: Record<string, string>;
 }
 
 function SkillsPage() {
@@ -55,7 +56,14 @@ function SkillsPage() {
   const [editingSkill, setEditingSkill] = useState<UserSkill | null>(null);
   const [deletingSkill, setDeletingSkill] = useState<UserSkill | null>(null);
   const [skillMd, setSkillMd] = useState("");
+  const [skillResources, setSkillResources] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState("");
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    folderInputRef.current?.setAttribute("webkitdirectory", "");
+    folderInputRef.current?.setAttribute("directory", "");
+  }, []);
 
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -77,6 +85,7 @@ function SkillsPage() {
   const openImportDialog = () => {
     setEditingSkill(null);
     setSkillMd("");
+    setSkillResources({});
     setSelectedFile("");
     setDialogOpen(true);
   };
@@ -87,6 +96,7 @@ function SkillsPage() {
       const result = await apiGet<{ skill: UserSkillDocument }>(`/api/skills/${skill.id}`);
       setEditingSkill(skill);
       setSkillMd(result.skill.content);
+      setSkillResources(result.skill.resources ?? {});
       setSelectedFile("");
       setDialogOpen(true);
     } catch {
@@ -115,6 +125,72 @@ function SkillsPage() {
     }
   };
 
+  const importFolder = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const files = Array.from(input.files ?? []);
+    input.value = "";
+    if (files.length === 0) return;
+
+    const entryPoints = files.filter((file) => file.webkitRelativePath.split("/").at(-1) === "SKILL.md");
+    if (entryPoints.length !== 1) {
+      toast.error("Choose one skill folder containing exactly one SKILL.md file.");
+      return;
+    }
+
+    const entryPoint = entryPoints[0]!;
+    if (entryPoint.size > 48 * 1024) {
+      toast.error("SKILL.md must be 48 KiB or smaller.");
+      return;
+    }
+    const entryPath = entryPoint.webkitRelativePath;
+    const rootPath = entryPath.slice(0, -"/SKILL.md".length);
+    if (!rootPath || !entryPath.startsWith(rootPath + "/")) {
+      toast.error("Choose a skill directory, not an individual file.");
+      return;
+    }
+
+    const references: Record<string, string> = {};
+    let totalBytes = 0;
+    let skippedFiles = 0;
+    try {
+      for (const file of files) {
+        const relativePath = file.webkitRelativePath.slice(rootPath.length + 1);
+        if (relativePath === "SKILL.md") continue;
+        if (!relativePath.startsWith("references/") || !relativePath.toLowerCase().endsWith(".md")) {
+          skippedFiles++;
+          continue;
+        }
+        if (Object.keys(references).length >= 20) {
+          toast.error("A skill can include at most 20 reference Markdown files.");
+          return;
+        }
+        if (file.size > 32 * 1024) {
+          toast.error(`Reference "${relativePath}" exceeds the 32 KiB per-file limit.`);
+          return;
+        }
+        totalBytes += file.size;
+        if (totalBytes > 256 * 1024) {
+          toast.error("Combined skill references exceed the 256 KiB limit.");
+          return;
+        }
+        references[relativePath] = await file.text();
+      }
+
+      setSkillMd(await entryPoint.text());
+      setSkillResources(references);
+      const folderName = rootPath.split("/").at(-1) ?? "skill folder";
+      setSelectedFile(
+        `${folderName} · ${Object.keys(references).length} references${skippedFiles ? ` · ${skippedFiles} other files skipped` : ""}`,
+      );
+      if (skippedFiles > 0) {
+        toast.message(`${skippedFiles} unsupported files were skipped. Only references/**/*.md documents are imported.`);
+      }
+    } catch {
+      toast.error("Could not read the selected skill folder.");
+    }
+  };
+
+
   const saveSkill = async () => {
     if (!skillMd.trim()) {
       toast.error("Choose a SKILL.md file or paste its contents first.");
@@ -128,15 +204,16 @@ function SkillsPage() {
     setSaving(true);
     try {
       if (editingSkill) {
-        await apiPut(`/api/skills/${editingSkill.id}`, { skillMd });
+        await apiPut(`/api/skills/${editingSkill.id}`, { skillMd, resources: skillResources });
         toast.success("Skill updated.");
       } else {
-        await apiPost("/api/skills", { skillMd });
+        await apiPost("/api/skills", { skillMd, resources: skillResources });
         toast.success("Skill added to your library.");
       }
       setDialogOpen(false);
       setEditingSkill(null);
       setSkillMd("");
+      setSkillResources({});
       setSelectedFile("");
       await refresh(false);
     } catch {
@@ -306,6 +383,7 @@ function SkillsPage() {
           if (!open) {
             setEditingSkill(null);
             setSkillMd("");
+            setSkillResources({});
             setSelectedFile("");
           }
         }}>
@@ -322,7 +400,25 @@ function SkillsPage() {
               <div className="space-y-2">
                 <Label htmlFor="skill-file">Choose SKILL.md</Label>
                 <Input id="skill-file" type="file" accept=".md,text/markdown,text/plain" onChange={(event) => void importFile(event)} disabled={saving} />
+                <Label htmlFor="skill-folder">Or import a skill folder</Label>
+                <Input
+                  ref={folderInputRef}
+                  id="skill-folder"
+                  type="file"
+                  multiple
+                  accept=".md,text/markdown,text/plain"
+                  onChange={(event) => void importFolder(event)}
+                  disabled={saving}
+                />
                 {selectedFile && <p className="text-xs text-muted-foreground">Loaded: {selectedFile}</p>}
+                {Object.keys(skillResources).length > 0 && (
+                  <div className="rounded-md border border-border/60 bg-muted/20 p-3 text-xs">
+                    <p className="font-medium">{Object.keys(skillResources).length} reference documents will be stored separately:</p>
+                    <ul className="mt-1 list-inside list-disc text-muted-foreground">
+                      {Object.keys(skillResources).sort().map((resource) => <li key={resource}>{resource}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="skill-content">SKILL.md content</Label>
@@ -347,7 +443,7 @@ function SkillsPage() {
               </div>
               {!editingSkill && (
                 <p className="text-xs text-muted-foreground">
-                  This release imports one SKILL.md file. ZIP bundles and additional references/assets are not imported yet.
+                  Folder import supports SKILL.md plus up to 20 Markdown files under references/ (256 KiB combined). Other files, scripts and binary assets are ignored; scripts/hooks are never executed.
                 </p>
               )}
             </div>

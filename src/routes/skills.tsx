@@ -126,6 +126,11 @@ function SkillsPage() {
     const files = Array.from(input.files ?? []);
     input.value = "";
     if (files.length === 0) return;
+    // Clear a previous selection first so a rejected folder cannot leave stale
+    // content ready to be saved accidentally.
+    setSkillMd("");
+    setSkillResources({});
+    setSelectedFile("");
 
     const entryPoints = files.filter((file) => file.webkitRelativePath.split("/").pop() === "SKILL.md");
     if (entryPoints.length !== 1) {

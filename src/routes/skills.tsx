@@ -26,6 +26,10 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/api";
 
 export const Route = createFileRoute("/skills")({ component: SkillsPage });
 
+const MAX_SKILL_FOLDER_ENTRIES = 250;
+const SKILL_REFERENCE_PATH_RE =
+  /^references\\/(?:[A-Za-z0-9][A-Za-z0-9._-]*\\/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.md$/;
+
 interface UserSkill {
   id: string;
   slug: string;
@@ -124,6 +128,12 @@ function SkillsPage() {
 
   const importFolder = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
+    const selectedCount = input.files?.length ?? 0;
+    if (selectedCount > MAX_SKILL_FOLDER_ENTRIES) {
+      input.value = "";
+      toast.error(`Choose a smaller skill folder (maximum ${MAX_SKILL_FOLDER_ENTRIES} files).`);
+      return;
+    }
     const files = Array.from(input.files ?? []);
     input.value = "";
     if (files.length === 0) return;
@@ -161,7 +171,8 @@ function SkillsPage() {
       for (const file of files) {
         const relativePath = file.webkitRelativePath.slice(rootPath.length + 1);
         if (relativePath === "SKILL.md") continue;
-        if (!relativePath.startsWith("references/") || !relativePath.endsWith(".md")) {
+        if (!relativePath.startsWith("references/") || !relativePath.endsWith(".md") ||
+            relativePath.length > 240 || !SKILL_REFERENCE_PATH_RE.test(relativePath)) {
           skippedFiles++;
           continue;
         }
@@ -451,7 +462,7 @@ function SkillsPage() {
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Folder import supports SKILL.md plus up to 20 Markdown files under references/ (256 KiB combined). Other files, scripts and binary assets are ignored; scripts/hooks are never executed.
+                Folder import supports SKILL.md plus up to 20 portable Markdown files under references/ (32 KiB each, 256 KiB combined). Other files, unsupported paths, scripts and binary assets are skipped; scripts/hooks are never executed.
                 {editingSkill ? " A single-file update preserves current references; importing a folder replaces them." : ""}
               </p>
             </div>

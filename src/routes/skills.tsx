@@ -105,6 +105,7 @@ function SkillsPage() {
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) return;
+    input.value = "";
     if (file.size > 48 * 1024) {
       toast.error("SKILL.md must be 48 KiB or smaller.");
       input.value = "";
@@ -132,7 +133,10 @@ function SkillsPage() {
     setSkillResources({});
     setSelectedFile("");
 
-    const entryPoints = files.filter((file) => file.webkitRelativePath.split("/").pop() === "SKILL.md");
+    const entryPoints = files.filter((file) => {
+      const relativePath = file.webkitRelativePath.split("/");
+      return relativePath.length === 2 && relativePath[1] === "SKILL.md";
+    });
     if (entryPoints.length !== 1) {
       toast.error("Choose one skill folder containing exactly one SKILL.md file.");
       return;

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { Shell } from "@/components/Shell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,6 @@ function SkillsPage() {
   const [skillMd, setSkillMd] = useState("");
   const [skillResources, setSkillResources] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState("");
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -153,7 +152,7 @@ function SkillsPage() {
       for (const file of files) {
         const relativePath = file.webkitRelativePath.slice(rootPath.length + 1);
         if (relativePath === "SKILL.md") continue;
-        if (!relativePath.startsWith("references/") || !relativePath.toLowerCase().endsWith(".md")) {
+        if (!relativePath.startsWith("references/") || !relativePath.endsWith(".md")) {
           skippedFiles++;
           continue;
         }
@@ -400,9 +399,9 @@ function SkillsPage() {
                 <Label htmlFor="skill-folder">Or import a skill folder</Label>
                 <Input
                   ref={(node) => {
-                    folderInputRef.current = node;
-                    node?.setAttribute("webkitdirectory", "");
-                    node?.setAttribute("directory", "");
+                    if (!node) return;
+                    node.setAttribute("webkitdirectory", "");
+                    node.setAttribute("directory", "");
                   }}
                   id="skill-folder"
                   type="file"

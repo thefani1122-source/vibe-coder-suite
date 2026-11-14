@@ -110,12 +110,23 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
   const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
 
   if (!res.ok) {
-    const message =
-      (isJson && payload && typeof payload === "object" && "message" in payload
-        ? String((payload as { message?: unknown }).message)
-        : typeof payload === "string" && payload
-        ? payload
-        : `Request failed (${res.status})`);
+    let message = `Request failed (${res.status})`;
+    if (typeof payload === "string" && payload) {
+      message = payload;
+    } else if (isJson && payload && typeof payload === "object") {
+      const record = payload as Record<string, unknown>;
+      if (typeof record["message"] === "string" && record["message"]) {
+        message = record["message"];
+      } else {
+        const nestedError = record["error"];
+        if (typeof nestedError === "string" && nestedError) {
+          message = nestedError;
+        } else if (nestedError && typeof nestedError === "object") {
+          const nestedMessage = (nestedError as Record<string, unknown>)["message"];
+          if (typeof nestedMessage === "string" && nestedMessage) message = nestedMessage;
+        }
+      }
+    }
     if (!silent) toast.error(message);
     throw new ApiError(message, res.status, payload);
   }

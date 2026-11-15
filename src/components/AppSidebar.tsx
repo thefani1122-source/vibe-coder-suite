@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard,
   FolderGit2,
+  BookOpen,
   Settings,
   CreditCard,
   Plug,
@@ -33,6 +34,7 @@ import {
 const workspaceNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "My Projects", url: "/projects", icon: FolderGit2 },
+  { title: "Skills", url: "/skills", icon: BookOpen },
   { title: "MCP", url: "/mcp", icon: Plug },
 ];
 

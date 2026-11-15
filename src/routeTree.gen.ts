@@ -21,6 +21,7 @@ import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RefundRouteImport } from './routes/refund'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -86,6 +87,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsRoute = SkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/refund': typeof RefundRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/skills': typeof SkillsRoute
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/refund': typeof RefundRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/skills': typeof SkillsRoute
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/refund': typeof RefundRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/skills': typeof SkillsRoute
   '/terms': typeof TermsRoute
   '/usage': typeof UsageRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/reset-password'
     | '/settings'
+    | '/skills'
     | '/terms'
     | '/usage'
     | '/auth/callback'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/reset-password'
     | '/settings'
+    | '/skills'
     | '/terms'
     | '/usage'
     | '/auth/callback'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/refund'
     | '/reset-password'
     | '/settings'
+    | '/skills'
     | '/terms'
     | '/usage'
     | '/auth/callback'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   RefundRoute: typeof RefundRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  SkillsRoute: typeof SkillsRoute
   TermsRoute: typeof TermsRoute
   UsageRoute: typeof UsageRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -324,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skills': {
+      id: '/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   RefundRoute: RefundRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  SkillsRoute: SkillsRoute,
   TermsRoute: TermsRoute,
   UsageRoute: UsageRoute,
   AuthCallbackRoute: AuthCallbackRoute,

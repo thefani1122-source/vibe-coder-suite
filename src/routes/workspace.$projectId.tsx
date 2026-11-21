@@ -165,6 +165,37 @@ Sandbox preview compatibility requirements — Next.js App Router runtime:
 `;
 
 const NEXTJS_REQUEST_RE = /\bnext\s*\.?\s*js\b|\bnextjs\b/i;
+const REACT_VITE_REQUEST_RE = /\b(?:react|vite|hono|fastapi)\b/i;
+
+const FRAMEWORK_NEUTRAL_PREVIEW_CONSTRAINTS = `
+ 
+---
+Sandbox preview compatibility requirements — framework selected by the build pipeline:
+- Use the framework, entrypoints and server runtime already selected by LampCode and present in this project. Do not assume Vite, Next.js, Hono or FastAPI when the request does not specify one.
+- Do not switch frameworks, create a second server, invent a proxy, or rewrite template-owned package/config files just to make the preview start.
+- Preserve the requested real API/database architecture. Never conceal an unavailable integration with localStorage, demo authentication, an in-memory store or fabricated rows.
+- Keep server-only code and credentials on the server, and show truthful loading, error and empty states.
+- If the selected runtime cannot be started or verified, report that runtime failure; do not silently convert the project to another stack.
+`;
+
+function isViteProject(files: Record<string, string>): boolean {
+  if (Object.keys(files).some(path =>
+    path === "vite.config.ts" ||
+    path === "vite.config.js" ||
+    path === "src/main.tsx" ||
+    path === "src/index.tsx" ||
+    path === "src/main.jsx"
+  )) return true;
+  try {
+    const manifest = JSON.parse(files["package.json"] ?? "{}") as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    return Boolean(manifest.dependencies?.vite || manifest.devDependencies?.vite);
+  } catch {
+    return false;
+  }
+}
 
 function isNextJsProject(files: Record<string, string>): boolean {
   if (
@@ -190,9 +221,16 @@ function isNextJsProject(files: Record<string, string>): boolean {
 }
 
 function previewConstraintsForBuild(prompt: string, files: Record<string, string>): string {
-  return NEXTJS_REQUEST_RE.test(prompt) || isNextJsProject(files)
-    ? NEXTJS_SANDBOX_PREVIEW_CONSTRAINTS
-    : VITE_SANDBOX_PREVIEW_CONSTRAINTS;
+  if (NEXTJS_REQUEST_RE.test(prompt) || isNextJsProject(files)) {
+    return NEXTJS_SANDBOX_PREVIEW_CONSTRAINTS;
+  }
+  if (REACT_VITE_REQUEST_RE.test(prompt) || isViteProject(files)) {
+    return VITE_SANDBOX_PREVIEW_CONSTRAINTS;
+  }
+  // LampCode may select a verified framework by project configuration even
+  // when the user did not name it. Stay neutral rather than injecting Vite-only
+  // rules that can contradict a Next.js/TanStack runtime selected server-side.
+  return FRAMEWORK_NEUTRAL_PREVIEW_CONSTRAINTS;
 }
 
 function hasBackendFiles(files: Record<string, string>): boolean {

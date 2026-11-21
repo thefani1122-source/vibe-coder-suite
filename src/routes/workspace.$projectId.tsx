@@ -165,7 +165,7 @@ Sandbox preview compatibility requirements — Next.js App Router runtime:
 `;
 
 const NEXTJS_REQUEST_RE = /\bnext\s*\.?\s*js\b|\bnextjs\b/i;
-const REACT_VITE_REQUEST_RE = /\b(?:react|vite|hono|fastapi)\b/i;
+const REACT_VITE_REQUEST_RE = /\bvite\b|\bhono\b|\bexpress\b|\bfastapi\b|\bdjango\b|\bpython\s+(?:backend|api|server)\b|\breact\s*(?:\+|and)\s*(?:hono|express)\b/i;
 
 const FRAMEWORK_NEUTRAL_PREVIEW_CONSTRAINTS = `
  

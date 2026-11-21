@@ -164,7 +164,7 @@ Sandbox preview compatibility requirements — Next.js App Router runtime:
 - Do not overwrite template-owned package/configuration files. If the Next.js runtime cannot be started or verified, stop and report that runtime failure rather than converting the app to Vite.
 `;
 
-const NEXTJS_REQUEST_RE = /\\bnext\\s*\\.?\\s*js\\b|\\bnextjs\\b/i;
+const NEXTJS_REQUEST_RE = /\bnext\s*\.?\s*js\b|\bnextjs\b/i;
 
 function isNextJsProject(files: Record<string, string>): boolean {
   if (

@@ -143,15 +143,95 @@ const BACKEND_CONTENT_RE = [
   /\bnew\s+PrismaClient\b/,
 ];
 
-const SANDBOX_PREVIEW_CONSTRAINTS = `
-
+const VITE_SANDBOX_PREVIEW_CONSTRAINTS = `
+ 
 ---
-Sandbox preview compatibility requirements:
-- The live preview runs inside a Vite browser sandbox. Do not generate Express, Node server files, src/server/*, src/db/* API handlers, or app/page API routes unless the platform explicitly provides a backend runtime.
-- Do not make browser components call fetch('/api/...') unless you also generate a working Vite-compatible mock/fallback for that endpoint. Prefer direct client-side state/localStorage for demo persistence.
-- If auth or database features are requested, the preview must still be fully clickable without configured environment variables: show a demo auth path and in-memory/localStorage data fallback, while keeping real integration code isolated behind env checks.
-- Never leave buttons dependent on missing env vars; New/Edit/Delete/Done/Sign In should visibly work in the preview demo.
+Sandbox preview compatibility requirements — React/Vite runtime:
+- This project uses the React + Vite runtime. Do not generate Express, Node server files, src/server/*, src/db/* API handlers, or app/page API routes unless the build pipeline explicitly selects a backend runtime.
+- Use the Vite same-origin /api proxy only when a real Hono/FastAPI backend is selected. Never replace requested real persistence with a demo/localStorage fallback.
+- Keep configured integrations truthful: do not claim auth or database functionality works unless the actual service is connected and verified. Never fabricate backend rows.
+- Make requested controls usable in preview, and show honest loading, error and empty states.
 `;
+
+const NEXTJS_SANDBOX_PREVIEW_CONSTRAINTS = `
+ 
+---
+Sandbox preview compatibility requirements — Next.js App Router runtime:
+- The build pipeline provides a real Next.js App Router runtime on Ubuntu, served by the Next.js Node server on port 3000. This is NOT a Vite browser sandbox.
+- Use app/page.tsx, app/layout.tsx, app/globals.css and app/api/**/route.ts as appropriate. Do not generate src/App.tsx, src/index.tsx, Vite config, or a separate Hono server.
+- Keep server-only code and credentials on the server. Use Next.js Route Handlers or Server Components for backend work; use small Client Components only for browser interaction.
+- Do not invent a Vite proxy, mock API, localStorage fallback, or demo authentication to conceal a missing real integration. Preserve the requested source of truth and report any unavailable service honestly.
+- Do not overwrite template-owned package/configuration files. If the Next.js runtime cannot be started or verified, stop and report that runtime failure rather than converting the app to Vite.
+`;
+
+const NEXTJS_REQUEST_RE = /\bnext\s*\.?\s*js\b|\bnextjs\b/i;
+const REACT_VITE_REQUEST_RE = /\bvite\b|\bhono\b|\bexpress\b|\bfastapi\b|\bdjango\b|\bpython\s+(?:backend|api|server)\b|\breact\s*(?:\+|and)\s*(?:hono|express)\b/i;
+
+const FRAMEWORK_NEUTRAL_PREVIEW_CONSTRAINTS = `
+ 
+---
+Sandbox preview compatibility requirements — framework selected by the build pipeline:
+- Use the framework, entrypoints and server runtime already selected by LampCode and present in this project. Do not assume Vite, Next.js, Hono or FastAPI when the request does not specify one.
+- Do not switch frameworks, create a second server, invent a proxy, or rewrite template-owned package/config files just to make the preview start.
+- Preserve the requested real API/database architecture. Never conceal an unavailable integration with localStorage, demo authentication, an in-memory store or fabricated rows.
+- Keep server-only code and credentials on the server, and show truthful loading, error and empty states.
+- If the selected runtime cannot be started or verified, report that runtime failure; do not silently convert the project to another stack.
+`;
+
+function isViteProject(files: Record<string, string>): boolean {
+  if (Object.keys(files).some(path =>
+    path === "vite.config.ts" ||
+    path === "vite.config.js" ||
+    path === "src/main.tsx" ||
+    path === "src/index.tsx" ||
+    path === "src/main.jsx"
+  )) return true;
+  try {
+    const manifest = JSON.parse(files["package.json"] ?? "{}") as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    return Boolean(manifest.dependencies?.vite || manifest.devDependencies?.vite);
+  } catch {
+    return false;
+  }
+}
+
+function isNextJsProject(files: Record<string, string>): boolean {
+  if (
+    Object.keys(files).some(path =>
+      path === "app/page.tsx" ||
+      path === "src/app/page.tsx" ||
+      path === "app/layout.tsx" ||
+      path === "src/app/layout.tsx" ||
+      path === "next.config.js" ||
+      path === "next.config.ts" ||
+      path === "next.config.mjs"
+    )
+  ) return true;
+  try {
+    const manifest = JSON.parse(files["package.json"] ?? "{}") as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    return Boolean(manifest.dependencies?.next || manifest.devDependencies?.next);
+  } catch {
+    return false;
+  }
+}
+
+function previewConstraintsForBuild(prompt: string, files: Record<string, string>): string {
+  if (NEXTJS_REQUEST_RE.test(prompt) || isNextJsProject(files)) {
+    return NEXTJS_SANDBOX_PREVIEW_CONSTRAINTS;
+  }
+  if (REACT_VITE_REQUEST_RE.test(prompt) || isViteProject(files)) {
+    return VITE_SANDBOX_PREVIEW_CONSTRAINTS;
+  }
+  // LampCode may select a verified framework by project configuration even
+  // when the user did not name it. Stay neutral rather than injecting Vite-only
+  // rules that can contradict a Next.js/TanStack runtime selected server-side.
+  return FRAMEWORK_NEUTRAL_PREVIEW_CONSTRAINTS;
+}
 
 function hasBackendFiles(files: Record<string, string>): boolean {
   return Object.entries(files).some(([path, content]) =>
@@ -1208,7 +1288,7 @@ function WorkspacePage() {
           .join("\n")
       : "";
 
-    const enrichedPrompt = prompt + answerContext + SANDBOX_PREVIEW_CONSTRAINTS;
+    const enrichedPrompt = prompt + answerContext + previewConstraintsForBuild(prompt + answerContext, filesRef.current);
     const attachmentsForBuild = imageAttachments.length > 0
       ? imageAttachments
       : pendingAttachmentsRef.current;
